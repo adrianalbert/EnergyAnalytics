@@ -122,17 +122,21 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
         
         WKND = (r$dates$wday == 0 | r$dates$wday == 6) # 0 is Sun, 6 is Sat
         WKDY = ! WKND
-        tic('regression')
-        model.MOY        <- NULL #lm(r$norm(r$kw) ~ r$tout     + MOY)
-        model.DOW        <- NULL #lm(r$norm(r$kw) ~ r$tout     + DOW)
-        model.DOW_HOD    <- lm(r$norm(r$kw) ~ r$tout     + DOW + HOD)
-        model.standard   <- lm(r$norm(r$kw) ~ r$tout     + DOW + HOD + MOY)
-        model.HOW        <- lm(r$norm(r$kw) ~ r$tout     + HOW + MOY)
-        model.toutTOD    <- NULL #lm(r$norm(r$kw) ~ toutTOD    + HOW + MOY)
-        model.toutPIECES <- lm(r$norm(r$kw) ~ toutPIECES + HOW + MOY)
         
-        model.toutPIECES.WKND <- lm(r$norm(r$kw) ~ toutPIECES + HOW + MOY, subset=WKND)
-        model.toutPIECES.WKDY <- lm(r$norm(r$kw) ~ toutPIECES + HOW + MOY, subset=WKDY)
+        df = data.frame(MOY,DOW,HOD,HOW,toutTOD,toutPIECES,kw=r$norm(r$kw),tout=r$tout)
+    
+        tic('regression')
+        model.MOY        <- NULL #rxLinMod(kw ~ tout       + MOY, data=df, verbose=0)
+        model.DOW        <- NULL #rxLinMod(kw ~ tout       + DOW, data=df, verbose=0)
+        model.DOW_HOD    <- rxLinMod(kw ~ tout       + DOW + HOD, data=df, verbose=0)
+        model.standard   <- rxLinMod(kw ~ tout       + DOW + HOD + MOY, data=df, verbose=0)
+        model.HOW        <- rxLinMod(kw ~ tout       + HOW, data=df, verbose=0)
+        model.toutTOD    <- NULL #rxLinMod(kw ~ toutTOD    + HOW, data=df, verbose=0)
+        model.toutPIECES <- rxLinMod(kw ~ toutPIECES + HOW, data=df, verbose=0)
+        
+        model.toutPIECES.WKND <- NULL #rxLinMod(kw ~ toutPIECES + HOW,subset=WKND, data=df, verbose=0)
+        model.toutPIECES.WKDY <- NULL #rxLinMod(kw ~ toutPIECES + HOW,subset=WKDY, data=df, verbose=0)
+        
         toc('regression',prefixStr='    regression')
         
         #coef.MOY        <- rbind(coef.MOY,coef(model.MOY))
@@ -145,15 +149,16 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
         coef.toutPIECES <- rbind(coef.toutPIECES,coef(model.toutPIECES))
         features.basic  <- rbind(features.basic,basicFeatures(r$kwMat))
         ids             <- rbind(ids,sp_id)
-        summary         <- rbind( summary,list(#MOY=summary(model.MOY)$sigma,
-                                               #DOW=summary(model.DOW)$sigma,
-                                               DOW_HOD=summary(model.DOW_HOD)$sigma,
-                                               standard=summary(model.standard)$sigma,
-                                               HOW=summary(model.HOW)$sigma,
-                                               #toutTOD=summary(model.toutTOD)$sigma,
-                                               toutPIECES=summary(model.toutPIECES)$sigma,
-                                               toutPIECES_WKND=(summary(model.toutPIECES.WKND)$sigma +
-                                                               summary(model.toutPIECES.WKDY)$sigma)/2    )
+        summary         <- rbind( summary,list(#MOY=summary(model.MOY)$kw$sigma,
+                                               #DOW=summary(model.DOW)$kw$sigma,
+                                               DOW_HOD=summary(model.DOW_HOD)$kw$sigma,
+                                               standard=summary(model.standard)$kw$sigma,
+                                               HOW=summary(model.HOW)$kw$sigma,
+                                               #toutTOD=summary(model.toutTOD)$kw$sigma,
+                                               toutPIECES=summary(model.toutPIECES)$kw$sigma,
+                                               #toutPIECES_WKND=(summary(model.toutPIECES.WKND)$kw$sigma +
+                                               #                 summary(model.toutPIECES.WKDY)$kw$sigma)/2    
+                                               )
                                   )
         # dump the memory intensive parts
         rm(list = c('r','DOW','HOD','toutTOD','toutPIECES',
