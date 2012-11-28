@@ -216,7 +216,6 @@ if (length(args) > 0) {
 
 
 print('Beginning batch run')
-print(allZips)
 runResult = runModelsByZip(allZips)
 summarizeRun(runResult,listFailures=FALSE)
 toc('batchRun')
