@@ -174,7 +174,7 @@ WeatherClass = function(zipcode){
 }
 
 ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
-  if(is.null(data) || length(a) == 0) {
+  if(is.null(data) || length(data) == 0) {
     query = paste(
       'SELECT 
         sp_id,zip5,DATE,
