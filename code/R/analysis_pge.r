@@ -17,40 +17,54 @@
 
 rm(list=ls())
 
-source('~/Dropbox/ControlPatterns/code/R/utils/timing.r')
-source('~/Dropbox/ControlPatterns/code/R/utils/sql_utils.r')
-source('~/Dropbox/ControlPatterns/code/R/utils/acf_ggplot.r')
-source('~/Dropbox/ControlPatterns/code/R/Person.r')
+options(error = recover)
 
-N_USERS     = 10     # send batches of 50 users to each core
+setwd('~/EnergyAnalytics/code/R')
+source('~/EnergyAnalytics/code/R/utils/timing.r')
+source('~/EnergyAnalytics/code/R/utils/sql_utils.r')
+source('~/EnergyAnalytics/code/R/utils/acf_ggplot.r')
+source('~/EnergyAnalytics/code/R/Person.r')
+
+N_USERS     = 10    # send batches of 50 users to each core
 NOBS_THRESH = 365   # discard users with less than a year at a given premise
+
 plots_path  = '~/Dropbox/ControlPatterns/plots/'
 save_path   = '~/Dropbox/ControlPatterns/fits/'
-
-library(utils)
+info_file   = '~/Dropbox/ControlPatterns/data/per_sp_id_info.RData'
 
 # ------------------------------------------------
 # Load identification information on users
 # ------------------------------------------------
 
-# SELECT * from pge_res_final3_unique WHERE total_duration >= 365 
-#     INTO OUTFILE 'table.csv'
-#     FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
-#     LINES TERMINATED BY '\n';
-
-# get a list of unique person ids
-pers_info     = run.query(paste("select PER_ID, SP_ID, date from pge_res_final3_unique WHERE total_duration >", NOBS_THRESH), db = 'pge_res')
-person_col    = pers_info$PER_ID
-person_ids    = sort(unique(person_col))
-
-# how many unique (PER_ID,SP_ID) tuples where people have lived for at least 1 year?
-tuples        = paste(pers_info$PER_ID, pers_info$SP_ID, sep=',')
-tuples_unq    = unique(tuples)
-length(tuples_unq)
-
-# divide up data into chunks
-ids_vec    <- seq_along(tuples_unq)
-chunks_vec <- split(tuples_unq, ceiling(ids_vec/N_USERS))
+if (!file.exists(info_file)) {
+  
+  cat('Loading info data from MySQL database...\n')
+  
+  # SELECT * from pge_res_final3_unique WHERE total_duration >= 365 
+  #     INTO OUTFILE 'table.csv'
+  #     FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+  #     LINES TERMINATED BY '\n';
+  
+  # get a list of unique person ids
+  pers_info     = run.query("select PER_ID, SP_ID, date from pge_res_final3_unique", db = 'pge_res')
+  person_col    = pers_info$PER_ID
+  person_ids    = sort(unique(person_col))
+  
+  # how many unique (PER_ID,SP_ID) tuples where people have lived for at least 1 year?
+  tuples        = paste(pers_info$PER_ID, pers_info$SP_ID, sep=',')
+  tuples_unq    = unique(tuples)
+  length(tuples_unq)
+  
+  # divide up data into chunks
+  ids_vec    <- seq_along(tuples_unq)
+  chunks_vec <- split(tuples_unq, ceiling(ids_vec/N_USERS))
+  
+  # save to RData file
+  save(file = info_file, list = c('chunks_vec', 'person_ids', 'tuples'))
+} else {  
+  cat(paste('Loading info data from file', info_file, '...\n'))  
+  load(info_file)
+}
 
 # ---------------------------------------------------------
 # Wrapper to perform analysis on a given person-sp_id data
@@ -64,12 +78,12 @@ wthr_vars_all = c('TemperatureF', 'WindSpeed', 'Humidity', 'HourlyPrecip', 'Sola
 trend_vars    = c('Trend.8', 'Trend.24')
 holiday_vars  = c('Is.Holiday.0', 'Is.Holiday.1')
 
-source('~/Dropbox/ControlPatterns/code/R/Person.r')
-personAnalysis = function(cur_data, cur_wthr, 
+library('grid')
+personAnalysis = function(cur_data, cur_wthr, verbose = T,
                            transitn.df = data.frame(), response.df = data.frame()) {
   
     # construct Person object
-    user      = new(Class='Person', cur_data)  
+    user      = new(Class='Person', cur_data, log = T)  
     user      = addWeather(user, cur_wthr)
     
     cur_PER_ID = user@PER_ID
@@ -84,10 +98,10 @@ personAnalysis = function(cur_data, cur_wthr,
     time_ols      = toc()
  
     # HMM analysis
-    response_vars = c(wthr_vars_all,  weekly_vars, trend_vars) 
-    transitn_vars = c(holiday_vars)
+    response_vars = c(wthr_vars_all,  hourly_vars, trend_vars, weekly_vars) 
+    transitn_vars = c()
     tic()    
-    user          = fitHMM(user, Kmin = 4, Kmax = 6,
+    user          = fitHMM(user, Kmin = 3, Kmax = 5,
                            response_vars = response_vars, transitn_vars = transitn_vars)
     time_hmm      = toc()
     
@@ -99,58 +113,63 @@ personAnalysis = function(cur_data, cur_wthr,
     df$Sigma  = user@HMM$response$stdev
     df$PER_ID = user@PER_ID
     df$SP_ID  = user@SP_ID
+    df$ZIPCODE= user@ZIPCODE
     df$State  = 1:user@HMM$nStates
     if (nrow(response.df)>0) response.df = rbind(response.df, df) else response.df = df
     df = as.data.frame(t(user@HMM$transition))
+    df$Transit= rownames(df)
+    rownames(df) = NULL
     df$PER_ID = user@PER_ID
     df$SP_ID  = user@SP_ID    
+    df$ZIPCODE= user@ZIPCODE
     if (nrow(transitn.df)>0) 
       transitn.df = rbind(transitn.df, df) else transitn.df = df
 
-    # _______________________________
-    # Produce analysis plots
-    
-    interval = c(min(user@timestamps),  
-                 min(user@timestamps) + 3600 * 24 * 7) + 3600 * 24 * 5    
-
-    # OLS fit
-    png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_OLS_fit.png', sep=''), width=1200, height=600)
-    plot(user, type='OLS-fit', interval=interval)
-    dev.off()
-    
-    # OLS residuals
-    png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_OLS_resid.png', sep=''), width=1200, height=600)
-    plot(user, type='OLS-res', interval=interval)
-    dev.off()
-
-    # HMM fit
-    p1 = plot(user, type='HMM-ts', interval = interval)
-    png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_HMM_fit.png', sep=''), width=1000, height=400)
-    print(p1)
-    dev.off()
-    
-    # HMM analysis
-    p2 = plot(user, type='HMM-MC')
-    p3 = plot(user, type='HMM-ci')    
-    p4 = plot(user, type='HMM-acf')    
-    png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_HMM_analysis.png', sep=''), width=1000, height=600)
-    grid.newpage() 
-    pushViewport(viewport(layout = grid.layout(2, 2))) 
-    vplayout <- function(x, y) viewport(layout.pos.row = x, layout.pos.col = y) 
-    print(p4, vp = vplayout(1, 1:2))
-    print(p3, vp = vplayout(2,1))
-    print(p2, vp = vplayout(2,2))
-    dev.off()
-
-    # HMM residuals
-    p1 = plot(user, type = 'HMM-res')
-    p2 = plot(user, type = 'HMM-qq')
-    png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_HMM_res.png', sep=''), width=1200, height=500)
-    grid.newpage() 
-    pushViewport(viewport(layout = grid.layout(2, 1))) 
-    print(p1, vp = vplayout(1,1))
-    print(p2, vp = vplayout(2,1))
-    dev.off()
+#     # _______________________________
+#     # Produce analysis plots
+#     
+#     interval = c(min(user@timestamps),  
+#                  min(user@timestamps) + 3600 * 24 * 7) + 3600 * 24 * 5    
+# 
+#     # OLS fit
+#     png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_OLS_fit.png', sep=''), width=1200, height=600)
+#     plot(user, type='OLS-fit', interval=interval)
+#     dev.off()
+#     
+#     # OLS residuals
+#     png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_OLS_resid.png', sep=''), width=1200, height=600)
+#     plot(user, type='OLS-res', interval=interval)
+#     dev.off()
+# 
+#     # HMM fit
+#     p1 = plot(user, type='HMM-ts', interval = interval)
+#     png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_HMM_fit.png', sep=''), width=1000, height=400)
+#     print(p1)
+#     dev.off()
+#     
+#     # HMM analysis
+#     p2 = plot(user, type='HMM-MC')
+#     p3 = plot(user, type='HMM-ci')    
+#     p4 = plot(user, type='HMM-acf')    
+#     png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_HMM_analysis.png', sep=''), width=1000, height=600)
+#     grid.newpage() 
+#     pushViewport(viewport(layout = grid.layout(2, 2))) 
+#     vplayout <- function(x, y) viewport(layout.pos.row = x, layout.pos.col = y) 
+#     print(p4, vp = vplayout(1, 1:2))
+#     print(p3, vp = vplayout(2,1))
+#     print(p2, vp = vplayout(2,2))
+#     dev.off()
+# 
+#     # HMM residuals
+#     p1 = plot(user, type = 'HMM-res')
+#     p2 = plot(user, type = 'HMM-qq')
+#     png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_HMM_res.png', sep=''), width=1200, height=500)
+#     print(p1)
+#     grid.newpage() 
+#     pushViewport(viewport(layout = grid.layout(2, 1))) 
+#     print(p1, vp = vplayout(1,1))
+#     print(p2, vp = vplayout(2,1))
+#     dev.off()
     
     # clear used variables
     rm(list = c('user'))
@@ -207,13 +226,12 @@ analysis_wrapper <- function(chunk_id) {
     }
 
     # perform analysis flow
-    source('~/Dropbox/ControlPatterns/code/R/Person.r')
-    res = try(personAnalysis(cur_data, cur_wthr, transitn.df, response.df))
-    if (class(try) != 'try-error') {
+    res = try(personAnalysis(cur_data, cur_wthr, transitn.df = transitn.df, response.df = response.df))
+    if (class(res) != 'try-error') {
       transitn.df = res$transition
       response.df = res$response
     } else {
-      cat(paste('Estimation error at person', cur_PER_ID, ',', cur_SP_ID))
+      cat(paste('Estimation error at person', cur_PER_ID, ',', cur_SP_ID, '\n'))
     }
   }
     
@@ -232,20 +250,48 @@ analysis_wrapper <- function(chunk_id) {
 # Some preliminary analysis
 # ------------------------------------------------
 
-source('~/Dropbox/ControlPatterns/code/R/Person.r')
-Rprof(filename = '~/Dropbox/ControlPatterns/fits/Rprof.out')
-result = analysis_wrapper(1)
-Rprof(NULL)
+library(utils)
 
-summaryRprof(filename = '~/Dropbox/ControlPatterns/fits/Rprof.out')
+ptm <- proc.time()
+Rprof(filename = paste('~/Dropbox/ControlPatterns/fits/Rprof.out', sep=''), 
+      interval = 0.02, memory.profiling = T)
+result = analysis_wrapper(2)
+Rprof(NULL)
+# Stop the clock
+dt = proc.time() - ptm
+
+profiled.1 = summaryRprof(filename='~/Dropbox/ControlPatterns/fits/Rprof.out', memory = 'none')
+
+# # ___________________________
+# # Profiling using rprof
+# 
+# library('profr')
+# 
+# # read profiling results
+# profiled.2 = parse_rprof('~/Dropbox/ControlPatterns/fits/Rprof.out', interval=0.02)
+# 
+# # dump to file
+# write.table(profiled.2, file = '~/Dropbox/ControlPatterns/fits/profiling.csv', quote = F, sep = '\t\t')
+# 
+# # profiling plot
+# png('~/Dropbox/ControlPatterns/plots/profiling.png', height=600, width=800)
+# ggplot.profr(profiled.2)
+# dev.off()
 
 # parallel execution using multicore
-library(multicore)
-library(parallel)
-
-for (chunk in 1:5){#length(chunks_vec)) {
-  writeLines(c(""), paste(plots_path, "log_", chunk, ".txt", sep=''))
-}
-result = mclapply(1:5, FUN = analysis_wrapper, mc.silent = F, 
-                   mc.preschedule = TRUE, mc.cores = 6)
-
+# library(multicore)
+# library(parallel)
+# 
+# ptm <- proc.time()
+# Rprof(filename = paste('~/Dropbox/ControlPatterns/fits/Rprof.out', sep=''), 
+#       interval = 0.02, memory.profiling = T)
+# for (chunk in 1:5){#length(chunks_vec)) {
+#   writeLines(c(""), paste(plots_path, "log_", chunk, ".txt", sep=''))
+# }
+# result = mclapply(1:5, FUN = analysis_wrapper, mc.silent = F, 
+#                    mc.preschedule = TRUE, mc.cores = 6)
+# 
+# Rprof(NULL)
+# dt = proc.time() - ptm
+# 
+# profiled.1 = summaryRprof(filename='~/Dropbox/ControlPatterns/fits/Rprof.out', memory = 'none')
