@@ -1,3 +1,5 @@
+#!/usr/bin/Rscript
+
 # analysis_pge.r
 # 
 # Typical OLS analysis for PGE data:
@@ -24,17 +26,23 @@ source('~/EnergyAnalytics/code/R/utils/timing.r')
 source('~/EnergyAnalytics/code/R/utils/sql_utils.r')
 source('~/EnergyAnalytics/code/R/utils/acf_ggplot.r')
 source('~/EnergyAnalytics/code/R/Person.r')
+source('~/EnergyAnalytics/code/R/personAnalysis.r')
 
-N_USERS     = 10    # send batches of 50 users to each core
+N_USERS     = 100   # send batches of 50 users to each core
 NOBS_THRESH = 365   # discard users with less than a year at a given premise
 
-plots_path  = '~/Dropbox/ControlPatterns/plots/'
-save_path   = '~/Dropbox/ControlPatterns/fits/'
-info_file   = '~/Dropbox/ControlPatterns/data/per_sp_id_info.RData'
+plots_path  = '~/EnergyAnalytics/plots/'
+save_path   = '~/EnergyAnalytics/fits/'
+info_file   = '~/EnergyAnalytics/data/per_sp_id_info_100.RData'
 
 # ------------------------------------------------
 # Load identification information on users
 # ------------------------------------------------
+
+# disconnect all MySQL connections
+library('RMySQL')
+all_cons <- dbListConnections(MySQL())
+for(con in all_cons) dbDisconnect(con)
 
 if (!file.exists(info_file)) {
   
@@ -66,124 +74,13 @@ if (!file.exists(info_file)) {
   load(info_file)
 }
 
-# ---------------------------------------------------------
-# Wrapper to perform analysis on a given person-sp_id data
-# ---------------------------------------------------------
-
-# define some covariates 
-hourly_vars   = paste('Hour.Of.Day', 0:23, sep='.')
-monthly_vars  = paste('Month', 1:12, sep = '.')
-weekly_vars   = paste('Day.Of.Week', c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'), sep='.')
-wthr_vars_all = c('TemperatureF', 'WindSpeed', 'Humidity', 'HourlyPrecip', 'SolarRadiation')
-trend_vars    = c('Trend.8', 'Trend.24')
-holiday_vars  = c('Is.Holiday.0', 'Is.Holiday.1')
-
-library('grid')
-personAnalysis = function(cur_data, cur_wthr, verbose = T,
-                           transitn.df = data.frame(), response.df = data.frame()) {
-  
-    # construct Person object
-    user      = new(Class='Person', cur_data, log = T)  
-    user      = addWeather(user, cur_wthr)
-    
-    cur_PER_ID = user@PER_ID
-    cur_SP_ID  = user@SP_ID
-    
-    # _______________________________________
-    # Perform analysis on current user
-    
-    # OLS analysis
-    tic()
-    user          = fitOLS(user)
-    time_ols      = toc()
- 
-    # HMM analysis
-    response_vars = c(wthr_vars_all,  hourly_vars, trend_vars, weekly_vars) 
-    transitn_vars = c()
-    tic()    
-    user          = fitHMM(user, Kmin = 3, Kmax = 5,
-                           response_vars = response_vars, transitn_vars = transitn_vars)
-    time_hmm      = toc()
-    
-    # ______________________________
-    # Save analysis results
-    
-    df        = as.data.frame(t(user@HMM$response$means))
-    df[,setdiff(response_vars, names(df))] = NA
-    df$Sigma  = user@HMM$response$stdev
-    df$PER_ID = user@PER_ID
-    df$SP_ID  = user@SP_ID
-    df$ZIPCODE= user@ZIPCODE
-    df$State  = 1:user@HMM$nStates
-    if (nrow(response.df)>0) response.df = rbind(response.df, df) else response.df = df
-    df = as.data.frame(t(user@HMM$transition))
-    df$Transit= rownames(df)
-    rownames(df) = NULL
-    df$PER_ID = user@PER_ID
-    df$SP_ID  = user@SP_ID    
-    df$ZIPCODE= user@ZIPCODE
-    if (nrow(transitn.df)>0) 
-      transitn.df = rbind(transitn.df, df) else transitn.df = df
-
-#     # _______________________________
-#     # Produce analysis plots
-#     
-#     interval = c(min(user@timestamps),  
-#                  min(user@timestamps) + 3600 * 24 * 7) + 3600 * 24 * 5    
-# 
-#     # OLS fit
-#     png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_OLS_fit.png', sep=''), width=1200, height=600)
-#     plot(user, type='OLS-fit', interval=interval)
-#     dev.off()
-#     
-#     # OLS residuals
-#     png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_OLS_resid.png', sep=''), width=1200, height=600)
-#     plot(user, type='OLS-res', interval=interval)
-#     dev.off()
-# 
-#     # HMM fit
-#     p1 = plot(user, type='HMM-ts', interval = interval)
-#     png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_HMM_fit.png', sep=''), width=1000, height=400)
-#     print(p1)
-#     dev.off()
-#     
-#     # HMM analysis
-#     p2 = plot(user, type='HMM-MC')
-#     p3 = plot(user, type='HMM-ci')    
-#     p4 = plot(user, type='HMM-acf')    
-#     png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_HMM_analysis.png', sep=''), width=1000, height=600)
-#     grid.newpage() 
-#     pushViewport(viewport(layout = grid.layout(2, 2))) 
-#     vplayout <- function(x, y) viewport(layout.pos.row = x, layout.pos.col = y) 
-#     print(p4, vp = vplayout(1, 1:2))
-#     print(p3, vp = vplayout(2,1))
-#     print(p2, vp = vplayout(2,2))
-#     dev.off()
-# 
-#     # HMM residuals
-#     p1 = plot(user, type = 'HMM-res')
-#     p2 = plot(user, type = 'HMM-qq')
-#     png(paste(plots_path, paste(cur_PER_ID, cur_SP_ID, sep='_'), '_HMM_res.png', sep=''), width=1200, height=500)
-#     print(p1)
-#     grid.newpage() 
-#     pushViewport(viewport(layout = grid.layout(2, 1))) 
-#     print(p1, vp = vplayout(1,1))
-#     print(p2, vp = vplayout(2,1))
-#     dev.off()
-    
-    # clear used variables
-    rm(list = c('user'))
-    
-    return(list(transition = transitn.df, response = response.df))
-}
-
 # ------------------------------------------
 # Wrapper to send computation to each core
 # ------------------------------------------
 
 analysis_wrapper <- function(chunk_id) {
   
-  #sink(paste(plots_path, "log_", chunk_id,".txt", sep=''), append=TRUE)
+  sink(paste(plots_path, "log_", chunk_id,".txt", sep=''), append=TRUE)
   
   cat(paste('--------- Processing Chunk', chunk_id, '---------\n'))
   
@@ -208,6 +105,8 @@ analysis_wrapper <- function(chunk_id) {
   # perform calculations on each user in the dataset
   response.df = data.frame()
   transitn.df = data.frame()
+  ols.coefs   = data.frame()
+  iUser       = 0
   for (usr_info in all_users) {     
 
     # _________________________________
@@ -226,24 +125,34 @@ analysis_wrapper <- function(chunk_id) {
     }
 
     # perform analysis flow
-    res = try(personAnalysis(cur_data, cur_wthr, transitn.df = transitn.df, response.df = response.df))
+    ptm <- proc.time()
+    res = try(personAnalysis(cur_data, cur_wthr, plots = F, verbose = F,
+                             plots_path = plots_path, 
+                             transitn.df = transitn.df, response.df = response.df, 
+                             ols.coefs = ols.coefs))
     if (class(res) != 'try-error') {
       transitn.df = res$transition
       response.df = res$response
+      ols.coefs   = res$ols.coefs
     } else {
       cat(paste('Estimation error at person', cur_PER_ID, ',', cur_SP_ID, '\n'))
     }
+    dt = proc.time() - ptm
+    
+    iUser = iUser + 1
+    cat(paste('User', iUser, '/', length(all_users), '( Chunk', chunk_id,'): dt =', dt[1,],'\n'))
   }
     
   # save temporary data
   write.csv(response.df, file = paste(save_path, 'response_chunk_', chunk_id, '.csv', sep=''))
   write.csv(transitn.df, file = paste(save_path, 'transitn_chunk_', chunk_id, '.csv', sep=''))
-  
+  write.csv(ols.coefs,   file = paste(save_path, 'olscoefs_chunk_', chunk_id, '.csv', sep=''))  
+    
   # reset output connection
-  #sink()
+  sink()
   
   rm(list = c('cur_data', 'cur_wthr'))
-  return(list(response = response.df, transition = transitn.df))
+  return(list(response = response.df, transition = transitn.df, ols.coefs = ols.coefs))
 }
 
 # ------------------------------------------------
@@ -252,15 +161,15 @@ analysis_wrapper <- function(chunk_id) {
 
 library(utils)
 
-ptm <- proc.time()
-Rprof(filename = paste('~/Dropbox/ControlPatterns/fits/Rprof.out', sep=''), 
-      interval = 0.02, memory.profiling = T)
-result = analysis_wrapper(2)
-Rprof(NULL)
-# Stop the clock
-dt = proc.time() - ptm
-
-profiled.1 = summaryRprof(filename='~/Dropbox/ControlPatterns/fits/Rprof.out', memory = 'none')
+# ptm <- proc.time()
+# Rprof(filename = paste('~/Dropbox/ControlPatterns/fits/Rprof.out', sep=''), 
+#       interval = 0.02, memory.profiling = T)
+# result = analysis_wrapper(2)
+# Rprof(NULL)
+# # Stop the clock
+# dt = proc.time() - ptm
+# 
+# profiled.1 = summaryRprof(filename='~/Dropbox/ControlPatterns/fits/Rprof.out', memory = 'none')
 
 # # ___________________________
 # # Profiling using rprof
@@ -278,20 +187,31 @@ profiled.1 = summaryRprof(filename='~/Dropbox/ControlPatterns/fits/Rprof.out', m
 # ggplot.profr(profiled.2)
 # dev.off()
 
-# parallel execution using multicore
-# library(multicore)
-# library(parallel)
-# 
-# ptm <- proc.time()
-# Rprof(filename = paste('~/Dropbox/ControlPatterns/fits/Rprof.out', sep=''), 
-#       interval = 0.02, memory.profiling = T)
-# for (chunk in 1:5){#length(chunks_vec)) {
-#   writeLines(c(""), paste(plots_path, "log_", chunk, ".txt", sep=''))
-# }
-# result = mclapply(1:5, FUN = analysis_wrapper, mc.silent = F, 
-#                    mc.preschedule = TRUE, mc.cores = 6)
-# 
-# Rprof(NULL)
-# dt = proc.time() - ptm
-# 
-# profiled.1 = summaryRprof(filename='~/Dropbox/ControlPatterns/fits/Rprof.out', memory = 'none')
+# if in batch mode, parse arguments
+args = commandArgs(TRUE)
+if (length(args)>0) {
+  ch_min = args[1]
+  ch_max = args[2]
+  if (length(args)>=3) nProc  = args[3] else nProc = 6
+} else {
+  ch_min = 1
+  ch_max = 10#length(chunks_vec)
+  nProc  = detectCores()
+}
+
+# intialize logs
+for (chunk in 1:nProc){
+  writeLines(c(""), paste(plots_path, "log_", chunk, ".txt", sep=''))
+}
+
+# parallel execution using parallel package
+library(parallel)
+ptm <- proc.time()
+Rprof(filename = paste('~/Dropbox/ControlPatterns/fits/Rprof.out', sep=''), 
+      interval = 0.02, memory.profiling = T)
+result = mclapply(ch_min:ch_max, FUN = analysis_wrapper, mc.silent = F, 
+                   mc.preschedule = FALSE, mc.cores = nProc)
+Rprof(NULL)
+dt = proc.time() - ptm
+
+profiled.1 = summaryRprof(filename='~/Dropbox/ControlPatterns/fits/Rprof.out', memory = 'none')
