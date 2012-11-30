@@ -2,8 +2,11 @@
 
 .libPaths('~/R/library') # use my local R library even from the comand line
 
-conf.basePath = file.path('~/EnergyAnalysis/batch')
-
+# todo: is there a better way to detect the current directory?
+conf.basePath = file.path('~/EnergyAnalytics/batch')
+if(Sys.info()['sysname'] == 'Windows') {
+  conf.basePath = file.path('c:/dev/pge_collab/pge_R')
+}
 # run 'source' on all includes to load them 
 #source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
 source(file.path(conf.basePath,'stanfordConf.R'))     # Stanford on site specific configuration
