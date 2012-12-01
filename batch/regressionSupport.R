@@ -36,7 +36,7 @@ regressor.piecewise = function(regressor,bins) {
     col[col < 0] = 0
     col[(col> binUpper-binLower)] = binUpper-binLower
     mat = cbind(mat,col)
-    nm = c(nm,paste(binLower,'-',binUpper,sep=''))
+    nm = c(nm,paste('tout',binLower,'_',binUpper,sep=''))
     binLower = binUpper
   }
   colnames(mat) <- nm
