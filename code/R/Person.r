@@ -20,6 +20,7 @@
 
 library('methods')
 library('zoo')
+library('lubridate')
 removeClass('Person')
 
 # ________________________
@@ -48,7 +49,7 @@ setClass(
 
 setMethod(f = "initialize", 
           signature = "Person",
-          definition = function(.Object, raw_data, res = 60, verbose = T) {
+          definition = function(.Object, raw_data, res = 60, verbose = T, log = F) {
             
             .Object@PER_ID = unique(raw_data$PER_ID)
             .Object@SP_ID  = unique(raw_data$SP_ID)
@@ -90,7 +91,14 @@ setMethod(f = "initialize",
             orig        = .Object@timestamps[1]
             dest        = .Object@timestamps[length(.Object@timestamps)]
             time_vec    = seq(orig, dest, by=60*60)  
-            .Object@consumption = zoo(consumption, order.by = time_vec)
+            if (log) {
+              tmp = log(consumption)
+              tmp[which(!is.finite(tmp))] = 0
+              .Object@consumption = zoo(tmp, order.by = time_vec)
+            } else
+              .Object@consumption = zoo(consumption, order.by = time_vec)
+            
+            # initialize default weather object
             .Object@weather     = zoo(NULL)
 
             # _______________________________________________
@@ -124,7 +132,7 @@ setMethod(f = "initialize",
             # _____________________________
             # Check for object consistency 
             
-            validObject(.Object)
+            #validObject(.Object)
             
             # _________________________________________
             # Compute summary information of interest
@@ -279,7 +287,7 @@ prepareData = function(.Object, trends = NULL) {
   data$Month       = as.factor(month(timeDate(time_vec)))
   data$Hour.Of.Day = as.factor(as.numeric(sapply( sapply( sapply(strsplit(as.character(time_vec),' '), '[', 2), strsplit, ':' ), '[',1)))
   data$Is.Holiday  = as.factor(as.numeric(isHoliday( timeDate(time_vec) )))
-  data$time        = (time_vec - time_vec[1]) / 3600
+  data$time        = as.numeric(time_vec - time_vec[1]) / 3600
   data.dum         = dummy.data.frame(data=data, sep='.', all=T)
   hourly_vars      = names(data.dum)[which(regexpr('Hour.Of.Day', names(data.dum))>0)]
   monthly_vars     = names(data.dum)[which(regexpr('Month', names(data.dum))>0)]
@@ -344,35 +352,41 @@ setMethod('fitOLS',
             fmla_full = as.formula(paste('consumption ~ ',
                                          paste(predictors,collapse='+')))
             
-            # perform regression
+            # perform regression            
             OLS.null = lm( fmla_null, data = na.omit(data.dum) )
             OLS.step = step(OLS.null, direction = 'forward', trace = 0, 
                               scope = list(upper = fmla_full, lower = fmla_null))
             fmla_fin = as.formula(paste( 'consumption ~ ', 
                                   paste(names(coef(OLS.step))[-1], collapse = '+')))
-            OLS.step = lm( fmla_fin, data = data.dum, na.action = na.exclude )
+            OLS.step = lm( fmla_fin, data = na.omit(data.dum), na.action = na.exclude )
             
             # ______________________________________________________________
             # Investigate structure of residual
                       
             # test for heteroskedasticity using Breusch-Pagan test
             require('lmtest')
-            bp.test        = bptest(OLS.step, data = data.dum)
+            bp.test        = bptest(OLS.step, data = na.omit(data.dum))
             chi2.95        = qchisq(0.95,bp.test$parameter+1)
             heterosc.BP.95 = bp.test$statistic > chi2.95
       
             # test for serial correlation using Durbin-Watson test
-            dw.test    = dwtest(OLS.step, data = data.dum)
+            dw.test    = dwtest(OLS.step, data = na.omit(data.dum))
             sercorr.DW = dw.test$alternative == "true autocorrelation is greater than 0"
             
+            # which coefficients are statistically significant at least at 0.1 level?
+            summ.fit = summary(OLS.step)
+            idx.sigf = which(summ.fit$coefficients[,4] <= 0.1)
+            coef.sig = summ.fit$coefficients[idx.sigf,]
+            
             # save model result
-            has.NAs  = complete.cases(data.dum)
             .Object@OLS = list()
-            .Object@OLS[['fit.summary']] = summary(OLS.step)
+            .Object@OLS[['fit.summary']] = summ.fit
             .Object@OLS[['fitted.vals']] = predict(OLS.step)
             .Object@OLS[['heterosked']]  = heterosc.BP.95
             .Object@OLS[['serial.corr']] = sercorr.DW
+            .Object@OLS[['coef.signif']] = coef.sig
                       
+            print('...done!')
             rm(list=c('OLS.null', 'OLS.step', 'res', 'data.dum'))
             return(.Object)
           }
@@ -385,13 +399,16 @@ library('depmixS4')
 setGeneric(
   name = "fitHMM",
   def = function(.Object, verbose = T, Kmin = 3, Kmax = 3, constrMC = F, 
-                 response_vars = NULL, transitn_vars = NULL)
+                 response_vars = NULL, transitn_vars = NULL, ols_vars = T)
     {standardGeneric("fitHMM")}
 )
 setMethod('fitHMM',
           signature  = 'Person',
           definition = function(.Object, verbose=T, Kmin = 3, Kmax = 3, constrMC = F,
-                                response_vars = NULL, transitn_vars = NULL){
+                                response_vars = NULL, transitn_vars = NULL, ols_vars = T){
+            
+            if (verbose)
+              cat(paste('*** HMM analysis for Person-SPID (', .Object@PER_ID,',', .Object@SP_ID, ')***\n', sep=''))
             
             # _____________________________
             # Set up depmixS4 model object
@@ -426,13 +443,22 @@ setMethod('fitHMM',
               wthr_vars     = intersect(included_vars, wthr_vars)
             }
             existing_vars = c(hourly_vars, monthly_vars, weekly_vars, holiday_vars, wthr_vars, trend_vars)
-            response_vars = intersect(response_vars, existing_vars)
+            response_vars = intersect(response_vars, existing_vars)            
             transitn_vars = intersect(transitn_vars, existing_vars)
             
+            # do we include just variables that are significant in regression?
+            if (ols_vars) {
+              ols_vars_names= rownames(.Object@OLS[['coef.signif']])
+              if (length(ols_vars_names)>0) 
+                response_vars = intersect(response_vars, ols_vars_names)             
+            }
+
+            # define response model
             fmla_response = 'consumption ~ 1'
             if (length(response_vars)>0) 
               fmla_response = paste('consumption ~ ',paste(response_vars,collapse='+'))
             fmla_response   = as.formula(fmla_response)
+            print(fmla_response)
             
             # define transition model
             fmla_transitn = '~ 1'
@@ -449,16 +475,30 @@ setMethod('fitHMM',
             K_opt   = Kmin
             for (K in Kmin:Kmax) {
               
+              # initialize state parameters with OLS estimates?
+              respstart = NULL
+              if (ols_vars) {   
+                vars_ok = response_vars
+                if ('(Intercept)' %in% ols_vars_names) {
+                  vars_ok = c('(Intercept)',vars_ok)
+                  ols_vars_coef = .Object@OLS[['coef.signif']][vars_ok,1]
+                } else {
+                  ols_vars_coef = .Object@OLS[['coef.signif']][vars_ok,1]  
+                  ols_vars_coef = c(0,ols_vars_coef)
+                }
+                respstart     = rep(c(ols_vars_coef,0), K)
+              }
+              
               # unconstrained model
               set.seed(1)
               mod_unc <- depmix(response = fmla_response, 
                                 transition = fmla_transitn,
                                 data = na.exclude(data.dum), 
                                 nstates = K, 
+                                respstart = respstart,
                                 family = gaussian(),
                                 instart = runif(K))
-                                #trstart = trstart, respstart = respstart)
-              fm_unc  <- fit(mod_unc, verbose = verbose, 
+              fm_unc  <- fit(mod_unc, verbose = verbose, useC = T, 
                              emcontrol = em.control(maxit = 50, tol = 1e-3))
               
               if (constrMC) {
@@ -586,10 +626,11 @@ setMethod('fitHMM',
 
 library('linkcomm')
 library('useful')
+library('reshape')
 
 setMethod('plot',
           signature  = 'Person',
-          definition = function(x, type = 'default', interval = NULL, ...){
+          definition = function(x, type = 'default', interval = NULL, verbose = T, ...){
             
             if (verbose)
               cat(paste('*** ', type, ' Plot for Person-SPID (', x@PER_ID,',', x@SP_ID, ') ***\n', sep=''))
@@ -681,15 +722,15 @@ setMethod('plot',
                                    labels = format(df.mlt.hmm$Time[seq(1,length(df.mlt.hmm$Time), length.out=10)], 
                                                    format = "%a,%m/%d %H:00")) + 
                 theme_bw() +
-                opts(panel.grid.major = theme_blank(),
-                       panel.grid.minor = theme_blank(),
-                       panel.background = theme_blank(),
-                       axis.title.x = theme_blank(),
-                       panel.background = theme_rect(fill = "transparent",colour = NA),
-                       axis.ticks = theme_blank() ) + 
+                theme(panel.grid.major = element_blank(),
+                       panel.grid.minor = element_blank(),
+                       panel.background = element_blank(),
+                       axis.title.x = element_blank(),
+                       panel.background = element_rect(fill = "transparent",colour = NA),
+                       axis.ticks = element_blank() ) + 
                 ylab("kWh") + 
-                opts( title=paste("Zoom-In: States and Observed Emissions (", 
-                                    x@PER_ID, ',', x@SP_ID,')',sep=''), size=1)
+                theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
+                ggtitle( paste("Zoom-In: States and Observed Emissions (", x@PER_ID, ',', x@SP_ID,')',sep=''))
               
               return(plt)
             }
@@ -718,22 +759,21 @@ setMethod('plot',
               
               plt = ggplot(df) + 
                 geom_point(aes(x = State, y = Sigma, color = State, size = Mean)) + 
-                scale_size(to = c(2, 12)) + 
+                #scale_size(to = c(2, 12)) + 
                 geom_segment(aes(x = Mean.i, xend = Mean.j, 
                                  y = Sigma.i, yend = Sigma.j, 
                                  size=P, alpha=P), data=df.P) +
                 theme_bw() +
-                opts(panel.grid.major = theme_blank(),
-                     panel.grid.minor = theme_blank(),
-                     panel.background = theme_blank(),
-              #        axis.title.y = theme_blank(),
-              #        axis.title.x = theme_blank(),
+                theme(panel.grid.major = element_blank(),
+                     panel.grid.minor = element_blank(),
+                     panel.background = element_blank(),
+              #        axis.title.y = element_blank(),
+              #        axis.title.x = element_blank(),
                      legend.position = "none",
-                     panel.background = theme_blank(),
-                     axis.ticks = theme_blank(),
-                     ylab = 'Sigma', xlab = 'Mean',
-                     title=paste("State Space Diagram (", 
-                                 x@PER_ID, ',', x@SP_ID, ')',sep=''), size=1)            
+                     panel.background = element_blank(),
+                     axis.ticks = element_blank()) + 
+                ylab('Sigma') + xlab('Mean') + 
+                ggtitle(paste("State Space Diagram (", x@PER_ID, ',', x@SP_ID, ')',sep=''))
               return(plt)
             }
             
@@ -759,13 +799,13 @@ setMethod('plot',
                               colour="black", width=.1, position=pd, alpha=0.2) +
                 geom_line(position=pd) + geom_point(position=pd) + 
                 theme_bw() +
-                opts(panel.grid.major = theme_blank(),
-                     panel.grid.minor = theme_blank(),
-                     panel.background = theme_blank(),
-                     panel.background = theme_rect(fill = "transparent",colour = NA),
-                     axis.ticks = theme_blank()) + 
+                theme(panel.grid.major = element_blank(),
+                     panel.grid.minor = element_blank(),
+                     panel.background = element_blank(),
+                     panel.background = element_rect(fill = "transparent",colour = NA),
+                     axis.ticks = element_blank()) + 
                      ylab('Confidence') + xlab('Hour') + 
-                opts( title=paste("Avg. Prediction Confidence (", x@PER_ID, ',', x@SP_ID, ')',sep=''), size=1)
+                ggtitle( paste("Avg. Prediction Confidence (", x@PER_ID, ',', x@SP_ID, ')',sep=''))
               
               return(plt)
             }
@@ -781,15 +821,15 @@ setMethod('plot',
               df = data.frame(State = factor(states), Residual = hmm.residual)
               plt = ggplot(df) + 
                 geom_density(aes(x = Residual, colour = State), size=2) + 
-                opts(legend.position = c(0.9,0.7)) + 
+                theme(legend.position = c(0.9,0.7)) + 
                 theme_bw() + facet_wrap( ~ State, nrow=1, scales = 'free') + 
-                opts(panel.grid.major = theme_blank(),
-                     panel.grid.minor = theme_blank(),
-                     panel.background = theme_blank(),
-                     panel.background = theme_rect(fill = "transparent",colour = NA),
-                     axis.ticks = theme_blank()) + 
+                theme(panel.grid.major = element_blank(),
+                     panel.grid.minor = element_blank(),
+                     panel.background = element_blank(),
+                     panel.background = element_rect(fill = "transparent",colour = NA),
+                     axis.ticks = element_blank()) + 
                      ylab('pdf') + xlab('Residual') + 
-                opts(title = "HMM Residuals")
+                ggtitle("HMM Residuals")
               return(plt)
             }
             
@@ -804,13 +844,13 @@ setMethod('plot',
               plt = ggplot(df, aes(sample = Residual)) + facet_wrap(~State) +  
                 stat_qq(geom = "point", size = 2, position = "identity") + 
                         #dparams = x@HMM$response$stdev) + 
-                opts(legend.position = c(0.9,0.7)) + 
+                theme(legend.position = c(0.9,0.7)) + 
                 theme_bw() + facet_wrap( ~ State, nrow=1) + 
-                opts(panel.grid.major = theme_blank(),
-                     panel.grid.minor = theme_blank(),
-                     panel.background = theme_blank(),
-                     panel.background = theme_rect(fill = "transparent",colour = NA),
-                     axis.ticks = theme_blank()) + 
+                theme(panel.grid.major = element_blank(),
+                     panel.grid.minor = element_blank(),
+                     panel.background = element_blank(),
+                     panel.background = element_rect(fill = "transparent",colour = NA),
+                     axis.ticks = element_blank()) + 
                      ylab('Sample Quantiles') + xlab('Theoretical Quantiles')
             }
 })

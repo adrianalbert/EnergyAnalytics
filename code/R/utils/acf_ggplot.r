@@ -26,15 +26,15 @@ acf_ggplot <- function(x, x.ref = NULL, conf.level = 0.95,
                    fill=factor(variable))) +                    
                  geom_bar(position="dodge", stat="identity")
    q <- q + theme_bw() +
-    opts(panel.grid.major = theme_blank(),
-         panel.grid.minor = theme_blank(),
-         panel.background = theme_blank(),
-         axis.title.y = theme_blank(),
-         axis.title.x = theme_blank(),
+    theme(panel.grid.major = element_blank(),
+         panel.grid.minor = element_blank(),
+         panel.background = element_blank(),
+         axis.title.y = element_blank(),
+         axis.title.x = element_blank(),
          legend.position = c(0.9,0.6),
-         panel.background = theme_rect(fill = "transparent",colour = NA),
-         axis.ticks = theme_blank() ) + 
-    opts( title=title, size=1)
+         panel.background = element_rect(fill = "transparent",colour = NA),
+         axis.ticks = element_blank() ) + 
+    ggtitle( title )
 
    q <- q + geom_hline(yintercept = -ciline, color = "blue", size = 0.8, alpha=0.5)
    q <- q + geom_hline(yintercept = ciline, color = "blue", size = 0.8, alpha = 0.5)
