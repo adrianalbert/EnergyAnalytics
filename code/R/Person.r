@@ -385,8 +385,8 @@ setMethod('fitOLS',
             .Object@OLS[['heterosked']]  = heterosc.BP.95
             .Object@OLS[['serial.corr']] = sercorr.DW
             .Object@OLS[['coef.signif']] = coef.sig
+            .Object@OLS[['all.covars']]  = predictors
                       
-            print('...done!')
             rm(list=c('OLS.null', 'OLS.step', 'res', 'data.dum'))
             return(.Object)
           }
@@ -398,13 +398,13 @@ setMethod('fitOLS',
 library('depmixS4')
 setGeneric(
   name = "fitHMM",
-  def = function(.Object, verbose = T, Kmin = 3, Kmax = 3, constrMC = F, 
+  def = function(.Object, verbose = T, Kmin = 3, Kmax = 3, constrMC = NULL, 
                  response_vars = NULL, transitn_vars = NULL, ols_vars = T)
     {standardGeneric("fitHMM")}
 )
 setMethod('fitHMM',
           signature  = 'Person',
-          definition = function(.Object, verbose=T, Kmin = 3, Kmax = 3, constrMC = F,
+          definition = function(.Object, verbose=T, Kmin = 3, Kmax = 3, constrMC = NULL,
                                 response_vars = NULL, transitn_vars = NULL, ols_vars = T){
             
             if (verbose)
@@ -472,8 +472,9 @@ setMethod('fitHMM',
             # set up and fit model
             minBIC  = Inf
             vec_BIC = c()
-            K_opt   = Kmin
-            for (K in Kmin:Kmax) {
+            K   = Kmin
+            K_opt = Kmin
+#             for (K in Kmin:Kmax) {
               
               # initialize state parameters with OLS estimates?
               respstart = NULL
@@ -489,52 +490,54 @@ setMethod('fitHMM',
                 respstart     = rep(c(ols_vars_coef,0), K)
               }
               
+              # place structure on transition matrix?
+              if (!is.null(constrMC)) {
+                # define constraints on transition matrix: telescope model
+                if (constrMC == 'telescope') {
+                  A = matrix(0, nrow = K, ncol = K)
+                  for (i in 1:K) {
+                    if (i<K) A[i,i+1] = 1
+                    A[i,i]   = 1
+                    A[i,1]   = 1
+                  }            
+                }
+                # define forward-jump model
+                if (constrMC == 'fwdjump') {
+                  A = matrix(0, nrow = K, ncol = K)
+                  for (i in 1:K) {
+                    A[i,i:K] = 1                    
+                  }    
+                  A[K,1] = 1
+                }
+                A = A / rowSums(A)
+                A = as.numeric(A)    
+                trstart = A
+              } else trstart = NULL
+              
               # unconstrained model
               set.seed(1)
-              mod_unc <- depmix(response = fmla_response, 
-                                transition = fmla_transitn,
-                                data = na.exclude(data.dum), 
-                                nstates = K, 
-                                respstart = respstart,
-                                family = gaussian(),
-                                instart = runif(K))
-              fm_unc  <- fit(mod_unc, verbose = verbose, useC = T, 
-                             emcontrol = em.control(maxit = 50, tol = 1e-3))
+              mod <- depmix(response  = fmla_response, 
+                            transition= fmla_transitn,
+                            data      = na.exclude(data.dum), 
+                            nstates   = K, 
+                            respstart = respstart,
+                            trstart   = trstart,
+                            family    = gaussian(),
+                            instart   = runif(K))
+              fm  <- fit(mod, verbose = verbose, useC = T, 
+                         emcontrol = em.control(maxit = 50, tol = 1e-3))
               
-              if (constrMC) {
-                # define constraints on transition matrix: telescope model
-                A = matrix(0, nrow = K, ncol = K)
-                for (i in 1:K) {
-                  if (i<K) A[i,i+1] = 1
-                  A[i,i]   = 1
-                  A[i,1]   = 1
-                }            
-                
-                # set constraints on transition matrix in depmix model & fit constrained model
-                setpars(mod_unc, value = 1:npar(mod_unc))
-                pars <- c(unlist(getpars(fm_unc)))
-                conpat = rep(1,npar(mod_unc))
-                for (i in 1:K)
-                  for (j in 1:K)
-                    if (A[i,j] == 0) {
-                      idx_constr = K * (i-1) * (length(lifestyl_vars)+1) + 
-                                   (1:(length(lifestyl_vars)+1)) * K + j
-                      pars[idx_constr] = 0
-                      conpat[idx_constr] = 0
-                    }                      
-                fm <- setpars(mod_unc, pars)
-                set.seed(1)
-                fm <- fit(fm, equal = conpat, verbose=T)                
-              } else fm = fm_unc
-                            
               # retain measures of fit
               vec_BIC[as.character(K)] = BIC(fm)
-              if (BIC(fm) < minBIC) {
-                fm_opt = fm
-                minBIC = BIC(fm)
-                K_opt  = K
-              }
-            }
+#               if (BIC(fm) < minBIC) {
+#                 fm_opt = fm
+#                 minBIC = BIC(fm)
+#                 K_opt  = K
+#               }
+#             }
+
+            K_opt  = K
+            fm_opt = fm
             
             # ______________________
             # Save computation
@@ -568,14 +571,10 @@ setMethod('fitHMM',
             .Object@HMM[['transition']] = params
             
             # Viterbi states
-#             .Object@HMM[['states']]         = data.frame(matrix(nrow=length(.Object@consumption), ncol=K_opt+1))
-#             .Object@HMM[['states']][idx_ok,]= posterior(fm_opt)
             .Object@HMM[['states']] = posterior(fm_opt)
             
             # Predicted state means
             means = sapply(1:K_opt, function(k) predict(fm_opt@response[[k]][[1]])) 
-#             .Object@HMM[['means']]         = rep(NA, length(.Object@consumption))
-#             .Object@HMM[['means']][idx_ok] = sapply(1:nrow(means), function(j) means[j,.Object@HMM[['states']][j,1]])
             .Object@HMM[['means']] = sapply(1:nrow(means), function(j) means[j,.Object@HMM[['states']][j,1]])
 
             # other parameters
@@ -610,11 +609,11 @@ setMethod('fitHMM',
             # test normality of residuals in each state
             is_normal = sapply(1:.Object@HMM[['nStates']], function(j) {
               idx = which(.Object@HMM[['states']][,1] == j)
-              res = ks.test(residuals[idx], "pnorm", 0, .Object@HMM[['response']][['stdev']][j])
+              res = shapiro.test(residuals[idx])
               pval= res$p.value
               return(pval)
             })
-            .Object@HMM$ks_test = is_normal
+            .Object@HMM$sw_test = is_normal
                                
             return(.Object)
           }
@@ -835,7 +834,7 @@ setMethod('plot',
             
             if (type == 'HMM-qq') {
               df      = data.frame(State = factor(states), Residual = hmm.residual)
-              pvector = x@HMM$ks_test
+              pvector = x@HMM$sw_test
               levels(df$State) = paste(levels(df$State), round(pvector, digits=5), sep=':')
               for (j in 1:x@HMM[['nStates']]) {
                 idx = which(df$Residual == j)
