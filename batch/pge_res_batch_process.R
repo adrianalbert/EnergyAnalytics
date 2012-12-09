@@ -9,8 +9,8 @@ if(Sys.info()['sysname'] == 'Windows') {
 }
 
 # run 'source' on all includes to load them 
-source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
-#source(file.path(conf.basePath,'stanfordConf.R'))     # Stanford on site specific configuration
+#source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
+source(file.path(conf.basePath,'stanfordConf.R'))     # Stanford on site specific configuration
 source(file.path(conf.basePath,'DataClasses.R'))       # Object code for getting meter and weather data 
 source(file.path(conf.basePath,'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
 source(file.path(conf.basePath,'basicFeatures.R'))     # typical max, min, mean, range
