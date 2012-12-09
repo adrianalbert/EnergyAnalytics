@@ -29,7 +29,7 @@ runModelsByZip = function(zipArray) {
              completedZip=c(),
              attemptedSP=c(),
              completedSP=c())
-  triggerZip = '94610';
+  #triggerZip = '94610';
   triggered = FALSE;
   # oakland, sacramento, bakersfield, fresno
   #94610, 95823, 93304, 93727
