@@ -21,7 +21,6 @@
 library('methods')
 library('zoo')
 library('lubridate')
-library('data.table')
 
 # clean-up previous definitions of methods for class Person
 removeClass('Person')
@@ -535,7 +534,7 @@ setMethod('fitHMM',
 
 library(igraph)
 library('useful')
-library('reshape')
+library('reshape2')
 library('RColorBrewer')
 
 setMethod('plot',

@@ -33,7 +33,6 @@ NOBS_THRESH = 180   # discard users with less than a 1/2 year at a given premise
 
 plots_path  = '~/Dropbox/ControlPatterns/plots/'
 save_path   = '~/EnergyAnalytics/fits/'
-info_file   = '~/EnergyAnalytics/data/per_sp_id_info.RData'
 prof_file   = '~/EnergyAnalytics/Rprof.out'
 
 # ------------------------------------------------
@@ -98,7 +97,7 @@ analysis_wrapper <- function(iZip, zips, type = 'sql') {
     # perform analysis flow
     ptm <- proc.time()
     res = try(personAnalysis(cur_data, cur_wthr, usr, zips[iZip],
-                             plots = T, verbose = T,
+                             plots = F, verbose = F,
                              plots_path = plots_path, fits_path = save_path,
                              transitn.df = transitn.df, response.df = response.df, 
                              ols.coefs = ols.coefs))
