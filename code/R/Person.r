@@ -12,7 +12,7 @@
 # - save RData file
 # 
 # Adrian Albert
-# Last modified: November 2012.
+# Last modified: December 2012.
 # -----------------------------------------------------------------------
 
 # Person class: data & analysis for a unique tuple (PER_ID, SP_ID)
@@ -21,7 +21,12 @@
 library('methods')
 library('zoo')
 library('lubridate')
+library('data.table')
+
+# clean-up previous definitions of methods for class Person
 removeClass('Person')
+
+options(error = recover)
 
 # ________________________
 # Class definition
@@ -29,18 +34,16 @@ removeClass('Person')
 setClass(
   Class = "Person",
   representation = representation(
-    PER_ID     = "numeric",           # unique person ID
-    SP_ID      = "numeric",           # unique service point ID
+    UID        = "numeric",           # unique person ID
     ZIPCODE    = "numeric",           # current premise zipcode
     N_OBS      = "numeric",           # number of data points
     N_DAYS     = "numeric",           # number of days (= N_OBS * 24)
-    attr_const = "data.frame",        # Attributes of this tuple that are constant in time
-    attr_vary  = "data.frame",        # Attributes of this tuple that vary in time
-    timestamps = "POSIXct",           # vector of timestamps
-    weather    = "zoo",               # weather covariates
-    consumption= "zoo",               # hourly consumption 
+    timestamps = "character",         # vector of timestamps
+    weather    = "data.frame",        # weather covariates
+    consumption= "numeric",           # hourly consumption 
     OLS        = "list",              # summary of OLS model
-    HMM        = "list"               # summary of HMM model
+    HMM        = "list",               # summary of HMM model
+    data.tmp   = 'data.frame'
     )
 )
 
@@ -49,175 +52,118 @@ setClass(
 
 setMethod(f = "initialize", 
           signature = "Person",
-          definition = function(.Object, raw_data, res = 60, verbose = T, log = F) {
+          definition = function(.Object, raw_data, UID, ZIP5, res = 60, verbose = T, log = F, long = T) {
             
-            .Object@PER_ID = unique(raw_data$PER_ID)
-            .Object@SP_ID  = unique(raw_data$SP_ID)
-            .Object@ZIPCODE= unique(raw_data$ZIP5)
+            .Object@UID     = UID
+            .Object@ZIPCODE = ZIP5
             
             if (verbose) 
-              cat(paste('*** Initializing Person-SP ( ', .Object@PER_ID, ',', .Object@SP_ID,') ***\n', sep=''))
+              cat(paste('*** Initializing Person (', .Object@UID, ',', .Object@ZIPCODE,') ***\n', sep=''))
                         
-            # ______________________________________________
-            # Clean up data: remove some obvious errors
-            
-            # remove very unfrequent Proxy IDs
-            tab_psa_id = table(raw_data$PSA_ID) / nrow(raw_data)
-            infreq_ids = which(tab_psa_id < 0.05)
-            if (length(infreq_ids) > 0) {
-              idx_rm   = which(raw_data$PSA_ID %in% names(infreq_ids))
-              raw_data = raw_data[-idx_rm,]
-            }
-
             # ______________________________________________
             # Format consumption data to timeseries format
 
-            # columns referring to consumption
-            days        = as.POSIXct(raw_data$date,tz="PST8PDT", '%Y-%m-%d')
-            days        = seq(min(days), max(days), by = 3600*24)
-            # create a row of hourly values for each day
-            # sapply returns an array of numeric epoch seconds (for origin '1970-01-01')
-            dateMat     = sapply(days,FUN=function(x) x + (0:(24-1) * 3600))            
-            # flatten into a vector and re-convert into date objects
-            .Object@timestamps  = as.POSIXct(as.vector(dateMat),origin='1970-01-01')
-            idx_order   = order(.Object@timestamps)
-            .Object@timestamps  = .Object@timestamps[idx_order]
             cons_names  = paste('hkw', 1:(24*60/res), sep='')
-            kwhMat      = raw_data[idx_order,cons_names]
-            consumption = as.vector(t(kwhMat))
-            consumption = consumption[idx_order]
+            if (long) {                                            # long format (Nx1)                          
+              # columns referring to consumption
+              days        = raw_data$date              
+              hours       = paste(rep(formatC(0:23, flag=0, width=2), length(days)), ':00:00', sep='')
+              days_times  = rep(days, each = 24)
+              days_times  = paste(days_times, hours, sep=' ')
+              consumption = as.vector(t(raw_data[,cons_names]))
+            } else {
+              consumption = raw_data[,cons_names]         # day-profile format (Nx24)
+              days_times  = raw_data$date 
+            }
             
-            # snap to common time vector
-            orig        = .Object@timestamps[1]
-            dest        = .Object@timestamps[length(.Object@timestamps)]
-            time_vec    = seq(orig, dest, by=60*60)  
+            # remove possible duplicates
+            idx_dup = which(duplicated(days_times))
+            if (length(idx_dup)>0) {
+              raw_data = raw_data[-idx_dup,]
+              days_times=days_times[-idx_dup]
+            }                        
+            .Object@timestamps  = days_times
+            
+            # if data is all zeros
+            rc = range(na.omit(consumption))
+            if (rc[2] - rc[1] == 0) {
+              stop('Error: data supplied to constructor has no variation!')
+            }
+
+            # is the log of consumption desired?
             if (log) {
               tmp = log(consumption)
               tmp[which(!is.finite(tmp))] = 0
-              .Object@consumption = zoo(tmp, order.by = time_vec)
+              .Object@consumption = tmp
             } else
-              .Object@consumption = zoo(consumption, order.by = time_vec)
-            
+              .Object@consumption = consumption
+                        
             # initialize default weather object
-            .Object@weather     = zoo(NULL)
-
-            # _______________________________________________
-            # Format attributes data: varying vs not varying
-            
-            # columns referring to person attributes (should not change in time)
-            attr_const_names = c('CRSCODE', 'ENDUSE', 'CARE', 'STATUS', 'COMMTYPE', 
-                                'FERA', 'CLIMSMRT', 'ACCTTYPE', 'DRPROG', 'CEEPROG', 
-                                'max_total_duration',                   
-                                'renter', 'sfo', 'owned_premises', 'PRIORITY', 'ua_uc_ru', 'median_income',
-                                'median_income_quantiles', 'ro', 'vro', 
-                                'good_sample_period', 'vro_total_good_sample_period', 'num_prems_for_vro',
-                                'SP_ID', 'SA_TYPE', 'RSCHED', 'PSA_ID', 'SERCITY', 'GCOUNTY', 'DIVOFF', 
-                                'CLIMATE', 'PREMTYPE', 'SM_SPST', 'NETMETER', 'MSTRMTR',
-                                'ZIP5', 'AREA', 'WTHRSTN', 'CECCLMZN', 'DTONPREM_DATE', 'total_duration', 
-                                'num_good_people_at_prem')
-            # get unique values for attributes          
-            # should be only one value per person!
-            attr_levels = sapply(attr_const_names, function(c) { length(unique(raw_data[,c])) })
-            mult_levels = which(attr_levels > 1)
-            attr_vary_names = c()
-            if (length(mult_levels)>0) {
-              attr_vary_names  = c(attr_vary_names, attr_const_names[mult_levels])
-              attr_const_names = attr_const_names[-mult_levels]
-            }            
-            # set person-specific attributes
-            .Object@attr_const = as.data.frame(t(sapply(raw_data[,attr_const_names], unique)))
-            # set premise-specific attributes
-            .Object@attr_vary  = raw_data[,attr_vary_names]
-            
-            # _____________________________
-            # Check for object consistency 
-            
-            #validObject(.Object)
-            
+            .Object@weather     = data.frame()
+          
             # _________________________________________
             # Compute summary information of interest
             
-            .Object = computeStats(.Object)
+            .Object@N_OBS = length(.Object@consumption) 
+            .Object@N_DAYS  = .Object@N_OBS / 24
             
             return(.Object)
           })
 
-# __________________________________
-# Validator method for class Person
-
-validityPerson = function(object) {
-  error = (length(object@timestamps) != length(object@consumption))
-  if (error) cat('Timestamps and consumption have different lengths!\n')
-  return (!error)
-}
-setValidity("Person", validityPerson)
-
-# __________________________________
-# Compute summary stats for object
-
-setGeneric(
-  name = "computeStats",
-  def = function(.Object, verbose=T){standardGeneric("computeStats")}
-)
-setMethod('computeStats',
-          signature  = 'Person',
-          definition = function(.Object, verbose=T){
-            if (verbose) 
-              cat(paste('*** Computing stats for person (', .Object@PER_ID, ',', .Object@SP_ID, ') ***\n',sep=''))
-            .Object@N_OBS   = length(.Object@consumption) 
-            .Object@N_DAYS  = .Object@N_OBS / 24
-            return(.Object)
-          }
-)
 
 # ____________________________________________________________
 # Method to add in exogenous covariates (weather, billing)
 
 setGeneric(
   name = "addWeather",
-  def = function(.Object, wthr_data, verbose = T, imputate = T){standardGeneric("addWeather")}
+  def = function(.Object, wthr_data, verbose = T){standardGeneric("addWeather")}
 )
 setMethod('addWeather',
           signature  = 'Person',
-          definition = function(.Object, wthr_data, verbose=T, imputate = T){
+          definition = function(.Object, wthr_data, verbose=T){
             if (verbose) 
-              cat(paste('*** Adding weather data for Person-SPID (', .Object@PER_ID, ',', .Object@SP_ID, ') ***\n',sep=''))
+              cat(paste('*** Adding weather data for Person', .Object@UID,' ***\n',sep=''))
             
             # select covariates of interest
-            wthr_time0  = as.POSIXct(wthr_data$date)
+            wthr_times  = wthr_data$date
             wthr_names  = c('TemperatureF', 'DewpointF', 'Pressure', 'WindSpeed', 'Humidity', 
                             'HourlyPrecip', 'SolarRadiation')
-            wthr_data   = wthr_data[,wthr_names]            
+            time_names  = c('DayOfWeek', 'HourOfDay', 'Month', 'IsHoliday')
+            wthr_data   = wthr_data[,intersect(names(wthr_data), c(wthr_names, time_names))]            
               
             # remove duplicate timestamps in weather data, if any
-            idx_dup     = which(duplicated(wthr_time0))
+            idx_dup     = which(duplicated(wthr_times))
             if (length(idx_dup) > 0) {
-              wthr_time0= wthr_time0[-idx_dup]
+              wthr_times= wthr_times[-idx_dup]
               wthr_data = wthr_data[-idx_dup,]
             }
             
-            # is there weather data at times that match consumption data?            
-            idx_ok      = which(wthr_time0 >= min(.Object@timestamps) & 
-                                wthr_time0 <= max(.Object@timestamps))
-            if (length(idx_ok) == 0) return(.Object) else {
-              wthr_data = zoo(wthr_data[idx_ok,], order.by = wthr_time0[idx_ok])
-              wthr_time0= wthr_time0[idx_ok]
+            # remove NAs, if any
+            idx.na = which(!complete.cases(wthr_data)) 
+            if (length(idx.na)>0){
+              wthr_data = wthr_data[-idx.na,]
+              wthr_times= wthr_times[-idx.na]
             }
-                                    
-            # create cleaned weather data object
-            wthr_time   = as.POSIXct(seq(min(.Object@timestamps), max(.Object@timestamps), by=3600))
-            wthr_data   = merge.zoo(wthr_data, zoo(order.by = wthr_time), all = c(F,T))
-            names(wthr_data) = wthr_names
             
-            # match dates for weather and consumption (assume both are ordered by date/time)
-            .Object@weather = merge.zoo(wthr_data, zoo(0, order.by = as.POSIXct(.Object@timestamps)), all = c(F,T))
-            
-            .Object@weather = .Object@weather[,-ncol(.Object@weather)]
-            
-            # imputate missing values
-            if (imputate == T) .Object = imputateMissingValues(.Object)
-            
-            rm(list = c('wthr_data', 'wthr_names', 'wthr_time'))
+            # is there weather data at times that match consumption data?            
+            idx_ok      = which(wthr_times %in% .Object@timestamps)            
+            if (length(idx_ok) > 0) {
+              wthr_data = wthr_data[idx_ok,]
+              wthr_times= wthr_times[idx_ok]
+            } else {
+              stop(paste('!!! No weather data available for user', .Object@UID))
+            }
+            idx_ok_cons  = which(.Object@timestamps %in% wthr_times)            
+                                                
+            # update object
+            .Object@weather     = wthr_data
+            .Object@timestamps  = wthr_times
+            .Object@consumption = .Object@consumption[idx_ok_cons]
+            .Object@N_OBS       = length(.Object@consumption) 
+            .Object@N_DAYS      = round(.Object@N_OBS / 24)
+
+            rm(list = c('wthr_data', 'wthr_names', 'wthr_times'))
+            gc()
             return(.Object)
           }
 )
@@ -229,94 +175,74 @@ setMethod('show',
           signature  = 'Person',
           definition = function(object){
             cat('*** Person Object ***\n')
-            cat(paste('Person ID', object@PER_ID, '; Service Point ID', object@SP_ID, '\n'))            
-            cat(sprintf('# Days = %d; # Observations = %d\n', object@N_DAYS, object@N_OBS))
-            cat(sprintf('Zipcode = %d\n', object@ZIPCODE))
-            cat(sprintf('# Time range: %s - %s\n', object@timestamps[1], object@timestamps[object@N_OBS]))            
+            
+            # basic info
+            cat(paste('Person ID', object@UID, '\n'))            
+            cat(sprintf('# Days = \t%d; \n# Observations =%d\n', object@N_DAYS, object@N_OBS))
+            cat(sprintf('Zipcode = \t%d\n', object@ZIPCODE))
+            cat(sprintf('# Time range: \t%s - %s\n', object@timestamps[1], object@timestamps[object@N_OBS]))   
+            
+            # info on data quality
+            wthr_names  = c('TemperatureF', 'DewpointF', 'Pressure', 'WindSpeed', 'Humidity', 
+                            'HourlyPrecip', 'SolarRadiation')
+            wthr_names  = intersect(wthr_names, names(object@weather))
+            wthr_na_col = sapply(wthr_names, function(j){
+              length(which(is.na(object@weather[,j])))
+            })
+            kwh_na      = length(which(is.na(object@consumption)))
+            
+            cat(paste(wthr_names, '\t:', wthr_na_col/nrow(object@weather)*100, '% NAs\n', sep=''))
+            cat(paste('kWh\t\t:', kwh_na/nrow(object@weather)*100, '% NAs\n', sep=''))
+            
+            # info on model fit 
+            if (!is.null(object@OLS)) {
+              cat(sprintf('OLS MARE =\t%f; OLS pval =\t%f\n', object@OLS$MARE, mean(object@OLS$p.values)))
+            }        
+            if (!is.null(object@HMM)) {
+              cat(sprintf('HMM MARE =\t%f; HMM pval =\t%f\n', object@HMM$MARE, mean(object@HMM$p.values)))
+            }
+            
             cat('*** END: Person Object ***\n')
           })
-
-# ___________________________________________
-# Imputate missing observations using EM/SVD
-
-library('Amelia')
-library('imputation')
-setGeneric(
-  name = "imputateMissingValues",
-  def = function(.Object,verbose = T){standardGeneric("imputateMissingValues")}
-)
-setMethod('imputateMissingValues',
-          signature  = 'Person',
-          definition = function(.Object, verbose=T){
-            if (verbose) 
-              cat(paste('*** Imputating missing values for Person-SPID (', .Object@PER_ID,',', .Object@SP_ID, ')***\n', sep=''))
-            
-              X.imp    = coredata(.Object@weather)
-              sd_col   = apply(X.imp, 2, function(x) sd(x,na.rm=T))
-              rm.vars  = which(sd_col == 0 | is.na(sd_col))
-              if (length(rm.vars) == ncol(X.imp)) {
-                print('All non-NA covariate values are constant - cannot impute!')
-                .Object@weather = zoo(NULL)
-              } else {
-                if (length(rm.vars)>0) X.imp = X.imp[,-rm.vars]
-          #     k        = cv.SVDImpute(as.matrix(X.imp))$k
-          #     X.ok.imp = SVDImpute(as.matrix(X.imp), k)    
-          #     X.ok.imp = as.data.frame(X.ok.imp$x)
-                bds        = matrix(nrow=ncol(X.imp), ncol=3)
-                bds[,1]    = 1:ncol(X.imp)
-                bds[,2:ncol(bds)] = t(sapply(1:ncol(X.imp), function(i) range(X.imp[,i], na.rm=T)))    
-                res   = try(amelia(m=1, x = X.imp, bounds = bds)$imputations[[1]])
-                if (class(res) == 'try-error') X.ok.imp = X.imp else X.ok.imp = res
-                .Object@weather = zoo(X.ok.imp, order.by = index(.Object@weather))
-              }
-            return(.Object)
-          }
-)
 
 # ____________________________________________________
 # Auxiliary function for preparing data for modelling
 
-prepareData = function(.Object, trends = NULL) {
-  
-  # at a minimum, data contains consumption data
-  data             = data.frame(consumption = coredata(.Object@consumption))
-  time_vec         = .Object@timestamps         
-  
-  # add time Fixed Effects
-  data$Day.Of.Week = as.factor(dayOfWeek(timeDate(time_vec)))
-  data$Month       = as.factor(month(timeDate(time_vec)))
-  data$Hour.Of.Day = as.factor(as.numeric(sapply( sapply( sapply(strsplit(as.character(time_vec),' '), '[', 2), strsplit, ':' ), '[',1)))
-  data$Is.Holiday  = as.factor(as.numeric(isHoliday( timeDate(time_vec) )))
-  data$time        = as.numeric(time_vec - time_vec[1]) / 3600
-  data.dum         = dummy.data.frame(data=data, sep='.', all=T)
-  hourly_vars      = names(data.dum)[which(regexpr('Hour.Of.Day', names(data.dum))>0)]
-  monthly_vars     = names(data.dum)[which(regexpr('Month', names(data.dum))>0)]
-  weekly_vars      = names(data.dum)[which(regexpr('Day.Of.Week', names(data.dum))>0)]
-  data.dum[,hourly_vars[1]] = NULL
-  data.dum$Is.Holiday.0     = NULL
-  data.dum[,weekly_vars[1]] = NULL
-  data.dum[,monthly_vars[1]]= NULL
+setGeneric(
+  name = "prepareData",
+  def = function(.Object, trends = NULL){standardGeneric("prepareData")}
+)
+setMethod('prepareData',
+          signature  = 'Person',
+          definition = function(.Object, trends = NULL) {
+            
+            # add consumption and weather, if any
+            data          = data.frame(consumption = .Object@consumption)                      
+            time_vars_all = c('HourOfDay', 'DayOfWeek', 'Month', 'IsHoliday')
+            wthr_vars_all = c('TemperatureF', 'WindSpeed', 'Humidity', 'HourlyPrecip', 'SolarRadiation')
+            wthr_vars     = intersect(c(wthr_vars_all, time_vars_all), names(.Object@weather))            
+            if (length(wthr_vars)>0) data = cbind(data, .Object@weather[,wthr_vars])
+            data$time     = 1:nrow(data)
+            
+            # create dummies
+            data.dum      = dummy.data.frame(data=data, sep='.', all=T)
+            rm.col        = sapply(time_vars_all, function(c){
+              idx = which(regexpr(c, names(data.dum))>0)[1]
+            })
+            data.dum      = data.dum[,-rm.col]
 
-  # add weather covariates
-  wthr_vars_all    = c('TemperatureF', 'WindSpeed', 'Humidity', 'HourlyPrecip', 'SolarRadiation')
-  wthr_vars        = intersect(wthr_vars_all, names(.Object@weather))            
-  if (length(wthr_vars)>0) data.dum = cbind(data.dum, coredata(.Object@weather[,wthr_vars]))
-  
-  # add seasonal trends
-  if (!is.null(trends)) {
-    for (DT in trends) {
-      data.dum[,paste('Trend',DT,sep='.')] = sin(2 * pi * data.dum$time / DT)
-    }
-  }
-  
-  return( list(data.dum = data.dum, 
-               hourly_vars = hourly_vars[-1], 
-               monthly_vars = monthly_vars[-1],
-               weekly_vars = weekly_vars[-1], 
-               holiday_vars = 'Is.Holiday.1',
-               trends = trends, 
-               weather_vars = wthr_vars))
-}
+            # add seasonal trends
+            if (!is.null(trends)) {
+              trend_vars = paste('Trend',trends,sep='.')            
+              for (DT in trends) {
+                data.dum[,paste('Trend',DT,sep='.')] = sin(2 * pi * data.dum$time / DT)
+              }
+            }
+            
+            .Object@data.tmp = data.dum
+            return(.Object)
+})
+
 # _________________________________
 # Method to perform OLS analysis
 
@@ -324,58 +250,52 @@ library('timeDate')
 library('dummies')
 setGeneric(
   name = "fitOLS",
-  def = function(.Object, verbose = T, covariates = NULL, trends = NULL){standardGeneric("fitOLS")}
+  def = function(.Object, verbose = T){standardGeneric("fitOLS")}
 )
 setMethod('fitOLS',
           signature  = 'Person',
-          definition = function(.Object, verbose=T, covariates = NULL, trends = NULL){
+          definition = function(.Object, verbose=T){
             
             if (verbose)
-              cat(paste('*** OLS analysis for Person-SPID (', .Object@PER_ID,',', .Object@SP_ID, ')***\n', sep=''))
+              cat(paste('*** OLS analysis for Person-SPID (', .Object@UID, ')***\n', sep=''))
             
             # ______________________________________________________________
             # Set-up OLS problem (regress consumption on weather + tod/dow)
             
-            # indicators for tod/dow
-            res       = prepareData(.Object, trends = trends)
-            data.dum  = res$data.dum
+            # get data
+            data.dum = na.omit(.Object@data.tmp)
             
             # set-up model covariates
-            if (!is.null(trends)) trend_vars = paste('Trend',trends,sep='.')
-            if (is.null(covariates)) {
-              predictors = setdiff(names(data.dum), c('consumption', 'time'))
-            } else {
-              predictors = c(trends, covariates)
-              predictors = intersect(predictors, names(data.dum))
-            }
+            predictors = setdiff(names(data.dum), c('consumption', 'time'))
             fmla_null = as.formula("consumption ~ 1")
-            fmla_full = as.formula(paste('consumption ~ ',
-                                         paste(predictors,collapse='+')))
+            fmla_full = as.formula(paste('consumption ~ ', paste(predictors,collapse='+')))
+            
+            if (verbose) print(fmla_full)
             
             # perform regression            
-            OLS.null = lm( fmla_null, data = na.omit(data.dum) )
-            OLS.step = step(OLS.null, direction = 'forward', trace = 0, 
-                              scope = list(upper = fmla_full, lower = fmla_null))
-            fmla_fin = as.formula(paste( 'consumption ~ ', 
-                                  paste(names(coef(OLS.step))[-1], collapse = '+')))
-            OLS.step = lm( fmla_fin, data = na.omit(data.dum), na.action = na.exclude )
+#             OLS.null = lm( fmla_null, data = data.dum )
+            OLS.step     = lm( fmla_full, data = data.dum )
+            fmla_full_ok = as.formula(paste('consumption ~ ', paste(names(na.omit(coef(OLS.step)[-1])),collapse='+')))
+            OLS.step     = lm( fmla_full_ok, data = data.dum )
+#             OLS.step = step(OLS.null, direction = 'forward', trace = 0, 
+#                               scope = list(upper = fmla_full, lower = fmla_null))
             
             # ______________________________________________________________
             # Investigate structure of residual
                       
             # test for heteroskedasticity using Breusch-Pagan test
             require('lmtest')
-            bp.test        = bptest(OLS.step, data = na.omit(data.dum))
+            bp.test        = bptest(OLS.step, data = data.dum)
             chi2.95        = qchisq(0.95,bp.test$parameter+1)
             heterosc.BP.95 = bp.test$statistic > chi2.95
       
             # test for serial correlation using Durbin-Watson test
-            dw.test    = dwtest(OLS.step, data = na.omit(data.dum))
+            dw.test    = dwtest(OLS.step, data = data.dum)
             sercorr.DW = dw.test$alternative == "true autocorrelation is greater than 0"
             
             # which coefficients are statistically significant at least at 0.1 level?
             summ.fit = summary(OLS.step)
-            idx.sigf = which(summ.fit$coefficients[,4] <= 0.1)
+            idx.sigf = which(summ.fit$coefficients[,4] <= 0.1 & abs(summ.fit$coefficients[,1])>1e-6 )
             coef.sig = summ.fit$coefficients[idx.sigf,]
             
             # save model result
@@ -386,8 +306,12 @@ setMethod('fitOLS',
             .Object@OLS[['serial.corr']] = sercorr.DW
             .Object@OLS[['coef.signif']] = coef.sig
             .Object@OLS[['all.covars']]  = predictors
+            rel_mare = abs(residuals(OLS.step) / data.dum$consumption)
+            rel_mare[!is.finite(rel_mare)] = 0
+            .Object@OLS[['MARE']]        = mean(rel_mare)
+            .Object@OLS[['p.values']]    = pnorm(residuals(OLS.step))
                       
-            rm(list=c('OLS.null', 'OLS.step', 'res', 'data.dum'))
+            rm(list=c('OLS.step', 'data.dum'))
             return(.Object)
           }
 )
@@ -396,6 +320,7 @@ setMethod('fitOLS',
 # Method to perform HMM analysis
 
 library('depmixS4')
+library('R.utils')
 setGeneric(
   name = "fitHMM",
   def = function(.Object, verbose = T, Kmin = 3, Kmax = 3, constrMC = NULL, 
@@ -408,47 +333,23 @@ setMethod('fitHMM',
                                 response_vars = NULL, transitn_vars = NULL, ols_vars = T){
             
             if (verbose)
-              cat(paste('*** HMM analysis for Person-SPID (', .Object@PER_ID,',', .Object@SP_ID, ')***\n', sep=''))
+              cat(paste('*** HMM analysis for Person-SPID (', .Object@UID, ')***\n', sep=''))
             
             # _____________________________
             # Set up depmixS4 model object
           
-            included_vars= c(response_vars, transitn_vars)
-          
-            # have any trends been included in model specification?
-            trend_vars = c(included_vars[which(regexpr('Trend', included_vars)>0)])
-            if (length(trend_vars)>0) {
-              trends = as.numeric(sapply(1:length(trend_vars), 
-                                         function(j) strsplit(trend_vars[j], '\\.')[[1]][2]))
-            } else {
-              trends     = c(10,24)
-              trend_vars = paste('Trend', trends, sep='.')
-            }
-            
             # prepare dataset
-            res          = prepareData(.Object, trends = trends)
-            data.dum     = res$data.dum
-            hourly_vars  = res$hourly_vars
-            monthly_vars = res$monthly_vars
-            weekly_vars  = res$weekly_vars
-            holiday_vars = res$holiday_vars
-            wthr_vars    = res$weather_vars
+            data.dum      = .Object@data.tmp
+            existing_vars = names(data.dum)
                         
             # see which variables have been included that are reflected in the data as well
-            if (length(included_vars)>0) {
-              hourly_vars   = intersect(included_vars, hourly_vars)
-              monthly_vars  = intersect(included_vars, monthly_vars)
-              weekly_vars   = intersect(included_vars, weekly_vars)
-              holiday_vars  = intersect(included_vars, holiday_vars)
-              wthr_vars     = intersect(included_vars, wthr_vars)
-            }
-            existing_vars = c(hourly_vars, monthly_vars, weekly_vars, holiday_vars, wthr_vars, trend_vars)
             response_vars = intersect(response_vars, existing_vars)            
             transitn_vars = intersect(transitn_vars, existing_vars)
             
             # do we include just variables that are significant in regression?
             if (ols_vars) {
-              ols_vars_names= rownames(.Object@OLS[['coef.signif']])
+              ols_vars_names= rownames(.Object@OLS[['fit.summary']]$coefficients)
+#               ols_vars_names= rownames(.Object@OLS[['coef.signif']])
               if (length(ols_vars_names)>0) 
                 response_vars = intersect(response_vars, ols_vars_names)             
             }
@@ -458,7 +359,8 @@ setMethod('fitHMM',
             if (length(response_vars)>0) 
               fmla_response = paste('consumption ~ ',paste(response_vars,collapse='+'))
             fmla_response   = as.formula(fmla_response)
-            print(fmla_response)
+            
+            if (verbose) print(fmla_response)
             
             # define transition model
             fmla_transitn = '~ 1'
@@ -470,11 +372,7 @@ setMethod('fitHMM',
             # choose model size K (number of states)
             
             # set up and fit model
-            minBIC  = Inf
-            vec_BIC = c()
-            K   = Kmin
-            K_opt = Kmin
-#             for (K in Kmin:Kmax) {
+            compute_K = function(K) {
               
               # initialize state parameters with OLS estimates?
               respstart = NULL
@@ -482,12 +380,14 @@ setMethod('fitHMM',
                 vars_ok = response_vars
                 if ('(Intercept)' %in% ols_vars_names) {
                   vars_ok = c('(Intercept)',vars_ok)
-                  ols_vars_coef = .Object@OLS[['coef.signif']][vars_ok,1]
+                  ols_vars_coef = .Object@OLS[['fit.summary']]$coefficients[vars_ok]
+                  #ols_vars_coef = .Object@OLS[['coef.signif']][vars_ok,1]
                 } else {
-                  ols_vars_coef = .Object@OLS[['coef.signif']][vars_ok,1]  
+#                   ols_vars_coef = .Object@OLS[['coef.signif']][vars_ok,1]  
+                  ols_vars_coef = .Object@OLS[['fit.summary']]$coefficients[vars_ok]
                   ols_vars_coef = c(0,ols_vars_coef)
                 }
-                respstart     = rep(c(ols_vars_coef,0), K)
+                respstart     = rep(c(ols_vars_coef,0), K)              
               }
               
               # place structure on transition matrix?
@@ -507,42 +407,58 @@ setMethod('fitHMM',
                   for (i in 1:K) {
                     A[i,i:K] = 1                    
                   }    
-                  A[K,1] = 1
+                    A[K,1] = 1
                 }
                 A = A / rowSums(A)
                 A = as.numeric(A)    
                 trstart = A
               } else trstart = NULL
-              
+                
               # unconstrained model
-              set.seed(1)
-              mod <- depmix(response  = fmla_response, 
-                            transition= fmla_transitn,
-                            data      = na.exclude(data.dum), 
-                            nstates   = K, 
-                            respstart = respstart,
-                            trstart   = trstart,
-                            family    = gaussian(),
-                            instart   = runif(K))
-              fm  <- fit(mod, verbose = verbose, useC = T, 
-                         emcontrol = em.control(maxit = 50, tol = 1e-3))
               
-              # retain measures of fit
-              vec_BIC[as.character(K)] = BIC(fm)
-#               if (BIC(fm) < minBIC) {
-#                 fm_opt = fm
-#                 minBIC = BIC(fm)
-#                 K_opt  = K
-#               }
-#             }
-
-            K_opt  = K
-            fm_opt = fm
+              ok = FALSE
+              it = 0
+              while (!ok & it <= 1) {
+                mod <- depmix(response  = fmla_response, 
+                              transition= fmla_transitn,
+                              data      = data.dum, 
+                              nstates   = K, 
+                              respstart = respstart,
+                              trstart   = trstart,
+                              family    = gaussian(),
+                              instart   = runif(K))
+                out <- capture.output(fm  <- try(fit(mod, verbose = T, useC = T, emcontrol = em.control(maxit = 50, tol = 5e-3))))
+                nlines = length(out)
+                if (class(fm) != 'try-error') {
+                  ok = nlines > 2                                   
+                } else ok = FALSE
+                if (!ok){
+                  BIC_cur = Inf                  
+                  if (verbose) cat('Bad HMM fit; re-estimating...\n')
+                } else {
+                  if (verbose) cat(paste('Convergence in', nlines*5, 'iterations.\n'))
+                  BIC_cur = BIC(fm)
+                }
+                it = it + 1
+              }
+              return(list(model = fm, BIC = BIC_cur, nlines = nlines))
+            }
+                     
+            result = lapply(Kmin:Kmax, compute_K)
+            BICs   = sapply(result, function(l)l[['BIC']])
+            nlines = sapply(result, function(l)l[['nlines']])
+            idx_opt= which.min(BICs)            
+            K_opt  = (Kmin:Kmax)[idx_opt]
+            fm_opt = result[[idx_opt]][['model']]
+            
+            if (!is.finite(BICs[idx_opt])) stop('HMM fitting error!')
             
             # ______________________
             # Save computation
             
             .Object@HMM = list()
+            
+            .Object@HMM$converg = nlines[idx_opt]
             
             # response parameters
             .Object@HMM[['response']] = list()
@@ -573,37 +489,26 @@ setMethod('fitHMM',
             # Viterbi states
             .Object@HMM[['states']] = posterior(fm_opt)
             
-            # Predicted state means
-            means = sapply(1:K_opt, function(k) predict(fm_opt@response[[k]][[1]])) 
-            .Object@HMM[['means']] = sapply(1:nrow(means), function(j) means[j,.Object@HMM[['states']][j,1]])
-
             # other parameters
             .Object@HMM[['nStates']]    = fm_opt@nstates
-            .Object@HMM[['BIC']]        = vec_BIC
             
             # ________________________________________
             # Perform preliminary analysis of errors
             
-            # which observations were missing (NAs) in the original data?
-            idx_na = attributes(na.exclude(data.dum))$na.action
-            idx_ok = (1:length(.Object@consumption))[-as.numeric(idx_na)]
-                        
+            # Predicted state means
+            means = sapply(1:K_opt, function(k) predict(fm_opt@response[[k]][[1]])) 
+            .Object@HMM[['means']] = sapply(1:nrow(means), function(j) means[j,.Object@HMM[['states']][j,1]])
+
             # Confidence p-values
             hmm.sigma = .Object@HMM$response$stdev[.Object@HMM[['states']][,1]]  
-            if (length(idx_na)>0) {
-              z.scores  = abs(coredata(.Object@consumption)[-idx_na] - .Object@HMM$means) / sqrt(hmm.sigma)
-            } else 
-              z.scores  = abs(coredata(.Object@consumption) - .Object@HMM$means) / sqrt(hmm.sigma)
+            z.scores  = abs(.Object@consumption - .Object@HMM$means) / sqrt(hmm.sigma)
             .Object@HMM[['p.values']]   = pnorm(z.scores)
-            
-            # position of deleted observations
-            .Object@HMM[['NA']] = as.numeric(idx_na)
+
+            # model fit (penalized likelihood)
+            .Object@HMM[['BIC']]    = BIC(fm_opt)
             
             # residuals for each state
-            if (length(idx_na) > 0) {
-              residuals = coredata(.Object@consumption)[-idx_na] - .Object@HMM[['means']]
-            } else 
-              residuals = coredata(.Object@consumption) - .Object@HMM[['means']]                          
+            residuals = .Object@consumption - .Object@HMM[['means']]                          
             .Object@HMM[['residual']] = residuals
             
             # test normality of residuals in each state
@@ -614,7 +519,12 @@ setMethod('fitHMM',
               return(pval)
             })
             .Object@HMM$sw_test = is_normal
-                               
+                            
+            # accuracy of prediction
+            .Object@HMM[['MARE']] = mean(abs(residuals / .Object@HMM[['means']]))
+            
+            rm(list = c('result', 'data.dum', 'fm_opt'))
+            gc()
             return(.Object)
           }
 )
@@ -623,31 +533,30 @@ setMethod('fitHMM',
 # _______________________
 # Plot Person object
 
-library('linkcomm')
+library(igraph)
 library('useful')
 library('reshape')
+library('RColorBrewer')
 
 setMethod('plot',
           signature  = 'Person',
           definition = function(x, type = 'default', interval = NULL, verbose = T, ...){
             
             if (verbose)
-              cat(paste('*** ', type, ' Plot for Person-SPID (', x@PER_ID,',', x@SP_ID, ') ***\n', sep=''))
+              cat(paste('*** ', type, ' Plot for Person (', x@UID, ') ***\n', sep=''))
             
-            timestamps = x@timestamps
+            timestamps = as.POSIXct(x@timestamps)
             ols.resids = x@OLS[['fit.summary']]$residuals
             ols.resids = naresid(x@OLS$fit.summary$na.action, ols.resids)
             consumption= x@consumption
-            idx.na     = as.numeric(x@HMM[['NA']])
-            if (length(idx.na)>0) {
-              consumption = consumption[-idx.na]
-              timestamps  = timestamps[-idx.na]
-            }
+
             ols.means  = x@OLS[['fitted.vals']]
             hmm.means  = x@HMM$means
             states     = x@HMM$states[,1]
             hmm.sigma  = x@HMM$response$stdev[states]
-            hmm.residual=x@HMM$residual            
+            hmm.residual=x@HMM$residual      
+            wthr_data   =x@weather
+            p.vals      =x@HMM$p.values
             if (!is.null(interval)) {
               idx_ok      = which(x@timestamps >= as.POSIXct(interval[1]) & 
                                   x@timestamps <= as.POSIXct(interval[2]))
@@ -659,6 +568,7 @@ setMethod('plot',
               hmm.sigma   = hmm.sigma[idx_ok]
               states      = states[idx_ok]
               hmm.residual= hmm.residual[idx_ok]
+              wthr_data   = wthr_data[idx_ok,]
             }  
             
             if (type == 'OLS-res') {
@@ -672,25 +582,33 @@ setMethod('plot',
             }    
             
             if (type == 'OLS-fit') {
+              yrange = range(c(ols.means, consumption))
               plot(timestamps, ols.means, 
                    main = 'OLS Fitted Values', ylab = 'Values', xlab = 'Time', 
-                   lwd = 3, type='l', col='red')
+                   lwd = 3, type='l', col='red', ylim = yrange)
               points(timestamps, consumption, type='b', pch=20, col = 'black')
               legend('topleft', c('OLS Fit', 'Observations'), col=c('red', 'black'))
             }    
             
             if (type == 'default') {
-              plot(consumption, 
-                   main = paste('Consumption Person-SPID (', x@PER_ID,',', x@PER_ID, ')'),
+              plot(timestamps, consumption, 
+                   main = paste('Consumption Person-SPID (', x@UID,')'),
                    xlab = 'Time', ylab = 'kWh', type = 'l', lwd = 2)
             }
             
             if (type == 'weather') {
-              tmp = consumption
-              if (length(x@weather)>0) tmp = merge(tmp, x@weather)
-              plot(tmp, 
-                   main = paste('Consumption Person-SPID (', x@PER_ID,',', x@PER_ID, ')'),
-                   xlab = 'Time', ylab = 'kWh', type = 'l', lwd = 2)
+              if (is.null(wthr_data) | nrow(wthr_data)==0) {
+                cat('No weather data!\n')
+              } else {
+                wthr_names  = c('TemperatureF', 'DewpointF', 'Pressure', 'WindSpeed', 'Humidity', 
+                                'HourlyPrecip', 'SolarRadiation')
+                wthr = wthr_data[,names(wthr_data) %in% wthr_names]
+                wthr$kWh = consumption
+                wthr = zoo(wthr, order.by = timestamps)  
+                plot(wthr, 
+                     main = paste('Consumption Person-SPID (', x@UID,')'),
+                     xlab = 'Time', type = 'l', lwd = 2)                
+              }
             }
             
             if (type == 'HMM-ts') {    
@@ -729,7 +647,7 @@ setMethod('plot',
                        axis.ticks = element_blank() ) + 
                 ylab("kWh") + 
                 theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
-                ggtitle( paste("Zoom-In: States and Observed Emissions (", x@PER_ID, ',', x@SP_ID,')',sep=''))
+                ggtitle( paste("Zoom-In: States and Observed Emissions (", x@UID,')',sep=''))
               
               return(plt)
             }
@@ -772,16 +690,12 @@ setMethod('plot',
                      panel.background = element_blank(),
                      axis.ticks = element_blank()) + 
                 ylab('Sigma') + xlab('Mean') + 
-                ggtitle(paste("State Space Diagram (", x@PER_ID, ',', x@SP_ID, ')',sep=''))
+                ggtitle(paste("State Space Diagram (", x@UID, ')',sep=''))
               return(plt)
             }
             
             # plot confidence interval
-            if (type == 'HMM-ci') {
-              # compute z-scores of observations
-              z.scores = abs(consumption - hmm.means) / sqrt(hmm.sigma)
-              p.vals   = pnorm(z.scores)
-  
+            if (type == 'HMM-ci') {  
               df = data.frame( Prob = p.vals, State = as.factor(states), 
                                Weekday = weekdays(timestamps), Hour = hour(timestamps) )
               df.st = aggregate(Prob ~ State, FUN = mean, data = df)
@@ -804,14 +718,14 @@ setMethod('plot',
                      panel.background = element_rect(fill = "transparent",colour = NA),
                      axis.ticks = element_blank()) + 
                      ylab('Confidence') + xlab('Hour') + 
-                ggtitle( paste("Avg. Prediction Confidence (", x@PER_ID, ',', x@SP_ID, ')',sep=''))
+                ggtitle( paste("Avg. Prediction Confidence (", x@UID, ')',sep=''))
               
               return(plt)
             }
             
             if (type =='HMM-acf') {
-              plt = acf_ggplot(coredata(consumption), 
-                               hmm.means, 
+              plt = acf_ggplot(na.omit(consumption), 
+                               na.omit(hmm.means), 
                                title = 'ACF: Empirical vs Model')
               return(plt)
             }
@@ -851,33 +765,174 @@ setMethod('plot',
                      panel.background = element_rect(fill = "transparent",colour = NA),
                      axis.ticks = element_blank()) + 
                      ylab('Sample Quantiles') + xlab('Theoretical Quantiles')
+              return(plt)
+            }
+            
+            if (type == 'HMM-MC2') {
+              
+              # organize MC information
+              df = data.frame(Mean   = as.numeric(x@HMM$response$means[1,]),
+                              Sigma  = as.numeric(x@HMM$response$stdev),
+                              State  = 1:x@HMM$nStates)              
+              state.grid = expand.grid(State.i = 1:x@HMM$nStates, State.j = 1:x@HMM$nStates)
+              trans = sapply(1:nrow(state.grid), function(s) {
+                i = state.grid[s,1]
+                j = state.grid[s,2]
+                tr= paste(i,'->', j, sep='')
+                ret = x@HMM$transition[1,tr]
+              })
+                        
+              # form igraph object
+              g = graph.empty()              
+              g = add.vertices(g, nrow(df), State=as.character(df$State), Mean =df$Mean, Sigma = df$Sigma)              
+              g = add.edges(g, t(as.matrix(state.grid)), P = trans)                            
+              
+              # add graph plotting attributes
+              scale <- function(v, a, b) {
+                v <- v-min(v) ; v <- v/max(v) ; v <- v * (b-a) ; v+a
+              }              
+              pallete    = colorRampPalette(brewer.pal(9,"Blues"))(100)
+              V(g)$color = 'grey'              
+              V(g)$size  <- scale(V(g)$Mean, 10, 20)
+              E(g)$color <- pallete[scale(E(g)$P, 10,100)]
+              
+              # plot
+              plot(g, main = 'MC Structure')              
             }
 })
 
-# _______________________
-# Test constructor
+
+# _________________________________________
+# Method to dump Person model data to file
+setGeneric(
+  name = "dumpComputationToFile",
+  def = function(.Object, verbose = T, path = './'){standardGeneric("dumpComputationToFile")}
+)
+setMethod('dumpComputationToFile',
+          signature  = 'Person',
+          definition = function(.Object, verbose = T, path = './'){
+          if (verbose) 
+            cat(paste('*** Dumping model data to file (', .Object@UID, ')***\n', sep=''))
+
+          # define all variables in the model          
+          hourly_vars   = paste('HourOfDay', 0:23, sep='.')
+          monthly_vars  = paste('Month', 1:12, sep = '.')
+          weekly_vars   = paste('DayOfWeek', c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'), sep='.')
+          wthr_vars_all = c('TemperatureF', 'WindSpeed', 'Humidity', 'HourlyPrecip', 'SolarRadiation')
+          trend_vars    = c('Trend.8', 'Trend.24')
+          holiday_vars  = c('IsHoliday.0', 'IsHoliday.1')
+          all_covars    = c(hourly_vars, monthly_vars, weekly_vars, wthr_vars_all, trend_vars, holiday_vars)
+          
+          # ______________________________
+          # Format analysis results: OLS
+          
+          df     = as.data.frame(t(.Object@OLS$coef.signif[,1]))
+          df[,setdiff(all_covars, names(df))] = NA
+          df     = df[,all_covars]
+          df$R2  = .Object@OLS$fit.summary$adj.r.squared
+          df$MARE= .Object@OLS$MARE
+          df$pval= mean(.Object@OLS$p.values)
+          df$UID = .Object@UID
+          df$ZIPCODE= .Object@ZIPCODE
+          df.ols = df
+          
+          # ______________________________
+          # Format analysis results: HMM
+          
+          # response
+          df        = as.data.frame(t(.Object@HMM$response$means))
+          df[,setdiff(all_covars, names(df))] = NA
+          df$Sigma  = .Object@HMM$response$stdev
+          df$pval   = mean(.Object@HMM$p.values)
+          df$MARE   = .Object@HMM$MARE
+          df$UID    = .Object@UID
+          df$ZIPCODE= .Object@ZIPCODE
+          df$State  = 1:.Object@HMM$nStates
+          df.resp = df
+
+          # transition
+          df = as.data.frame(t(.Object@HMM$transition))
+          df$Transit= rownames(df)
+          rownames(df) = NULL
+          df$UID    = .Object@UID
+          df$ZIPCODE= .Object@ZIPCODE
+          df.tran = df
+          
+          # ______________________________
+          # Dump to file
+          
+          write.csv(df.ols, file = paste(path,.Object@UID, '_ols.csv', sep=''), quote = F, row.names = F)
+          write.csv(df.resp, file = paste(path,.Object@UID, '_hmm_resp.csv', sep=''), quote = F, row.names = F)
+          write.csv(df.tran, file = paste(path,.Object@UID, '_hmm_tran.csv', sep=''), quote = F, row.names = F)
+
+          return(list(OLS = df.ols, HMM.response = df.resp, HMM.transition = df.tran))
+})
+
+
+# # _______________________
+# # Test constructor
 # 
-# rm(list=ls())
 # source('~/Dropbox/ControlPatterns/code/R/utils/sql_utils.r')
 # source('~/Dropbox/ControlPatterns/code/R/utils/timing.r')
-# raw_data  = run.query("select * from pge_res_final3_unique WHERE PER_ID = 8420562867 AND SP_ID = 5534067894 ORDER BY date")
-# test      = new(Class='Person', raw_data)
-# zips      = unique(raw_data$ZIP5)
-# query     = paste("SELECT * FROM weather_60 WHERE zip5 IN (", 
-#                   paste(zips,collapse=','), ')')
+# raw_data  = run.query("select * from pge_res_final3_unique LIMIT 0,1000")
+# raw_data  = subset(raw_data, UID == raw_data$UID[1])
+# test      = new(Class='Person', raw_data, unique(raw_data$UID), unique(raw_data$ZIP5))
+# 
+# query     = paste("SELECT * FROM ZIP_", unique(raw_data$ZIP5), sep='')
 # wthr_data = run.query(query, db = 'PGE_WEATHER')
-# test      = addWeather(test, wthr_data, imputate = T)
+# test      = addWeather(test, wthr_data)
+# test      = prepareData(test, trends = c(8,24, 24*30*6))
 # 
 # # _______________________
 # # Test modeling methods
 # 
-# test      = fitOLS(test)
-# test      = fitHMM(test, constrMC = F, Kmin = 2, Kmax = 5)
+# hourly_vars   = paste('HourOfDay', 0:23, sep='.')
+# monthly_vars  = paste('Month', 1:12, sep = '.')
+# weekly_vars   = paste('DayOfWeek', c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'), sep='.')
+# wthr_vars_all = c('TemperatureF', 'WindSpeed', 'Humidity', 'HourlyPrecip', 'SolarRadiation')
+# trend_vars    = c('Trend.8', 'Trend.24', 'Trend.4320')
+# holiday_vars  = c('IsHoliday.0', 'IsHoliday.1')
+# all_covars    = c(hourly_vars, monthly_vars, weekly_vars, wthr_vars_all, trend_vars, holiday_vars)
+# 
+# test          = fitOLS(test)
+# test          = fitHMM(test, constrMC = NULL, Kmin = 2, Kmax = 6, ols_vars = T,
+#                        response_vars = c(hourly_vars, wthr_vars_all, trend_vars))
 # 
 # # _______________________
 # # Test plotting methods
 # 
+# png(filename = 'kwh.png', width = 1200, height = 800)
+# plot(test, interval = c('2010-12-01', '2010-12-10'))
+# dev.off()
+# 
+# png(filename = 'weather.png', width = 1200, height = 800)
+# plot(test, type = 'weather', interval = c('2010-12-01', '2010-12-10'))
+# dev.off()
+# 
+# png(filename = 'OLS.png', width = 1200, height = 800)
 # plot(test, type = 'OLS-fit', interval = c('2010-12-01', '2010-12-10'))
-# plot(test, type = 'HMM-ts', interval = c('2010-12-01', '2010-12-20'))
-# plot(test, type = 'HMM-MC', interval = c('2010-12-01', '2010-12-20'))
-# plot(test, type = 'HMM-ci', interval = c('2010-12-01', '2010-12-10'))
+# dev.off()
+# 
+# png(filename = 'HMM_ts.png', width = 1200, height = 800)
+# print(plot(test, type = 'HMM-ts', interval = c('2010-12-01', '2010-12-10')))
+# dev.off()
+# 
+# png(filename = 'HMM_MC.png', width = 1200, height = 800)
+# print(plot(test, type = 'HMM-MC', interval = c('2010-12-01', '2010-12-10')))
+# dev.off()
+# 
+# png(filename = 'HMM_ci.png', width = 1200, height = 800)
+# print(plot(test, type = 'HMM-ci', interval = c('2010-12-01', '2010-12-10')))
+# dev.off()
+# 
+# png(filename = 'HMM_MC2.png', width = 1200, height = 800)
+# plot(test, type = 'HMM-MC2', interval = c('2010-12-01', '2010-12-10'))
+# dev.off()
+# 
+# png(filename = 'HMM_qq.png', width = 1200, height = 800)
+# print(plot(test, type = 'HMM-qq', interval = c('2010-12-01', '2010-12-10')))
+# dev.off()
+# 
+# png(filename = 'HMM_res.png', width = 1200, height = 800)
+# print(plot(test, type = 'HMM-res', interval = c('2010-12-01', '2010-12-10')))
+# dev.off()

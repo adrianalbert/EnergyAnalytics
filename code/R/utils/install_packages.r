@@ -9,7 +9,7 @@
 reqed.packages = c('RMySQL', 'zoo', 'depmixS4', 'ggplot2', 'utils', 'multicore', 'parallel',
                    'methods', 'lmtest', 'Amelia', 'imputation', 'timeDate', 'lubridate', 
                    'dummies', 'linkcomm', 'useful', 'reshape', 'grid', 'Rgraphviz', 'profr',
-                   'proftools')
+                   'proftools', 'data.table', 'igraph')
 
 # get already installed packages
 avail.packages = installed.packages()

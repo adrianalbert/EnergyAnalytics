@@ -23,3 +23,16 @@
                 set.seed(1)
                 fm <- fit(fm, equal = conpat, verbose=T)                
               } else 
+                
+                
+                
+            # ______________________________________________
+            # Clean up data: remove some obvious errors
+            
+            # remove very unfrequent Proxy IDs
+            tab_psa_id = table(raw_data$PSA_ID) / nrow(raw_data)
+            infreq_ids = which(tab_psa_id < 0.05)
+            if (length(infreq_ids) > 0) {
+              idx_rm   = which(raw_data$PSA_ID %in% names(infreq_ids))
+              raw_data = raw_data[-idx_rm,]
+            }
