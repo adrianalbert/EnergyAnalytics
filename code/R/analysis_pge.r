@@ -53,7 +53,7 @@ zips = zips$ZIP5
 # Wrapper to send computation to each core
 # ------------------------------------------
 
-analysis_wrapper <- function(iZip, type = 'sql') {
+analysis_wrapper <- function(iZip, zips, type = 'sql') {
   
   sink(paste(save_path, "log_", iZip,".txt", sep=''), append=F, type = c('output', 'message'))
   
@@ -149,7 +149,7 @@ library(parallel)
 
 # if in batch mode, parse arguments
 args = commandArgs(TRUE)
-if (length(args)>1) {
+if (length(args)>0) {
   ch_min = args[1]
   ch_max = args[2]
   if (length(args)>=3) nProc  = args[3] else nProc = detectCores()
@@ -164,7 +164,7 @@ cat(paste('Computation on zips', ch_min, '-', ch_max, '\n'))
 ptm <- proc.time()
 Rprof(filename = paste(prof_file, sep=''), 
       interval = 0.02, memory.profiling = T)
-result = mclapply(ch_min:ch_max, FUN = analysis_wrapper, mc.silent = F, 
+result = mclapply(ch_min:ch_max, FUN = analysis_wrapper, zips, mc.silent = F, 
                    mc.preschedule = FALSE, mc.cores = nProc)
 Rprof(NULL)
 dt = proc.time() - ptm
