@@ -28,12 +28,44 @@ source('~/EnergyAnalytics/code/R/utils/acf_ggplot.r')
 source('~/EnergyAnalytics/code/R/Person.r')
 source('~/EnergyAnalytics/code/R/personAnalysis.r')
 
-N_USERS     = 100   # send batches of 50 users to each core
+# default options for this run
 NOBS_THRESH = 180   # discard users with less than a 1/2 year at a given premise
+N_CORES     = 1     # number of cores to run process on 
+DATA_ACCESS = 'sql' # flag to indicate type of media used for data
+PLOTS       = FALSE
+VERBOSE     = TRUE
+USER        = 'adalbert'
+PASSWORD    = 'adrian'
+ZIP_START   = 2
+ZIP_STOP    = 2
+PROFILE     = F
 
 plots_path  = '~/Dropbox/ControlPatterns/plots/'
 save_path   = '~/EnergyAnalytics/fits/'
+kwh_path    = ''
+wthr_path   = ''
 prof_file   = '~/EnergyAnalytics/Rprof.out'
+zips_file   = '~/EnergyAnalytics/data/metadata/zipcode_res.csv'
+
+# if in batch mode, parse command-line arguments
+library(utils)
+myargs = commandArgs(trailingOnly = TRUE)
+cat(paste('Arguments:', paste(myargs,sep='; '), '\n'))
+
+if (length(myargs)==1) {
+  source(myargs)
+}
+
+if (length(myargs)>=2) {
+  ZIP_START = as.numeric(myargs[1])
+  ZIP_STOP = as.numeric(myargs[2])
+  if (length(myargs)>=3) nProc  = as.numeric(myargs[3]) else nProc = detectCores()
+  if (length(myargs)==5) {
+    user     = myargs[4]
+    password = myargs[5]
+    cat(paste('Credentials:', user, password), '\n')
+  }
+} 
 
 # ------------------------------------------------
 # Load identification information on users
@@ -41,11 +73,11 @@ prof_file   = '~/EnergyAnalytics/Rprof.out'
 
 # disconnect all MySQL connections
 library('RMySQL')
-all_cons <- dbListConnections(MySQL())
-for(con in all_cons) dbDisconnect(con)
+#all_cons <- dbListConnections(MySQL())
+#for(con in all_cons) dbDisconnect(con)
 
 # get zipcodes
-zips = read.csv('~/EnergyAnalytics/data/metadata/zipcode_res.csv')
+zips = read.csv(zips_file)
 zips = zips$ZIP5
 
 # ------------------------------------------
@@ -61,11 +93,11 @@ analysis_wrapper <- function(iZip, zips, type = 'sql') {
   if (type == 'sql') {
     # retrieve current zip consumption data from DB
     query     = paste("SELECT * FROM pge_res_60_", zips[iZip], ' ORDER BY date', sep='')
-    raw_data  = run.query(query, db = 'PGE_SAM')  
+    raw_data  = run.query(query, db = 'PGE_SAM', user = USER, password = PASSWORD)  
     
     # retrieve current zip weather data from DB
     query     = paste("SELECT * FROM ZIP_", zips[iZip], ' ORDER BY date', sep='')
-    cur_wthr  = run.query(query, db = 'PGE_WEATHER')  
+    cur_wthr  = run.query(query, db = 'PGE_WEATHER', user = USER, password = PASSWORD)  
     
     # check data size in memory
     cat(paste('Weather data size for zip', zips[iZip], '=', object.size(cur_wthr) / 1024^2, '\n'))
@@ -97,7 +129,7 @@ analysis_wrapper <- function(iZip, zips, type = 'sql') {
     # perform analysis flow
     ptm <- proc.time()
     res = try(personAnalysis(cur_data, cur_wthr, usr, zips[iZip],
-                             plots = F, verbose = F,
+                             plots = PLOTS, verbose = VERBOSE,
                              plots_path = plots_path, fits_path = save_path,
                              transitn.df = transitn.df, response.df = response.df, 
                              ols.coefs = ols.coefs))
@@ -130,42 +162,26 @@ analysis_wrapper <- function(iZip, zips, type = 'sql') {
 }
 
 # ------------------------------------------------
-# Some preliminary analysis
+# Run analysis script
 # ------------------------------------------------
-
-library(utils)
-# # 
-# ptm <- proc.time()
-# Rprof(filename = paste(prof_file, sep=''), interval = 0.02, memory.profiling = T)
-# result = analysis_wrapper(20)
-# Rprof(NULL)
-# # Stop the clock
-# dt = proc.time() - ptm
-# 
-# profiled = summaryRprof(filename=prof_file, memory = 'none')
 
 library(parallel)
 
-# if in batch mode, parse arguments
-args = commandArgs(TRUE)
-if (length(args)>0) {
-  ch_min = args[1]
-  ch_max = args[2]
-  if (length(args)>=3) nProc  = args[3] else nProc = detectCores()
+cat('****** Running analysis on PGE data ******\n')
+cat(paste('Computation on zips', ZIP_START, '-', ZIP_STOP, '\n'))
+
+if (PROFILE) {
+  ptm <- proc.time()
+  Rprof(filename = paste(prof_file, sep=''), interval = 0.02, memory.profiling = T)
+  result = analysis_wrapper(2, zips, user = USER, password = PASSWORD)
+  Rprof(NULL)
+  dt = proc.time() - ptm
+  profiled = summaryRprof(filename=prof_file, memory = 'none')
 } else {
-  ch_min = 1
-  ch_max = 20
-  nProc  = detectCores()
+  # parallel execution using parallel package
+  ptm <- proc.time()
+  result = mclapply(ZIP_START:ZIP_STOP, FUN = analysis_wrapper, zips, user = USER, password = PASSWORD, 
+	            mc.silent = F, mc.preschedule = FALSE, mc.cores = N_PROC)
+  dt = proc.time() - ptm
 }
-cat(paste('Computation on zips', ch_min, '-', ch_max, '\n'))
 
-# parallel execution using parallel package
-ptm <- proc.time()
-Rprof(filename = paste(prof_file, sep=''), 
-      interval = 0.02, memory.profiling = T)
-result = mclapply(ch_min:ch_max, FUN = analysis_wrapper, zips, mc.silent = F, 
-                   mc.preschedule = FALSE, mc.cores = nProc)
-Rprof(NULL)
-dt = proc.time() - ptm
-
-profiled = summaryRprof(filename=prof_file, memory = 'none')

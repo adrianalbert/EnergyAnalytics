@@ -13,24 +13,24 @@
 require(RMySQL)
 
 # open MySQL connection
-open.db.conn = function(dbname = 'pge_res', verbose=F) {
+open.db.conn = function(dbname = 'pge_res', verbose=F, user = 'adrian', password = 'gambit') {
   if (verbose) cat('Connecting to PGE weather database...')
   db.con <- dbConnect(dbDriver("MySQL"), 
                       host = "sssl-cyclops.stanford.edu",
-                      user = "adrian", password = "gambit", 
+                      user = user, password = password, 	
                       dbname = dbname)
   return (db.con)
 }
 
 # Test: 
-db_cons = open.db.conn('pge_res')
+# db_cons = open.db.conn('PGE_SAM', user = 'adalbert', password = 'adrian')
 
 # perform query
-run.query = function(query,db='pge_res', verbose=FALSE) {
+run.query = function(query,db='pge_res', verbose=FALSE, user = 'adrian', password = 'gambit') {
   if (verbose) cat(paste('Performing query:',query))
   data <- c()
   tryCatch({
-    con  <- open.db.conn(db)
+    con  <- open.db.conn(db, verbose = verbose, user = user, password = password)
     res  <- dbGetQuery(con, query)
     if(length(res)>0) data  <- res    
   },

@@ -83,6 +83,11 @@ setMethod(f = "initialize",
             }                        
             .Object@timestamps  = days_times
             
+	    # is everthing else NA?
+	    if (length(na.omit(consumption)) == 0) {
+	      stop('Error: consumption data is all NAs!')
+	    }
+
             # if data is all zeros
             rc = range(na.omit(consumption))
             if (rc[2] - rc[1] == 0) {
@@ -386,7 +391,8 @@ setMethod('fitHMM',
                   ols_vars_coef = .Object@OLS[['fit.summary']]$coefficients[vars_ok]
                   ols_vars_coef = c(0,ols_vars_coef)
                 }
-                respstart     = rep(c(ols_vars_coef,0), K)              
+                respstart     = rep(c(ols_vars_coef,0), K)             
+#		respstart     = runif(length(respstart )) * respstart
               }
               
               # place structure on transition matrix?
@@ -450,6 +456,7 @@ setMethod('fitHMM',
             K_opt  = (Kmin:Kmax)[idx_opt]
             fm_opt = result[[idx_opt]][['model']]
             
+ 		print(BICs)
             if (!is.finite(BICs[idx_opt])) stop('HMM fitting error!')
             
             # ______________________
