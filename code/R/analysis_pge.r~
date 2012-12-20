@@ -173,7 +173,7 @@ cat(paste('Computation on zips', ZIP_START, '-', ZIP_STOP, '\n'))
 if (PROFILE) {
   ptm <- proc.time()
   Rprof(filename = paste(prof_file, sep=''), interval = 0.02, memory.profiling = T)
-  result = analysis_wrapper(2, zips)
+  result = analysis_wrapper(2, zips, user = USER, password = PASSWORD)
   Rprof(NULL)
   dt = proc.time() - ptm
   profiled = summaryRprof(filename=prof_file, memory = 'none')
