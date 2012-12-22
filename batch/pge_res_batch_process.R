@@ -16,10 +16,9 @@ source(file.path(conf.basePath,'basicFeatures.R'))     # typical max, min, mean,
 source(file.path(conf.basePath,'regressionSupport.R')) # mostly regressor manipulation
 source(file.path(conf.basePath,'timer.R'))             # adds tic() and toc() functions
 
-library('DAAG') # Data Analysis and Graphics package has k-fold cross validation
+#library('DAAG') # Data Analysis and Graphics package has k-fold cross validation
 # cv.lm(df=mydata, model, m=5) # 5 fold cross-validation
-
-library('cvTools') # cross validation tools
+#library('cvTools') # cross validation tools
 
 runModelsByZip = function(zipArray,triggerZip=NULL) {
   nZip     <- length(zipArray)
