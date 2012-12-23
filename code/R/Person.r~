@@ -21,6 +21,7 @@
 library('methods')
 library('zoo')
 library('lubridate')
+require('lmtest')
 
 # clean-up previous definitions of methods for class Person
 removeClass('Person')
@@ -45,6 +46,15 @@ setClass(
     data.tmp   = 'data.frame'
     )
 )
+
+# all covariates
+hourly_vars   = paste('HourOfDay', 0:23, sep='.')
+monthly_vars  = paste('Month', 1:12, sep = '.')
+weekly_vars   = paste('DayOfWeek', c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'), sep='.')
+wthr_vars_all = c('TemperatureF', 'WindSpeed', 'Humidity', 'HourlyPrecip', 'SolarRadiation')
+trend_vars    = c('Trend.8', 'Trend.24', 'Trend.4320')
+holiday_vars  = c('IsHoliday.0', 'IsHoliday.1')
+all_covars    = c(hourly_vars, monthly_vars, weekly_vars, wthr_vars_all, trend_vars, holiday_vars)
 
 # _______________________________________
 # Constructor method for class Person
@@ -201,9 +211,14 @@ setMethod('show',
             # info on model fit 
             if (!is.null(object@OLS)) {
               cat(sprintf('OLS MARE =\t%f; OLS pval =\t%f\n', object@OLS$MARE, mean(object@OLS$p.values)))
+	      cat('OLS contributions:\n')
+	      cat(paste(names(object@OLS$components$stat), ':\t', round(object@OLS$components$stat, digits=3), '\n')) 
             }        
             if (!is.null(object@HMM)) {
-              cat(sprintf('HMM MARE =\t%f; HMM pval =\t%f\n', object@HMM$MARE, mean(object@HMM$p.values)))
+              cat(sprintf('HMM MARE =\t%f; HMM pval =\t%f\n', object@HMM$MARE, mean(object@HMM$p.values)))	
+	      cat(sprintf('HMM States:\t%d\n', object@HMM$nStates))
+	      cat('HMM contributions:\n')
+	      print(round(object@HMM$components$stat, digits=3))
             }
             
             cat('*** END: Person Object ***\n')
@@ -254,11 +269,11 @@ library('timeDate')
 library('dummies')
 setGeneric(
   name = "fitOLS",
-  def = function(.Object, verbose = T){standardGeneric("fitOLS")}
+  def = function(.Object, verbose = T, stats = T){standardGeneric("fitOLS")}
 )
 setMethod('fitOLS',
           signature  = 'Person',
-          definition = function(.Object, verbose=T){
+          definition = function(.Object, verbose=T, stats = T){
             
             if (verbose)
               cat(paste('*** OLS analysis for Person-SPID (', .Object@UID, ')***\n', sep=''))
@@ -287,27 +302,27 @@ setMethod('fitOLS',
             # ______________________________________________________________
             # Investigate structure of residual
                       
-            # test for heteroskedasticity using Breusch-Pagan test
-            require('lmtest')
-            bp.test        = bptest(OLS.step, data = data.dum)
-            chi2.95        = qchisq(0.95,bp.test$parameter+1)
-            heterosc.BP.95 = bp.test$statistic > chi2.95
-      
-            # test for serial correlation using Durbin-Watson test
-            dw.test    = dwtest(OLS.step, data = data.dum)
-            sercorr.DW = dw.test$alternative == "true autocorrelation is greater than 0"
-            
             # which coefficients are statistically significant at least at 0.1 level?
             summ.fit = summary(OLS.step)
             idx.sigf = which(summ.fit$coefficients[,4] <= 0.1 & abs(summ.fit$coefficients[,1])>1e-6 )
             coef.sig = summ.fit$coefficients[idx.sigf,]
             
+	    if (stats) {
+              # test for heteroskedasticity using Breusch-Pagan test
+              bp.test        = bptest(OLS.step, data = data.dum)
+              chi2.95        = qchisq(0.95,bp.test$parameter+1)
+              heterosc.BP.95 = bp.test$statistic > chi2.95
+      
+              # test for serial correlation using Durbin-Watson test
+              dw.test    = dwtest(OLS.step, data = data.dum)
+              sercorr.DW = dw.test$alternative == "true autocorrelation is greater than 0"
+       	    }     
             # save model result
             .Object@OLS = list()
             .Object@OLS[['fit.summary']] = summ.fit
             .Object@OLS[['fitted.vals']] = predict(OLS.step)
-            .Object@OLS[['heterosked']]  = heterosc.BP.95
-            .Object@OLS[['serial.corr']] = sercorr.DW
+            if (stats) .Object@OLS[['heterosked']]  = heterosc.BP.95
+            if (stats) .Object@OLS[['serial.corr']] = sercorr.DW
             .Object@OLS[['coef.signif']] = coef.sig
             .Object@OLS[['all.covars']]  = predictors
             rel_mare = abs(residuals(OLS.step) / data.dum$consumption)
@@ -320,8 +335,52 @@ setMethod('fitOLS',
           }
 )
 
+# ______________________________________________________
+# Computes covariate constribution to predicted OLS fit
+setGeneric(
+  name = "computeContributionsOLS",
+  def = function(.Object, verbose = T) {standardGeneric("computeContributionsOLS")}
+)
+setMethod('computeContributionsOLS',
+          signature  = 'Person',
+          definition = function(.Object, verbose=T) {
+	    if (verbose) cat(paste('***** Computing OLS components for Person', .Object@UID, '*****\n'))
+	    # compute contributions by covariate
+	    b  = .Object@OLS$fit.summary$coefficients[,1]
+	    X  = as.data.frame(t(b[-1] * t(.Object@data.tmp[,names(b)[-1]])))	    
+	    
+	    # aggregate DoW, ToD, Month
+	    idx.tod  = names(X)[which(names(X) %in% hourly_vars)]
+	    idx.dow  = names(X)[which(names(X) %in% weekly_vars )]
+	    idx.mnth = names(X)[which(names(X) %in% monthly_vars)]
+	    idx.trnd = names(X)[which(names(X) %in% trend_vars)]
+	    idx.wthr = names(X)[which(names(X) %in% wthr_vars_all)]
+	    if (length(idx.tod)>1) X.tod    = rowSums(X[,idx.tod]) else X.tod = X[,idx.tod]
+	    if (length(idx.dow)>1) X.dow    = rowSums(X[,idx.dow]) else X.dow = X[,idx.dow]
+	    if (length(idx.mnth)>1) X.mnth  = rowSums(X[,idx.mnth]) else X.mnth = X[,idx.mnth]
+	    if (length(idx.mnth)>1) X.trnd  = rowSums(X[,idx.trnd]) else X.trnd = X[,idx.trnd]
+	    Xagg     = X[,idx.wthr]
+	    if (length(idx.tod)>0) Xagg  = cbind(Xagg, data.frame(ToD = X.tod))
+	    if (length(idx.dow)>0) Xagg  = cbind(Xagg, data.frame(DoW = X.dow))
+	    if (length(idx.mnth)>0) Xagg = cbind(Xagg, data.frame(Month = X.mnth))
+	    if (length(idx.trnd)>0) Xagg = cbind(Xagg, data.frame(Trend = X.trnd))
+	    Xagg$mean= b[1]
+	    
+	    tot     = rowSums(abs(Xagg))
+	    Xr      = as.data.frame(as.matrix(Xagg) / tot*100)
+	    # store for later	    
+	    .Object@OLS$components      = list()
+	    .Object@OLS$components$stat = colMeans(Xr)
+	    .Object@OLS$components$ts   = Xagg	
+	    .Object@OLS$components$ts$fit             = .Object@OLS$fitted.vals
+	    .Object@OLS$components$ts$consumption     = .Object@data.tmp$consumption	
+	    rm(list=c('X', 'b', 'Xr', 'Xagg'))
+	    gc()
+	    return(.Object)
+})
+
 # _________________________________
-# Method to perform HMM analysis
+# Method to perform HMM analysis339.94 
 
 library('depmixS4')
 library('R.utils')
@@ -423,6 +482,7 @@ setMethod('fitHMM',
               
               ok = FALSE
               it = 0
+	      cur_tol = 5e-4
               while (!ok & it <= 1) {
                 mod <- depmix(response  = fmla_response, 
                               transition= fmla_transitn,
@@ -432,7 +492,7 @@ setMethod('fitHMM',
                               trstart   = trstart,
                               family    = gaussian(),
                               instart   = runif(K))
-                out <- capture.output(fm  <- try(fit(mod, verbose = T, useC = T, emcontrol = em.control(maxit = 50, tol = 5e-5))))
+                out <- capture.output(fm  <- try(fit(mod, verbose = T, useC = T, emcontrol = em.control(maxit = 50, tol = cur_tol))))
                 nlines = length(out)
                 if (class(fm) != 'try-error') {
                   ok = nlines > 2                                   
@@ -440,6 +500,7 @@ setMethod('fitHMM',
                 if (!ok){
                   BIC_cur = Inf                  
                   if (verbose) cat('Bad HMM fit; re-estimating...\n')
+		  cur_tol = cur_tol / 10
                 } else {
                   if (verbose) cat(paste('Convergence in', nlines*5, 'iterations.\n'))
                   BIC_cur = BIC(fm)
@@ -456,7 +517,6 @@ setMethod('fitHMM',
             K_opt  = (Kmin:Kmax)[idx_opt]
             fm_opt = result[[idx_opt]][['model']]
             
- 		print(BICs)
             if (!is.finite(BICs[idx_opt])) stop('HMM fitting error!')
             
             # ______________________
@@ -524,7 +584,9 @@ setMethod('fitHMM',
               pval= res$p.value
               return(pval)
             })
-            .Object@HMM$sw_test = is_normal
+	    #df = data.frame(p.values = .Object@HMM[['p.values']], state = .Object@HMM[['states']][,1])
+	    #zz = aggregate(p.values ~ state, data = df, FUN = mean, na.rm = T)
+            .Object@HMM$sw_test = is_normal#zz$p.values
                             
             # accuracy of prediction
             .Object@HMM[['MARE']] = mean(abs(residuals / .Object@HMM[['means']]))
@@ -533,16 +595,58 @@ setMethod('fitHMM',
             gc()
             return(.Object)
           }
+)           
+
+# _____________________________________________________
+# Computes covariate contribution to predicted HMM fit
+
+setGeneric(
+  name = "computeContributionsHMM",
+  def = function(.Object, verbose = T)
+    {standardGeneric("computeContributionsHMM")}
 )
-            
+setMethod('computeContributionsHMM',
+          signature  = 'Person',
+          definition = function(.Object, verbose=T) {
+	    if (verbose) cat(paste('***** Computing HMM components for Person', .Object@UID, '*****\n'))
+	    # compute contributions by covariate
+	    v = rownames(.Object@HMM$response$means)[-1]
+	    B = as.data.frame(t(.Object@HMM$response$means[,.Object@HMM$states[,1]]))
+	    X = .Object@data.tmp[,v] * B[,-1]
+	    
+	    # aggregate DoW, ToD, Month
+	    idx.tod  = names(X)[which(names(X) %in% hourly_vars)]
+	    idx.dow  = names(X)[which(names(X) %in% weekly_vars )]
+	    idx.mnth = names(X)[which(names(X) %in% monthly_vars)]
+	    idx.trnd = names(X)[which(names(X) %in% trend_vars)]
+	    idx.wthr = names(X)[which(names(X) %in% wthr_vars_all)]
+	    if (length(idx.tod)>1) X.tod    = rowSums(X[,idx.tod]) else X.tod = X[,idx.tod]
+	    if (length(idx.dow)>1) X.dow    = rowSums(X[,idx.dow]) else X.dow = X[,idx.dow]
+	    if (length(idx.mnth)>1) X.mnth  = rowSums(X[,idx.mnth]) else X.mnth = X[,idx.mnth]
+	    if (length(idx.trnd)>1) X.trnd  = rowSums(X[,idx.trnd]) else X.trnd = X[,idx.trnd]
+	    Xagg     = X[,idx.wthr]
+	    if (length(idx.tod)>0) Xagg  = cbind(Xagg, data.frame(ToD = X.tod))
+	    if (length(idx.dow)>0) Xagg  = cbind(Xagg, data.frame(DoW = X.dow))
+	    if (length(idx.mnth)>0) Xagg = cbind(Xagg, data.frame(Month = X.mnth))
+	    if (length(idx.trnd)>0) Xagg = cbind(Xagg, data.frame(Trend = X.trnd))
+	    Xagg$mean= B[,1]
+
+	    tot     = rowSums(abs(Xagg))
+	    Xr      = as.data.frame(as.matrix(Xagg) / tot * 100)
+	    Xr$state= .Object@HMM$states[,1]
+	    # store for later	    
+	    .Object@HMM$components      = list()
+	    .Object@HMM$components$stat = aggregate(data = Xr, . ~ state, FUN = mean, na.rm = T)
+	    .Object@HMM$components$ts   = Xagg		    
+	    .Object@HMM$components$ts$fit             = .Object@HMM$means
+	    .Object@HMM$components$ts$consumption     = .Object@data.tmp$consumption	
+		
+	    return(.Object)
+
+})
 
 # _______________________
 # Plot Person object
-
-library(igraph)
-library('useful')
-library('reshape2')
-library('RColorBrewer')
 
 setMethod('plot',
           signature  = 'Person',
@@ -563,6 +667,8 @@ setMethod('plot',
             hmm.residual=x@HMM$residual      
             wthr_data   =x@weather
             p.vals      =x@HMM$p.values
+	    comps.ols   =x@OLS$components$ts
+	    comps.hmm   =x@HMM$components$ts
             if (!is.null(interval)) {
               idx_ok      = which(x@timestamps >= as.POSIXct(interval[1]) & 
                                   x@timestamps <= as.POSIXct(interval[2]))
@@ -575,28 +681,13 @@ setMethod('plot',
               states      = states[idx_ok]
               hmm.residual= hmm.residual[idx_ok]
               wthr_data   = wthr_data[idx_ok,]
+	      comps.ols   = comps.ols[idx_ok,]
+	      comps.hmm   = comps.hmm[idx_ok,]
+	      p.vals      = p.vals[idx_ok]
             }  
-            
-            if (type == 'OLS-res') {
-              layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))            
-              plot(timestamps, ols.resids, 
-                   main = 'OLS Residuals', ylab = 'Residuals', xlab = 'Time', lwd = 3, type='l')
-              plot(density(na.omit(ols.resids)), 
-                   main = 'OLS Residuals: Density', ylab = 'pdf', xlab = 'Residuals', lwd = 3, type='l')
-              acf(na.omit(ols.resids), 
-                   main = 'OLS Residuals', ylab = 'Residuals', xlab = 'Time', lwd = 3)
-            }    
-            
-            if (type == 'OLS-fit') {
-              yrange = range(c(ols.means, consumption))
-              plot(timestamps, ols.means, 
-                   main = 'OLS Fitted Values', ylab = 'Values', xlab = 'Time', 
-                   lwd = 3, type='l', col='red', ylim = yrange)
-              points(timestamps, consumption, type='b', pch=20, col = 'black')
-              legend('topleft', c('OLS Fit', 'Observations'), col=c('red', 'black'))
-            }    
-            
+
             if (type == 'default') {
+print(length(consumption))
               plot(timestamps, consumption, 
                    main = paste('Consumption Person-SPID (', x@UID,')'),
                    xlab = 'Time', ylab = 'kWh', type = 'l', lwd = 2)
@@ -616,117 +707,71 @@ setMethod('plot',
                      xlab = 'Time', type = 'l', lwd = 2)                
               }
             }
+                        
+            if (type == 'OLS-res') {
+              layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))            
+              plot(timestamps, ols.resids, 
+                   main = 'OLS Residuals', ylab = 'Residuals', xlab = 'Time', lwd = 3, type='l')
+              plot(density(na.omit(ols.resids)), 
+                   main = 'OLS Residuals: Density', ylab = 'pdf', xlab = 'Residuals', lwd = 3, type='l')
+              acf(na.omit(ols.resids), 
+                   main = 'OLS Residuals', ylab = 'Residuals', xlab = 'Time', lwd = 3)
+            }    
             
-            if (type == 'HMM-ts') {    
+            if (type == 'OLS-fit') {
+              yrange = range(c(ols.means, consumption))
+              plot(timestamps, ols.means, 
+                   main = 'OLS Fitted Values', ylab = 'Values', xlab = 'Time', 
+                   lwd = 3, type='l', col='red', ylim = yrange)
+              points(timestamps, consumption, type='b', pch=20, col = 'black')
+              legend('topleft', c('OLS Fit', 'Observations'), col=c('red', 'black'))
+            }    
+            
+	    if (type == 'OLS-contrib-ts') {
+		title = paste("Zoom-In: OLS Covariate Contributions (", x@UID,')',sep='')
+		p     = plot_components_ts(comps.ols, timestamps, title = title)
+		
+		return(p)
+	    }
+
+	    if (type == 'OLS-contrib-tot') {
+		df = as.data.frame(t(x@OLS$components$stat))
+		df$state = 1
+		title = paste("OLS Covariate Contributions (", x@UID,')',sep='')
+		p     = plot_tornado(df, title = title)
+		
+		return(p)
+	    }
+
+	    if (type == 'OLS-contrib-ts') {
+		title = paste("Zoom-In: OLS Covariate Contributions (", x@UID,')',sep='')
+		p     = plot_components_ts(comps.ols, timestamps, title = title)
+		
+		return(p)
+	    }
+
+            if (type == 'HMM-ts') {
+		title = paste("Zoom-In: States and Observed Emissions (", x@UID,')',sep='')   
               
-              # construct plotting data frames
-              df.hmm = data.frame(Mean   = hmm.means, 
-                                  Sigma  = hmm.sigma, 
-                                  State  = states,                                  
-                                  Time   = format(timestamps, "%a,%m/%d %H:00"))              
-              df.obs = data.frame(Observed = consumption, 
-                                  Time   = format(timestamps, "%a,%m/%d %H:00"),
-                                  Sigma    = rep(0, length(consumption)))
-              
-              df.mlt.obs = melt(df.obs, id.vars = c('Time', 'Sigma'))
-              df.mlt.hmm = melt(df.hmm, id.vars = c('Time', 'Sigma', 'State'), measure.vars = c('Mean'))
-              df.mlt.hmm$variable = paste(df.mlt.hmm$variable, df.mlt.hmm$State)
-              df.mlt.hmm$State = NULL
-              
-              # plot current zoom-in
-              pd <- position_dodge(.1)
-              plt = ggplot(df.mlt.hmm, aes(x = as.numeric(Time), y = value)) + 
-                geom_errorbar(aes(ymin = value-Sigma, ymax=value+Sigma), 
-                              colour="black", width=.1, position=pd, alpha=0.2) +
-                geom_line(position=pd) + geom_point(position=pd, aes(colour=variable)) + 
-                geom_line(col='black', data = df.mlt.obs, alpha = 0.4) + 
-                geom_point(col='black', data = df.mlt.obs, alpha = 0.4) + 
-                scale_x_continuous(breaks = seq(1,length(df.mlt.hmm$Time), length.out=10), 
-                                   labels = format(df.mlt.hmm$Time[seq(1,length(df.mlt.hmm$Time), length.out=10)], 
-                                                   format = "%a,%m/%d %H:00")) + 
-                theme_bw() +
-                theme(panel.grid.major = element_blank(),
-                       panel.grid.minor = element_blank(),
-                       panel.background = element_blank(),
-                       axis.title.x = element_blank(),
-                       panel.background = element_rect(fill = "transparent",colour = NA),
-                       axis.ticks = element_blank() ) + 
-                ylab("kWh") + 
-                theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
-                ggtitle( paste("Zoom-In: States and Observed Emissions (", x@UID,')',sep=''))
-              
-              return(plt)
+		plt = plot_hmm_ts(hmm.means, hmm.sigma, states, timestamps, consumption, 
+				  y.lab = 'kWh', title = title)
+                return(plt)
             }
             
             
             # plot state space network for a given HSMM using ggplot
             if (type == 'HMM-MC') {
-              df = data.frame(Mean   = as.numeric(x@HMM$response$means[1,]),
-                              Sigma  = as.numeric(x@HMM$response$stdev),
-                              State  = 1:x@HMM$nStates)
-              state.grid = expand.grid(State.i = as.factor(1:1:x@HMM$nStates), 
-                                       State.j = as.factor(1:1:x@HMM$nStates))
-              trans = sapply(1:nrow(state.grid), function(s) {
-                i = state.grid[s,1]
-                j = state.grid[s,2]
-                tr= paste(i,'->', j, sep='')
-                ret = x@HMM$transition[1,tr]
-              })
-                            
-              df.P = state.grid
-              df.P$P = trans
-              df.P$Mean.i  = as.numeric(as.character(df.P$State.i))
-              df.P$Mean.j  = as.numeric(as.character(df.P$State.j))
-              df.P$Sigma.i = as.numeric(x@HMM$response$stdev[as.character(df.P$State.i)])
-              df.P$Sigma.j = as.numeric(x@HMM$response$stdev[as.character(df.P$State.j)])
-              
-              plt = ggplot(df) + 
-                geom_point(aes(x = State, y = Sigma, color = State, size = Mean)) + 
-                #scale_size(to = c(2, 12)) + 
-                geom_segment(aes(x = Mean.i, xend = Mean.j, 
-                                 y = Sigma.i, yend = Sigma.j, 
-                                 size=P, alpha=P), data=df.P) +
-                theme_bw() +
-                theme(panel.grid.major = element_blank(),
-                     panel.grid.minor = element_blank(),
-                     panel.background = element_blank(),
-              #        axis.title.y = element_blank(),
-              #        axis.title.x = element_blank(),
-                     legend.position = "none",
-                     panel.background = element_blank(),
-                     axis.ticks = element_blank()) + 
-                ylab('Sigma') + xlab('Mean') + 
-                ggtitle(paste("State Space Diagram (", x@UID, ')',sep=''))
-              return(plt)
+		title = paste("State Space Diagram (", x@UID, ')',sep='')
+		plt   = plot_HMM_MC(as.numeric(x@HMM$response$means[1,]),
+				    as.numeric(x@HMM$response$stdev), x@HMM$transition, title=title)
+                return(plt)
             }
             
             # plot confidence interval
-            if (type == 'HMM-ci') {  
-              df = data.frame( Prob = p.vals, State = as.factor(states), 
-                               Weekday = weekdays(timestamps), Hour = hour(timestamps) )
-              df.st = aggregate(Prob ~ State, FUN = mean, data = df)
-              names(df.st) = c('State')
-              df.mu = aggregate(Prob ~ Weekday + Hour, FUN = mean, data = df)
-              names(df.mu) = c('Weekday', 'Hour', 'Mean')
-              df.sd = aggregate(Prob ~ Weekday + Hour, FUN = sd, data = df)
-              names(df.sd) = c('Weekday', 'Hour', 'Sigma')
-              df.sd.mu = merge(df.sd, df.mu)
-              
-              pd <- position_dodge(.1)
-              plt = ggplot(df.sd.mu, aes(x = Hour, y = Mean, color = Weekday)) + 
-                geom_errorbar(aes(ymin = Mean-Sigma, ymax=Mean+Sigma), 
-                              colour="black", width=.1, position=pd, alpha=0.2) +
-                geom_line(position=pd) + geom_point(position=pd) + 
-                theme_bw() +
-                theme(panel.grid.major = element_blank(),
-                     panel.grid.minor = element_blank(),
-                     panel.background = element_blank(),
-                     panel.background = element_rect(fill = "transparent",colour = NA),
-                     axis.ticks = element_blank()) + 
-                     ylab('Confidence') + xlab('Hour') + 
-                ggtitle( paste("Avg. Prediction Confidence (", x@UID, ')',sep=''))
-              
-              return(plt)
+            if (type == 'HMM-ci') { 
+		title = paste("Avg. Prediction Confidence (", x@UID, ')',sep='') 
+		plt   = plot_HMM_CI(p.vals, states, timestamps, title = title)
+                return(plt)
             }
             
             if (type =='HMM-acf') {
@@ -736,75 +781,31 @@ setMethod('plot',
               return(plt)
             }
             
-            if (type == 'HMM-res') {              
-              df = data.frame(State = factor(states), Residual = hmm.residual)
-              plt = ggplot(df) + 
-                geom_density(aes(x = Residual, colour = State), size=2) + 
-                theme(legend.position = c(0.9,0.7)) + 
-                theme_bw() + facet_wrap( ~ State, nrow=1, scales = 'free') + 
-                theme(panel.grid.major = element_blank(),
-                     panel.grid.minor = element_blank(),
-                     panel.background = element_blank(),
-                     panel.background = element_rect(fill = "transparent",colour = NA),
-                     axis.ticks = element_blank()) + 
-                     ylab('pdf') + xlab('Residual') + 
-                ggtitle("HMM Residuals")
-              return(plt)
-            }
-            
-            if (type == 'HMM-qq') {
-              df      = data.frame(State = factor(states), Residual = hmm.residual)
-              pvector = x@HMM$sw_test
-              levels(df$State) = paste(levels(df$State), round(pvector, digits=5), sep=':')
-              for (j in 1:x@HMM[['nStates']]) {
-                idx = which(df$Residual == j)
-                df$Residual[idx] = df$Residual[idx] / x@HMM$response$stdev[j]^2
-              }
-              plt = ggplot(df, aes(sample = Residual)) + facet_wrap(~State) +  
-                stat_qq(geom = "point", size = 2, position = "identity") + 
-                        #dparams = x@HMM$response$stdev) + 
-                theme(legend.position = c(0.9,0.7)) + 
-                theme_bw() + facet_wrap( ~ State, nrow=1) + 
-                theme(panel.grid.major = element_blank(),
-                     panel.grid.minor = element_blank(),
-                     panel.background = element_blank(),
-                     panel.background = element_rect(fill = "transparent",colour = NA),
-                     axis.ticks = element_blank()) + 
-                     ylab('Sample Quantiles') + xlab('Theoretical Quantiles')
-              return(plt)
-            }
+            if (type == 'HMM-res') { 
+		plt = plot_HMM_res(hmm.residual, states, x@HMM$response$stdev, sw_test = x@HMM$sw_test)
+		plt
+	    }             
             
             if (type == 'HMM-MC2') {
-              
+              title = paste("Avg. Prediction Confidence (", x@UID, ')',sep='') 
               # organize MC information
-              df = data.frame(Mean   = as.numeric(x@HMM$response$means[1,]),
-                              Sigma  = as.numeric(x@HMM$response$stdev),
-                              State  = 1:x@HMM$nStates)              
-              state.grid = expand.grid(State.i = 1:x@HMM$nStates, State.j = 1:x@HMM$nStates)
-              trans = sapply(1:nrow(state.grid), function(s) {
-                i = state.grid[s,1]
-                j = state.grid[s,2]
-                tr= paste(i,'->', j, sep='')
-                ret = x@HMM$transition[1,tr]
-              })
-                        
-              # form igraph object
-              g = graph.empty()              
-              g = add.vertices(g, nrow(df), State=as.character(df$State), Mean =df$Mean, Sigma = df$Sigma)              
-              g = add.edges(g, t(as.matrix(state.grid)), P = trans)                            
-              
-              # add graph plotting attributes
-              scale <- function(v, a, b) {
-                v <- v-min(v) ; v <- v/max(v) ; v <- v * (b-a) ; v+a
-              }              
-              pallete    = colorRampPalette(brewer.pal(9,"Blues"))(100)
-              V(g)$color = 'grey'              
-              V(g)$size  <- scale(V(g)$Mean, 10, 20)
-              E(g)$color <- pallete[scale(E(g)$P, 10,100)]
-              
-              # plot
-              plot(g, main = 'MC Structure')              
+              plt = plot_HMM_MC_NET(as.numeric(x@HMM$response$means[1,]), as.numeric(x@HMM$response$stdev), x@HMM$transition)
+	      plot(plt, main = title) 
             }
+
+	    if (type == 'HMM-contrib-ts'){
+		title = paste("Zoom-In: HMM Covariate Contributions (", x@UID,')',sep='')
+		p     = plot_components_ts(comps.hmm, timestamps, title = title)
+		return(p)
+            }
+
+	    if (type == 'HMM-contrib-tot') {
+		df = x@HMM$components$stat
+		title = paste("HMM Covariate Contributions (", x@UID,')',sep='')
+		p     = plot_tornado(df, title = title, nrow = 2)
+		
+		return(p)
+	    }
 })
 
 
@@ -812,11 +813,11 @@ setMethod('plot',
 # Method to dump Person model data to file
 setGeneric(
   name = "dumpComputationToFile",
-  def = function(.Object, verbose = T, path = './'){standardGeneric("dumpComputationToFile")}
+  def = function(.Object, verbose = T, path = './', dump = TRUE){standardGeneric("dumpComputationToFile")}
 )
 setMethod('dumpComputationToFile',
           signature  = 'Person',
-          definition = function(.Object, verbose = T, path = './'){
+          definition = function(.Object, verbose = T, path = './', dump = TRUE){
           if (verbose) 
             cat(paste('*** Dumping model data to file (', .Object@UID, ')***\n', sep=''))
 
@@ -840,6 +841,8 @@ setMethod('dumpComputationToFile',
           df$pval= mean(.Object@OLS$p.values)
           df$UID = .Object@UID
           df$ZIPCODE= .Object@ZIPCODE
+	  df$dwTest = .Object@OLS$dw.test
+	  df$bpTest = .Object@OLS$bp.test 
           df.ols = df
           
           # ______________________________
@@ -858,52 +861,68 @@ setMethod('dumpComputationToFile',
 
           # transition
           df = as.data.frame(t(.Object@HMM$transition))
-          df$Transit= rownames(df)
+          df$Transit   = rownames(df)
           rownames(df) = NULL
-          df$UID    = .Object@UID
-          df$ZIPCODE= .Object@ZIPCODE
-          df.tran = df
+          df$UID       = .Object@UID
+          df$ZIPCODE   = .Object@ZIPCODE
+          df.tran      = df
           
+	  # ________________________
+	  # Component contributions
+	 
+    	  ols.comp         = as.data.frame(t(.Object@OLS$components$stat))
+	  ols.comp$UID     = .Object@UID
+	  ols.comp$ZIPCODE = .Object@ZIPCODE
+
+     	  hmm.comp         = .Object@OLS$components$stat
+	  hmm.comp$UID     = .Object@UID
+	  hmm.comp$ZIPCODE = .Object@ZIPCODE
+
           # ______________________________
           # Dump to file
           
-          write.csv(df.ols, file = paste(path,.Object@UID, '_ols.csv', sep=''), quote = F, row.names = F)
-          write.csv(df.resp, file = paste(path,.Object@UID, '_hmm_resp.csv', sep=''), quote = F, row.names = F)
-          write.csv(df.tran, file = paste(path,.Object@UID, '_hmm_tran.csv', sep=''), quote = F, row.names = F)
-
-          return(list(OLS = df.ols, HMM.response = df.resp, HMM.transition = df.tran))
+	  if (dump) {
+		  write.csv(df.ols, file = paste(path,.Object@UID, '_ols.csv', sep=''), quote = F, row.names = F)
+		  write.csv(df.resp, file = paste(path,.Object@UID, '_hmm_resp.csv', sep=''), quote = F, row.names = F)
+		  write.csv(df.tran, file = paste(path,.Object@UID, '_hmm_tran.csv', sep=''), quote = F, row.names = F)
+	  }
+          return(list(OLS = df.ols, HMM.response = df.resp, HMM.transition = df.tran, OLS.comp = ols.comp, HMM.comp = hmm.comp))
 })
 
 
-# # _______________________
-# # Test constructor
-# 
-# source('~/Dropbox/ControlPatterns/code/R/utils/sql_utils.r')
-# source('~/Dropbox/ControlPatterns/code/R/utils/timing.r')
-# raw_data  = run.query("select * from pge_res_final3_unique LIMIT 0,1000")
-# raw_data  = subset(raw_data, UID == raw_data$UID[1])
-# test      = new(Class='Person', raw_data, unique(raw_data$UID), unique(raw_data$ZIP5))
-# 
-# query     = paste("SELECT * FROM ZIP_", unique(raw_data$ZIP5), sep='')
-# wthr_data = run.query(query, db = 'PGE_WEATHER')
-# test      = addWeather(test, wthr_data)
-# test      = prepareData(test, trends = c(8,24, 24*30*6))
-# 
-# # _______________________
-# # Test modeling methods
-# 
-# hourly_vars   = paste('HourOfDay', 0:23, sep='.')
-# monthly_vars  = paste('Month', 1:12, sep = '.')
-# weekly_vars   = paste('DayOfWeek', c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'), sep='.')
-# wthr_vars_all = c('TemperatureF', 'WindSpeed', 'Humidity', 'HourlyPrecip', 'SolarRadiation')
-# trend_vars    = c('Trend.8', 'Trend.24', 'Trend.4320')
-# holiday_vars  = c('IsHoliday.0', 'IsHoliday.1')
-# all_covars    = c(hourly_vars, monthly_vars, weekly_vars, wthr_vars_all, trend_vars, holiday_vars)
-# 
-# test          = fitOLS(test)
-# test          = fitHMM(test, constrMC = NULL, Kmin = 2, Kmax = 6, ols_vars = T,
-#                        response_vars = c(hourly_vars, wthr_vars_all, trend_vars))
-# 
+ # _______________________
+ # Test constructor
+
+
+if (0 == 1) {
+ source('~/EnergyAnalytics/code/R/utils/sql_utils.r')
+ source('~/EnergyAnalytics/code/R/utils/plot_utils.r')
+ source('~/EnergyAnalytics/code/R/utils/timing.r')
+ 
+ raw_data  = run.query("select * from pge_res_final3_unique LIMIT 0,1000", user = 'adalbert', password = 'adrian')
+ raw_data  = subset(raw_data, UID == raw_data$UID[1])
+ test      = new(Class='Person', raw_data, unique(raw_data$UID), unique(raw_data$ZIP5), log = F)
+
+ query     = paste("SELECT * FROM ZIP_", unique(raw_data$ZIP5), sep='')
+ wthr_data = run.query(query, db = 'PGE_WEATHER', user = 'adalbert', password = 'adrian')
+ test      = addWeather(test, wthr_data)
+ test      = prepareData(test, trends = c(8,24, 24*30*6))
+
+
+ # _______________________
+ # Test modeling methods
+ 
+ test          = fitOLS(test)
+ test          = fitHMM(test, constrMC = NULL, Kmin = 6, Kmax = 6, ols_vars = T,
+                        response_vars = c(hourly_vars, wthr_vars_all, trend_vars))
+ 
+ # ________________________________________
+ # Test formatting and aggregation methods
+
+test	       = computeContributionsOLS(test, verbose = T)
+test	       = computeContributionsHMM(test, verbose = T)
+
+ 
 # # _______________________
 # # Test plotting methods
 # 
@@ -918,27 +937,41 @@ setMethod('dumpComputationToFile',
 # png(filename = 'OLS.png', width = 1200, height = 800)
 # plot(test, type = 'OLS-fit', interval = c('2010-12-01', '2010-12-10'))
 # dev.off()
-# 
-# png(filename = 'HMM_ts.png', width = 1200, height = 800)
-# print(plot(test, type = 'HMM-ts', interval = c('2010-12-01', '2010-12-10')))
-# dev.off()
-# 
-# png(filename = 'HMM_MC.png', width = 1200, height = 800)
-# print(plot(test, type = 'HMM-MC', interval = c('2010-12-01', '2010-12-10')))
-# dev.off()
-# 
-# png(filename = 'HMM_ci.png', width = 1200, height = 800)
-# print(plot(test, type = 'HMM-ci', interval = c('2010-12-01', '2010-12-10')))
-# dev.off()
-# 
-# png(filename = 'HMM_MC2.png', width = 1200, height = 800)
-# plot(test, type = 'HMM-MC2', interval = c('2010-12-01', '2010-12-10'))
-# dev.off()
-# 
-# png(filename = 'HMM_qq.png', width = 1200, height = 800)
-# print(plot(test, type = 'HMM-qq', interval = c('2010-12-01', '2010-12-10')))
-# dev.off()
-# 
-# png(filename = 'HMM_res.png', width = 1200, height = 800)
-# print(plot(test, type = 'HMM-res', interval = c('2010-12-01', '2010-12-10')))
-# dev.off()
+
+png(filename = 'OLS-contrib-ts.png', width = 1200, height = 800)
+print(plot(test, type = 'OLS-contrib-ts'), interval = c('2010-12-01', '2010-12-10'))
+dev.off()
+
+png(filename = 'OLS-contrib-tot.png', width = 600, height = 600)
+print(plot(test, type = 'OLS-contrib-tot'), interval = c('2010-12-01', '2010-12-10'))
+dev.off()
+
+png(filename = 'HMM_ts.png', width = 1200, height = 800)
+print(plot(test, type = 'HMM-ts', interval = c('2010-12-01', '2010-12-10')))
+dev.off()
+ 
+png(filename = 'HMM_MC.png', width = 1200, height = 800)
+print(plot(test, type = 'HMM-MC', interval = c('2010-12-01', '2010-12-10')))
+dev.off()
+
+png(filename = 'HMM_ci.png', width = 1200, height = 800)
+print(plot(test, type = 'HMM-ci', interval = c('2010-12-01', '2010-12-10')))
+dev.off()
+
+png(filename = 'HMM_MC2.png', width = 1200, height = 800)
+plot(test, type = 'HMM-MC2', interval = c('2010-12-01', '2010-12-10'))
+dev.off()
+ 
+png(filename = 'HMM_res.png', width = 1200, height = 800)
+print(plot(test, type = 'HMM-res', interval = c('2010-12-01', '2010-12-10')))
+dev.off()
+
+png(filename = 'HMM-contrib-ts.png', width = 1200, height = 800)
+print(plot(test, type = 'HMM-contrib-ts'), interval = c('2010-12-01', '2010-12-10'))
+dev.off()
+
+png(filename = 'HMM-contrib-tot.png', width = 1200, height = 600)
+print(plot(test, type = 'HMM-contrib-tot', nrow = 2), interval = c('2010-12-01', '2010-12-10'))
+dev.off()
+
+}
