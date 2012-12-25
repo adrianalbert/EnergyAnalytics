@@ -166,7 +166,7 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
          # pass
        })
     }
-    break
+    #break
   } # sp_id loop
   out <- list(
       features.basic  = features.basic,
@@ -205,7 +205,7 @@ if (length(args) > 0) {
   allZips  <- db.getZips()
 }
 # bakersfield, fresno, oakland
-#allZips = c('93304','93727','94610')
+allZips = c('93304','93727','94610')
 print('Beginning batch run')
 runResult = runModelsByZip(allZips,triggerZip=94610)
 summarizeRun(runResult,listFailures=FALSE)
