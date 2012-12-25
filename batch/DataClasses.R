@@ -203,6 +203,7 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
   dates = as.POSIXlt(as.vector(dateMat),origin='1970-01-01')
   
   if (is.null(weather)) weather = WeatherClass(zipcode) # todo: pass in the dates to interpolate ,dates)
+  tout = weather$resample(dates,'tout')
   
   # TODO: clear out obviously bad readings
   #keepers   = which(kw > 0)
@@ -211,10 +212,11 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
     dates = dates,
     kw  = kw,
     kwMat = kwMat,
-    days = days,
+    days = dateMat[,1],
     zipcode = zipcode,
     weather = weather,
-    tout = weather$resample(dates,'tout'),
+    tout = tout,
+    toutMat = matrix(tout,ncol=24),
     get = function(x) obj[[x]],
     # Not sure why <<- is used here
     # <<- searches parent environments before assignment
@@ -225,6 +227,10 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
   
   obj$w = function(name='tout') {
     return( obj$weather$resample(dates,name) )
+  }
+  
+  obj$df = function() {
+    return( data.frame(kw=obj$kw,tout=obj$tout,dates=obj$dates ) )
   }
   
   obj$norm = function(data) {

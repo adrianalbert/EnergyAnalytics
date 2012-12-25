@@ -83,7 +83,7 @@ base.models = list(
   toutTOD    = formula(kw ~ tout:HOD + HOW)
 )
 
-regressorDataFrame = function(residence) {
+regressorDF = function(residence) {
   hStr       = paste('H',sprintf('%02i',residence$dates$hour),sep='')
   dStr       = paste('D',residence$dates$wday,sep='')
   mStr       = paste('M',residence$dates$mon,sep='')
@@ -101,6 +101,25 @@ regressorDataFrame = function(residence) {
       dates=residence$dates,
       wday=residence$dates$wday,
       MOY,DOW,HOD,HOW   )    )
+}
+
+regressorDFAggregated = function(residence,bp=65) {
+  # uses melt and cast to reshape and aggregate data
+  df = residence$df() # kw, tout, dates
+  df$day   = format(df$dates,'%y-%m-%d') # melt has a problem with dates
+  df$DOW   = paste('D',as.POSIXlt(df$dates)$wday,sep='')   # Su=0 ... Sa=6
+  df$DOW   = factor(df$DOW, levels=sort(unique(df$DOW)))
+  month = format(df$dates,'%y-%m')    # as.POSIXlt(df$dates)$mon
+  df$MOY   = factor(month, levels=sort(unique(month)))
+  
+  df <- subset(df, select = -c(dates) )  # melt has a problem with dates and we don't need anymore
+  dfm = melt(df,id=c("day",'DOW','MOY'),na.rm=TRUE)
+  monthly = cast(dfm,MOY ~ variable,fun.aggregate=c(mean,function(ar1) sum(ar1 > bp),function(ar2) sum(ar2 < bp)))
+  colnames(monthly) <- c('month','kw_mean','junk1','junk2','tout_mean','CDD','HDD')
+  daily = cast(dfm, MOY + day + DOW ~ variable,fun.aggregate=c(mean,max,function(ar1) sum(ar1 > bp),function(ar2) sum(ar2 < bp)))
+  colnames(daily) <- c('MOY','day','DOW','kw_mean','kw_max','junk1','junk2','tout_mean','tout_max','CDD','HDD')
+
+  return(list(daily,monthly))
 }
 
 runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
@@ -132,7 +151,7 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
     else { # it worked!
       r <- tryCatch( {
         tic('model run')
-        df = regressorDataFrame(r)
+        df = regressorDF(r) # see also regressorDFAggregated
         models = base.models
         
         # add special data to the data frame: piecewise tout data
