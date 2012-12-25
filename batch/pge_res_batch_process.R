@@ -74,7 +74,7 @@ runModelsByZip = function(zipArray,triggerZip=NULL) {
   return(res)
 }
 
-base.models = list(
+models.hourly = list(
   MOY        = formula(kw ~ tout + MOY),
   DOW        = formula(kw ~ tout + DOW),
   DOW_HOD    = formula(kw ~ tout + DOW + HOD),
@@ -83,7 +83,7 @@ base.models = list(
   toutTOD    = formula(kw ~ tout:HOD + HOW)
 )
 
-daily.models = list(
+models.daily = list(
   #MOY        = formula(kw.mean ~ tout.mean),
   tout_mean     = formula(kw.mean ~ tout.mean + DOW),
   tout_max      = formula(kw.mean ~ tout.max  + DOW),
@@ -91,7 +91,7 @@ daily.models = list(
   tout_CDD_WKND = formula(kw.mean ~ CDD + HDD + WKND)
 )
 
-monthly.models = list(
+models.monthly = list(
   MOY        = formula(kw.mean ~ tout.mean + MOY),
   CDD        = formula(kw.mean ~ tout.mean + CDD),
   CDD_HDD    = formula(kw.mean ~ tout.mean + HDD + CDD)
@@ -99,6 +99,7 @@ monthly.models = list(
 
 
 regressorDF = function(residence,norm=TRUE) {
+  WKND       = (residence$dates$wday == 0 | residence$dates$wday == 6) * 1 # weekend indicator
   hStr       = paste('H',sprintf('%02i',residence$dates$hour),sep='')
   dStr       = paste('D',residence$dates$wday,sep='')
   mStr       = paste('M',residence$dates$mon,sep='')
@@ -108,6 +109,8 @@ regressorDF = function(residence,norm=TRUE) {
   HOD = factor(hStr,levels=sort(unique(hStr)))       # hour of day
   HOW = factor(howStrs,levels=sort(unique(howStrs))) # hour of week
   tout = residence$w('tout')
+  pout = residence$w('pout')
+  rain = residence$w('rain')
   # todo: we need the names of the toutPIECES to build the model
   # but those names aren't returned form here
   # add special data to the data frame: piecewise tout data
@@ -118,13 +121,13 @@ regressorDF = function(residence,norm=TRUE) {
   df = data.frame(
       kw=kw,
       tout=tout,
-      pout=residence$w('pout'),
-      rain=residence$w('rain'),
+      pout=pout,
+      rain=rain,
       dates=residence$dates,
       wday=residence$dates$wday,
-      MOY,DOW,HOD,HOW   )
+      MOY,DOW,HOD,HOW,WKND   )
   #df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
-  return df
+  return(df)
 }
 
 regressorDFAggregated = function(residence,norm=TRUE,bp=65) {
@@ -144,12 +147,12 @@ regressorDFAggregated = function(residence,norm=TRUE,bp=65) {
   # melt and cast to reshape data into monthly and daily time averages
   dfm = melt(df,id=c("day",'DOW','MOY','mon','wday','WKND'),na.rm=TRUE)
   monthly = cast(dfm,MOY + mon ~ variable,fun.aggregate=c(sum,mean,function(ar1) sum(ar1 > bp),function(ar2) sum(ar2 < bp)))
-  colnames(monthly) <- c('month','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDD','HDD')
+  colnames(monthly) <- c('MOY','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDD','HDD')
   monthly <- subset(monthly, select = -c(junk1, junk2, junk3) )
   daily = cast(dfm, MOY + day + DOW + mon + wday + WKND ~ variable,fun.aggregate=c(sum,mean,max,function(ar1) sum(ar1 > bp),function(ar2) sum(ar2 < bp)))
   colnames(daily) <- c('MOY','day','DOW','mon','wday','WKND','kwh','kw.mean','kw.max','junk1','junk2','junk3','tout.mean','tout.max','CDD','HDD')
   daily <- subset(daily, select = -c(junk1, junk2, junk3) )
-  return(list(daily,monthly))
+  return(list(daily=daily,monthly=monthly))
 }
 
 runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
@@ -157,7 +160,10 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
   ids             <- c()
   betas           <- c()
   summaries       <- c()
-  
+  d_betas         <- c()
+  d_summaries     <- c()
+  m_betas         <- c()
+  m_summaries     <- c()
   # TODO:
   # use step for forward selection
   # find a faster method of cross validation than cvTools or DAAG provide
@@ -168,21 +174,21 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
     i <- i+1
     print(paste('  ',sp_id,' (',i,'/',splen,') in ',zip,sep=''))
     resData = NULL
-    if (!is.null(data)) { 
-      resData = data[data[,'sp_id']== sp_id,]
-    }
+    if (!is.null(data)) {  resData = data[data[,'sp_id']== sp_id,] }
     r <- tryCatch(ResDataClass(sp_id,zip=zip,weather=weather,data=resData,db=conf.meterDB()), 
-                  error = function(e) {print(e)}, 
-                  finally={} )
-    if ( ! "ResDataClass" %in% class(r) ) {
-      # do nothing: likely some sort of error, but not including it is sufficient
-      print('    not found (see error)')
+                  error = function(e) {print(e)}, finally={} )
+    if ( ! "ResDataClass" %in% class(r) ) { # constructor returns the error class if it has a problem
+      print('    not found (see error)') # ignore residences that produce errors
     }
-    else { # it worked!
+    else { # viable residence!
       r <- tryCatch( {
         tic('model run')
+        features.basic  <- rbind(features.basic,basicFeatures(r$kwMat))
+        ids             <- rbind(ids,sp_id)
+        
+        # hourly regressions
         df = regressorDF(r) # see also regressorDFAggregated
-        models = base.models
+        models = models.hourly
         
         # add special data to the data frame: piecewise tout data
         toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
@@ -190,16 +196,23 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
         # define regression formula that uses the piecewise pieces
         models$toutPIECES = as.formula(paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW'))
         
-        WKND = (df$wday == 0 | df$wday == 6) # 0 is Sun, 6 is Sat
-        WKDY = ! WKND
-        # TODO: define other filter vectors, like seasonal
- 
-        features.basic  <- rbind(features.basic,basicFeatures(r$kwMat))
-        ids             <- rbind(ids,sp_id)
-        
         results   = lapply(models,lm, data=df)
-        betas     = rbind(betas,lapply(results,coef))
+        betas     = rbind(betas,lapply(results,coef)) # extract model coefficients
         summaries = rbind(summaries,lapply(results,function(x) { summary(x)$sigma }))
+        
+        dfl = regressorDFAggregated(r)
+        # daily regressions
+        models = models.daily
+        results   = lapply(models,lm, data=dfl$daily)
+        d_betas     = rbind(d_betas,lapply(results,coef))
+        d_summaries = rbind(d_summaries,lapply(results,function(x) { summary(x)$sigma }))
+        
+        # monthly regressions
+        models = models.monthly
+        results   = lapply(models,lm, data=dfl$monthly)
+        m_betas     = rbind(m_betas,lapply(results,coef))
+        m_summaries = rbind(m_summaries,lapply(results,function(x) { summary(x)$sigma }))
+        
         # TODO: write our own cross validation code - these are slow and picky! 
         #summaries = rbind(summaries,lapply(results,function(res) {cvFit(res,data=model.frame(res),y=model.frame(res)$kw)$cv}))
         #summaries = rbind(summaries,lapply(results,function(fit) {cv.lm(df=model.frame(fit),form.lm=fit,m=5,plotit=FALSE,printit=TRUE)$ss}))
@@ -216,9 +229,14 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
   } # sp_id loop
   out <- list(
       features.basic  = features.basic,
-      betas           = betas,
       ids             = ids,
-      summaries       = summaries   )
+      betas           = betas,
+      summaries       = summaries,
+      d_betas         = d_betas, 
+      d_summaries     = d_summaries,
+      m_betas         = m_betas, 
+      m_summaries     = m_summaries    
+      )
   print(names(out))
   return(out)
 }
@@ -253,7 +271,7 @@ if (length(args) > 0) {
 # bakersfield, fresno, oakland
 allZips = c('93304','93727','94610')
 print('Beginning batch run')
-runResult = runModelsByZip(allZips,triggerZip=94610)
+runResult = runModelsByZip(allZips,triggerZip=93304)
 summarizeRun(runResult,listFailures=FALSE)
 
 
