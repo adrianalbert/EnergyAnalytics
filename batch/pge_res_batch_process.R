@@ -83,7 +83,22 @@ base.models = list(
   toutTOD    = formula(kw ~ tout:HOD + HOW)
 )
 
-regressorDF = function(residence) {
+daily.models = list(
+  #MOY        = formula(kw.mean ~ tout.mean),
+  tout_mean     = formula(kw.mean ~ tout.mean + DOW),
+  tout_max      = formula(kw.mean ~ tout.max  + DOW),
+  tout_CDD      = formula(kw.mean ~ CDD + HDD + DOW),
+  tout_CDD_WKND = formula(kw.mean ~ CDD + HDD + WKND)
+)
+
+monthly.models = list(
+  MOY        = formula(kw.mean ~ tout.mean + MOY),
+  CDD        = formula(kw.mean ~ tout.mean + CDD),
+  CDD_HDD    = formula(kw.mean ~ tout.mean + HDD + CDD)
+)
+
+
+regressorDF = function(residence,norm=TRUE) {
   hStr       = paste('H',sprintf('%02i',residence$dates$hour),sep='')
   dStr       = paste('D',residence$dates$wday,sep='')
   mStr       = paste('M',residence$dates$mon,sep='')
@@ -92,33 +107,48 @@ regressorDF = function(residence) {
   DOW = factor(dStr,levels=sort(unique(dStr)))       # day of week
   HOD = factor(hStr,levels=sort(unique(hStr)))       # hour of day
   HOW = factor(howStrs,levels=sort(unique(howStrs))) # hour of week
+  tout = residence$w('tout')
+  # todo: we need the names of the toutPIECES to build the model
+  # but those names aren't returned form here
+  # add special data to the data frame: piecewise tout data
+  #toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
   
-  return(data.frame(
-      kw=residence$norm(residence$kw),
-      tout=residence$w('tout'),
+  kw = residence$kw
+  if(norm) kw = residence$norm(kw)
+  df = data.frame(
+      kw=kw,
+      tout=tout,
       pout=residence$w('pout'),
       rain=residence$w('rain'),
       dates=residence$dates,
       wday=residence$dates$wday,
-      MOY,DOW,HOD,HOW   )    )
+      MOY,DOW,HOD,HOW   )
+  #df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
+  return df
 }
 
-regressorDFAggregated = function(residence,bp=65) {
+regressorDFAggregated = function(residence,norm=TRUE,bp=65) {
   # uses melt and cast to reshape and aggregate data
   df = residence$df() # kw, tout, dates
+  if(norm) df$kw = residence$norm(df$kw)
   df$day   = format(df$dates,'%y-%m-%d') # melt has a problem with dates
-  df$DOW   = paste('D',as.POSIXlt(df$dates)$wday,sep='')   # Su=0 ... Sa=6
+  df$wday  = as.POSIXlt(df$dates)$wday   # raw for subsetting Su=0 ... Sa=6
+  df$DOW   = paste('D',df$wday,sep='')  # Su=0 ... Sa=6
+  df$WKND  = (df$wday == 0 | df$wday == 6) * 1 # weekend indicator
   df$DOW   = factor(df$DOW, levels=sort(unique(df$DOW)))
-  month = format(df$dates,'%y-%m')    # as.POSIXlt(df$dates)$mon
+  month    = format(df$dates,'%y-%m')   # as.POSIXlt(df$dates)$mon
+  df$mon   = as.POSIXlt(df$dates)$mon   # raw month data for subset functions Jan=0 ... Dec=11
   df$MOY   = factor(month, levels=sort(unique(month)))
+  df <- subset(df, select = -c(dates) )  # melt has a problem with dates but  we don't need anymore
   
-  df <- subset(df, select = -c(dates) )  # melt has a problem with dates and we don't need anymore
-  dfm = melt(df,id=c("day",'DOW','MOY'),na.rm=TRUE)
-  monthly = cast(dfm,MOY ~ variable,fun.aggregate=c(mean,function(ar1) sum(ar1 > bp),function(ar2) sum(ar2 < bp)))
-  colnames(monthly) <- c('month','kw_mean','junk1','junk2','tout_mean','CDD','HDD')
-  daily = cast(dfm, MOY + day + DOW ~ variable,fun.aggregate=c(mean,max,function(ar1) sum(ar1 > bp),function(ar2) sum(ar2 < bp)))
-  colnames(daily) <- c('MOY','day','DOW','kw_mean','kw_max','junk1','junk2','tout_mean','tout_max','CDD','HDD')
-
+  # melt and cast to reshape data into monthly and daily time averages
+  dfm = melt(df,id=c("day",'DOW','MOY','mon','wday','WKND'),na.rm=TRUE)
+  monthly = cast(dfm,MOY + mon ~ variable,fun.aggregate=c(sum,mean,function(ar1) sum(ar1 > bp),function(ar2) sum(ar2 < bp)))
+  colnames(monthly) <- c('month','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDD','HDD')
+  monthly <- subset(monthly, select = -c(junk1, junk2, junk3) )
+  daily = cast(dfm, MOY + day + DOW + mon + wday + WKND ~ variable,fun.aggregate=c(sum,mean,max,function(ar1) sum(ar1 > bp),function(ar2) sum(ar2 < bp)))
+  colnames(daily) <- c('MOY','day','DOW','mon','wday','WKND','kwh','kw.mean','kw.max','junk1','junk2','junk3','tout.mean','tout.max','CDD','HDD')
+  daily <- subset(daily, select = -c(junk1, junk2, junk3) )
   return(list(daily,monthly))
 }
 
@@ -164,18 +194,15 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
         WKDY = ! WKND
         # TODO: define other filter vectors, like seasonal
  
+        features.basic  <- rbind(features.basic,basicFeatures(r$kwMat))
+        ids             <- rbind(ids,sp_id)
+        
         results   = lapply(models,lm, data=df)
         betas     = rbind(betas,lapply(results,coef))
         summaries = rbind(summaries,lapply(results,function(x) { summary(x)$sigma }))
         # TODO: write our own cross validation code - these are slow and picky! 
-        # alternate calls to cross validation packages
         #summaries = rbind(summaries,lapply(results,function(res) {cvFit(res,data=model.frame(res),y=model.frame(res)$kw)$cv}))
         #summaries = rbind(summaries,lapply(results,function(fit) {cv.lm(df=model.frame(fit),form.lm=fit,m=5,plotit=FALSE,printit=TRUE)$ss}))
-        
-        
-        features.basic  <- rbind(features.basic,basicFeatures(r$kwMat))
-        ids             <- rbind(ids,sp_id)
-        
         toc('model run',prefixStr='    model runs') 
       }, 
        error = function(e){
