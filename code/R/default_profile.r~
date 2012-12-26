@@ -9,11 +9,12 @@ PLOTS       = FALSE
 VERBOSE     = TRUE
 USER        = 'adalbert'
 PASSWORD    = 'adrian'
-ZIP_START   = 201
-ZIP_STOP    = 400
+ZIP_START   = 321
+ZIP_STOP    = 397
 PROFILE     = FALSE
-LOG_OUTPUT  = TRUE # should the output messages be diverted to disk?
+LOG_OUTPUT  = TRUE  # should the output messages be diverted to disk?
 SAVE_TO_SQL = TRUE
+OVERWRITE   = FALSE
 
 # paths to load data/save computation
 plots_path  = '~/Dropbox/ControlPatterns/plots2/'

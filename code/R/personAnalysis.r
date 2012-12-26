@@ -27,6 +27,9 @@ personAnalysis = function(cur_data, cur_wthr, UID, zip,
       
     # construct Person object
     user      = new(Class='Person', cur_data, UID, zip, log = T, verbose = verbose)  
+
+print(range(user@timestamps))	
+
     user      = addWeather(user, cur_wthr, verbose = verbose)    
     
     # _______________________________________

@@ -27,6 +27,9 @@ personAnalysis = function(cur_data, cur_wthr, UID, zip,
       
     # construct Person object
     user      = new(Class='Person', cur_data, UID, zip, log = T, verbose = verbose)  
+
+print(summary(user@timestamps))	
+
     user      = addWeather(user, cur_wthr, verbose = verbose)    
     
     # _______________________________________
@@ -62,19 +65,6 @@ personAnalysis = function(cur_data, cur_wthr, UID, zip,
     if (nrow(transitn.df)>0) transitn.df = rbind(transitn.df, res$HMM.transition) else transitn.df = res$HMM.transition
     if (nrow(ols.comps)>0) ols.comps = rbind(ols.comps, res$OLS.comp) else ols.comps = res$OLS.comp
     if (nrow(hmm.comps)>0) hmm.comps = rbind(hmm.comps, res$HMM.comp) else hmm.comps = res$HMM.comp
-
-    # format data for saving: components (OLS)
-    df = 
-    
-    if (nrow(ols.comps)>0) {
-	ols.comps = rbind(ols.comps, df)
-    } else ols.comps = df
-
-    # format data for saving: components (HMM)
-    df = user@HMM$components$stat
-    if (nrow(hmm.comps)>0) {
-	hmm.comps = rbind(hmm.comps, df)
-    } else hmm.comps = df
 
     # _______________________________
     # Produce analysis plots

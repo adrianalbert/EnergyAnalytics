@@ -44,6 +44,7 @@ ZIP_STOP    = 1
 PROFILE     = TRUE
 LOG_OUTPUT  = FALSE
 SAVE_TO_SQL = TRUE
+OVERWRITE   = TRUE
 
 # directories
 plots_path  = '~/Dropbox/ControlPatterns/plots/'
@@ -96,16 +97,36 @@ library('RMySQL')
 zips = read.csv(zips_file)
 zips = zips$ZIP5
 
+# re-analyze zipcodes already processed? 
+if (!OVERWRITE) {
+   # open up connection to database
+   db.con <- dbConnect(dbDriver("MySQL"), 
+                        host = "sssl-cyclops.stanford.edu",
+                        user = USER, password = PASSWORD, 
+                        dbname = 'PGE_FITS')
+   tables = dbListTables(db.con)
+   dbDisconnect(db.con)
+   if (length(tables)>0) {
+     tmp = strsplit(tables, '_')
+     tmp = unique(sapply(1:length(tmp), function(j) tmp[[j]][1]))
+     processed.zips = substring(tmp, 4, nchar(tmp))	
+   } else processed.zips = c()
+   zips.todo = setdiff(1:length(zips), as.numeric(processed.zips))
+   cat(sprintf('Already processed: %d zips\n', length(processed.zips)))
+   cat(sprintf('Left to process:   %d zips\n', length(zips.todo)))
+}
+
+
 # ------------------------------------------
 # Wrapper to send computation to each core
 # ------------------------------------------
 
 analysis_wrapper <- function(iZip, zips, type = 'sql', SAVE_TO_SQL = FALSE) {
+    
+  cat(paste('--------- Processing Zipcode', iZip, '/', length(zips.todo), '---------\n'))
   
   if (LOG_OUTPUT) sink(paste(logs_path, "log_", iZip,".txt", sep=''), append=F, type = c('output', 'message'))
-  
-  cat(paste('--------- Processing Zipcode', iZip, '/', length(zips), '---------\n'))
-  
+
   if (type == 'sql') {
     # retrieve current zip consumption data from DB
     query     = paste("SELECT * FROM pge_res_60_", zips[iZip], ' ORDER BY date', sep='')
@@ -213,17 +234,18 @@ analysis_wrapper <- function(iZip, zips, type = 'sql', SAVE_TO_SQL = FALSE) {
 library(parallel)
 
 cat('****** Running analysis on PGE data ******\n')
-cat(paste('Computation on zips', ZIP_START, '-', ZIP_STOP, '\n'))
+cat('Computation on zips\n')
+print(zips.todo)
 
 if (PROFILE) Rprof(filename = paste(prof_file, sep=''), interval = 0.02, memory.profiling = T)
 
-#for (zip in ZIP_START:ZIP_STOP) {
+#for (zip in zips.todo(ZIP_START:ZIP_STOP)) {
 #res = analysis_wrapper(zip, zips)
 #}
 
 # parallel execution using parallel package
 ptm <- proc.time()
-result = mclapply(ZIP_START:ZIP_STOP, FUN = analysis_wrapper, zips,
+result = mclapply(zips.todo[ZIP_START:ZIP_STOP], FUN = analysis_wrapper, zips, SAVE_TO_SQL = SAVE_TO_SQL, 
             mc.silent = F, mc.preschedule = FALSE, mc.cores = N_PROC)
 dt = proc.time() - ptm
 print(dt)
