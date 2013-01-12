@@ -18,5 +18,6 @@ basicFeatures = function(data){
   dailyFeatures <- cbind(dMax,dMin,dMean,dRange,dHighD,dMn2mx,dN2d)
   dailyFeatures[dailyFeatures == Inf] = NA # these will be caught by the na.rm in the mean fn
   colnames(dailyFeatures) <- c('max','min','mean','range','dur','mn2mx','n2d')
+  # return the means across all days
   ret <- c(apply(dailyFeatures,2,FUN=mean,na.rm=TRUE),softMax,softMin)
 }

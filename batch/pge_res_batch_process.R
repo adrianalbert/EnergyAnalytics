@@ -1,22 +1,25 @@
 #!/usr/bin/Rscript
 
-rxOptions(reportProgress = 0) # non-verbose running of rxLinMod and other Revolution code
-
 .libPaths('~/R/library') # use my local R library even from the comand line
 
 # todo: is there a better way to detect the current directory?
 conf.basePath = file.path('~/EnergyAnalytics/batch')
 if(Sys.info()['sysname'] == 'Windows') {
-  conf.basePath = file.path('c:/dev/pge_collab/pge_R')
+  conf.basePath = file.path('c:/dev/pge_collab/EnergyAnalytics/batch')
 }
 # run 'source' on all includes to load them 
-#source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
-source(file.path(conf.basePath,'stanfordConf.R'))     # Stanford on site specific configuration
+source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
+#source(file.path(conf.basePath,'stanfordConf.R'))     # Stanford on site specific configuration
 source(file.path(conf.basePath,'DataClasses.R'))       # Object code for getting meter and weather data 
 source(file.path(conf.basePath,'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
 source(file.path(conf.basePath,'basicFeatures.R'))     # typical max, min, mean, range
 source(file.path(conf.basePath,'regressionSupport.R')) # mostly regressor manipulation
 source(file.path(conf.basePath,'timer.R'))             # adds tic() and toc() functions
+
+library('DAAG') # Data Analysis and Graphics package has k-fold cross validation
+# cv.lm(df=mydata, model, m=5) # 5 fold cross-validation
+
+library('cvTools') # cross validation tools
 
 runModelsByZip = function(zipArray,triggerZip=NULL) {
   nZip     <- length(zipArray)
@@ -72,19 +75,45 @@ runModelsByZip = function(zipArray,triggerZip=NULL) {
   return(res)
 }
 
+base.models = list(
+  MOY        = formula(kw ~ tout + MOY),
+  DOW        = formula(kw ~ tout + DOW),
+  DOW_HOD    = formula(kw ~ tout + DOW + HOD),
+  standard   = formula(kw ~ tout + DOW + HOD + MOY),
+  HOW        = formula(kw ~ tout + HOW),
+  toutTOD    = formula(kw ~ tout:HOD + HOW)
+)
+
+regressorDataFrame = function(residence) {
+  hStr       = paste('H',sprintf('%02i',residence$dates$hour),sep='')
+  dStr       = paste('D',residence$dates$wday,sep='')
+  mStr       = paste('M',residence$dates$mon,sep='')
+  howStrs    = paste(dStr,hStr,sep='')
+  MOY = factor(mStr,levels=sort(unique(mStr)))       # month of year
+  DOW = factor(dStr,levels=sort(unique(dStr)))       # day of week
+  HOD = factor(hStr,levels=sort(unique(hStr)))       # hour of day
+  HOW = factor(howStrs,levels=sort(unique(howStrs))) # hour of week
+  
+  return(data.frame(
+      kw=residence$norm(residence$kw),
+      tout=residence$w('tout'),
+      pout=residence$w('pout'),
+      rain=residence$w('rain'),
+      dates=residence$dates,
+      wday=residence$dates$wday,
+      MOY,DOW,HOD,HOW   )    )
+}
+
 runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
-  coef.MOY        <- c()
-  coef.DOW        <- c()
-  coef.DOW_HOD    <- c()
-  coef.standard   <- c()
-  coef.HOW        <- c()
-  coef.toutTOD    <- c()
-  coef.toutPIECES <- c()
   features.basic  <- c()
   ids             <- c()
-  summary         <- c()
+  betas           <- c()
+  summaries       <- c()
   
-  
+  # TODO:
+  # use step for forward selection
+  # find a faster method of cross validation than cvTools or DAAG provide
+  # add other weather covariates.
   splen  <- length(sp_ids)
   i <- 0
   for (sp_id in sp_ids) { # i.e. "820735863"
@@ -104,59 +133,31 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
     else { # it worked!
       r <- tryCatch( {
         tic('model run')
-        toutTOD    = NULL #regressor.split(r$tout,r$dates$hour)
+        df = regressorDataFrame(r)
+        models = base.models
+        
+        # add special data to the data frame: piecewise tout data
         toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
-        hStr       = paste('H',sprintf('%02i',r$dates$hour),sep='')
-        dStr       = paste('D',r$dates$wday,sep='')
-        mStr       = paste('M',r$dates$mon,sep='')
-        howStrs    = paste(dStr,hStr,sep='')
-        MOY = factor(mStr,levels=sort(unique(mStr)))       # month of year
-        DOW = factor(dStr,levels=sort(unique(dStr)))       # day of week
-        HOD = factor(hStr,levels=sort(unique(hStr)))       # hour of day
-        HOW = factor(howStrs,levels=sort(unique(howStrs))) # hour of week
+        df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
+        # define regression formula that uses the piecewise pieces
+        models$toutPIECES = as.formula(paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW'))
         
-        WKND = (r$dates$wday == 0 | r$dates$wday == 6) # 0 is Sun, 6 is Sat
+        WKND = (df$wday == 0 | df$wday == 6) # 0 is Sun, 6 is Sat
         WKDY = ! WKND
-        df = data.frame(MOY,DOW,HOD,HOW,toutPIECES,kw=r$norm(r$kw),tout=r$tout)
+        # TODO: define other filter vectors, like seasonal
+ 
+        results   = lapply(models,lm, data=df)
+        betas     = rbind(betas,lapply(results,coef))
+        summaries = rbind(summaries,lapply(results,function(x) { summary(x)$sigma }))
+        # TODO: write our own cross validation code - these are slow and picky! 
+        # alternate calls to cross validation packages
+        #summaries = rbind(summaries,lapply(results,function(res) {cvFit(res,data=model.frame(res),y=model.frame(res)$kw)$cv}))
+        #summaries = rbind(summaries,lapply(results,function(fit) {cv.lm(df=model.frame(fit),form.lm=fit,m=5,plotit=FALSE,printit=TRUE)$ss}))
         
-        model.MOY        <- NULL #rxLinMod(kw ~ tout       + MOY, data=df, verbose=0)
-        model.DOW        <- NULL #rxLinMod(kw ~ tout       + DOW, data=df, verbose=0)
-        model.DOW_HOD    <- rxLinMod(kw ~ tout       + DOW + HOD, data=df, verbose=0)
-        model.standard   <- rxLinMod(kw ~ tout       + DOW + HOD + MOY, data=df, verbose=0)
-        model.HOW        <- rxLinMod(kw ~ tout       + HOW, data=df, verbose=0)
-        model.toutTOD    <- rxLinMod(kw ~ tout:HOD    + HOW, data=df, verbose=0)
-        model.toutPIECES <- rxLinMod(kw ~ tout0_40 + tout40_50 + tout50_60 + tout60_70 + tout70_80 + tout80_90 + tout90_Inf + HOW, data=df, verbose=0)
         
-        model.toutPIECES.WKND <- NULL #rxLinMod(kw ~ toutPIECES + HOW,subset=WKND, data=df, verbose=0)
-        model.toutPIECES.WKDY <- NULL #rxLinMod(kw ~ toutPIECES + HOW,subset=WKDY, data=df, verbose=0)
-        
-        #coef.MOY        <- rbind(coef.MOY,coef(model.MOY))
-        #coef.DOW        <- rbind(coef.DOW,coef(model.DOW))
-        coef.DOW_HOD    <- rbind(coef.DOW_HOD,coef(model.DOW_HOD))
-        
-        coef.standard   <- rbind(coef.standard,coef(model.standard))
-        coef.HOW        <- rbind(coef.HOW,coef(model.HOW))
-        #coef.toutTOD    <- rbind(coef.toutTOD,coef(model.toutTOD))
-        coef.toutPIECES <- rbind(coef.toutPIECES,coef(model.toutPIECES))
         features.basic  <- rbind(features.basic,basicFeatures(r$kwMat))
         ids             <- rbind(ids,sp_id)
-        summary         <- rbind( summary,list(#MOY=summary(model.MOY)$kw$sigma,
-                                               #DOW=summary(model.DOW)$kw$sigma,
-                                               DOW_HOD=summary(model.DOW_HOD)$kw$sigma,
-                                               standard=summary(model.standard)$kw$sigma,
-                                               HOW=summary(model.HOW)$kw$sigma,
-                                               toutTOD=summary(model.toutTOD)$kw$sigma,
-                                               toutPIECES=summary(model.toutPIECES)$kw$sigma
-                                               #toutPIECES_WKND=(summary(model.toutPIECES.WKND)$kw$sigma +
-                                               #                 summary(model.toutPIECES.WKDY)$kw$sigma)/2    
-                                               )
-                                  )
-        # dump the memory intensive parts
-        rm(list = c('r','DOW','HOD','toutTOD','toutPIECES',
-                    'model.MOY','model.DOW','model.DOW_HOD',
-                    'model.standard','model.HOW','model.toutTOD',
-                    'model.toutPIECES','model.toutPIECES.WKND','model.toutPIECES.WKDY'))
-        #gc()
+        
         toc('model run',prefixStr='    model runs') 
       }, 
        error = function(e){
@@ -166,18 +167,13 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
          # pass
        })
     }
-    #break
+    break
   } # sp_id loop
-  out <- list(coef.MOY        = coef.MOY,
-              coef.DOW        = coef.DOW,
-              coef.DOW_HOD    = coef.DOW_HOD,
-              coef.standard   = coef.standard, 
-              coef.HOW        = coef.HOW, 
-              coef.toutTOD    = coef.toutTOD, 
-              coef.toutPIECES = coef.toutPIECES, 
-              features.basic  = features.basic,
-              ids             = ids,
-              summary         = summary)
+  out <- list(
+      features.basic  = features.basic,
+      betas           = betas,
+      ids             = ids,
+      summaries       = summaries   )
   print(names(out))
   return(out)
 }

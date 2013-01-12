@@ -117,15 +117,20 @@ RowWeatherClass = function(zipcode){
 # http://bryer.org/2012/object-oriented-programming-in-r
 WeatherClass = function(zipcode){
   query = paste(
-    'SELECT `date`, TemperatureF
+    'SELECT `date`, TemperatureF, Pressure, HourlyPrecip
     FROM',conf.weatherTable(),'where zip5 =',zipcode,'ORDER BY DATE')
   raw = run.query(query,conf.weatherDB())
   if(length(raw)==0) stop(paste('No data found for zipcode',zipcode))
   
-  dates = as.POSIXlt(raw[,1],tz="PST8PDT",'%Y-%m-%d %H:%M:%S')  
-  tout = raw[,2]
+   
+  rawData = data.frame(
+    dates = as.POSIXlt(raw[,1],tz="PST8PDT",'%Y-%m-%d %H:%M:%S'),
+    tout = raw[,'TemperatureF'],
+    pout = raw[,'Pressure'],
+    rain = raw[,'HourlyPrecip']
+  )
   
-  days = unique(as.Date(dates))
+  days = unique(as.Date(rawData$dates))
   
   # FYI, spring forward causes NA dates to find these:
   # which(is.na(dates))
@@ -134,10 +139,9 @@ WeatherClass = function(zipcode){
   
   obj = list (
     days    = days,
-    #dateMat = dateMat,
-    dates   = dates,
-    tout    = tout,
-    #toutMat = toutMat,
+    dates   = rawData$dates,
+    tout    = rawData$tout,
+    rawData = rawData,
     get     = function(x) obj[[x]],
     # Not sure why <<- is used here
     # <<- searches parent environments before assignment
@@ -159,15 +163,14 @@ WeatherClass = function(zipcode){
     assign('props', p, envir=obj)
   }
   
-  obj$resample = function(newDates) {
+  obj$resample = function(newDates,name='tout') {
     # approx returns both the newDates and the interpreted values
     # but we only need the values
-    a = approx(obj$dates, obj$tout, newDates, method="linear")[[2]]
+    a = approx(obj$dates, obj$rawData[,name], newDates, method="linear")[[2]]
     #b = a[2]
     if (all(is.na(a))){ stop("No weather data available") }
     return(a)
   }
-  
   #obj <- list2env(obj)
   class(obj) = "WeatherClass"
   return(obj)
@@ -211,7 +214,7 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
     days = days,
     zipcode = zipcode,
     weather = weather,
-    tout = weather$resample(dates),
+    tout = weather$resample(dates,'tout'),
     get = function(x) obj[[x]],
     # Not sure why <<- is used here
     # <<- searches parent environments before assignment
@@ -219,6 +222,10 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
     set = function(x, value) obj[[x]] <<- value,
     props = list()
   )
+  
+  obj$w = function(name='tout') {
+    return( obj$weather$resample(dates,name) )
+  }
   
   obj$norm = function(data) {
     # divide data by the 97th %ile

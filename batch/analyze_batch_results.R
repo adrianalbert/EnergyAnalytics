@@ -7,7 +7,11 @@ require(gtools)
 require(gridExtra)
 require(reshape2)
 
-conf.basePath = file.path('c:/dev/pge_collab/pge_R')
+# todo: is there a better way to detect the current directory?
+conf.basePath = file.path('~/EnergyAnalytics/batch')
+if(Sys.info()['sysname'] == 'Windows') {
+  conf.basePath = file.path('c:/dev/pge_collab/EnergyAnalytics/batch')
+}
 # resultsDir = 'results' # real
 resultsDir = 'test_results' # sub -sample for testing
 
