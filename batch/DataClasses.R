@@ -103,8 +103,8 @@ RowWeatherClass = function(zipcode){
     a = approx(obj$dates, obj$tout, newDates, method="linear")[[2]]
     #b = a[2]
     if (all(is.na(a))){
-      print(paste(obj$dates[1],obj$dates[-1]))
-      print(paste(newDates[1],newDates[-1]))
+      #print(paste(obj$dates[1],obj$dates[-1]))
+      #print(paste(newDates[1],newDates[-1]))
       stop("No weather data available")
     }
     return(a)
@@ -171,8 +171,8 @@ WeatherClass = function(zipcode){
     a = approx(obj$dates, obj$rawData[,name], newDates, method="linear")[[2]]
     #b = a[2]
     if (all(is.na(a))){ 
-      print(paste(obj$dates[1],obj$dates[-1]))
-      print(paste(newDates[1],newDates[-1]))
+      #print(dim(obj$dates))
+      #print(paste(newDates[1,],newDates[-1,]))
       stop("No weather data available") 
     }
     return(a)

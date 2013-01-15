@@ -16,7 +16,7 @@ resultsDir = 'results' # real
 #resultsDir = 'test_results' # sub -sample for testing
 
 # run 'source' on all includes to load them 
-source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
+source(file.path(conf.basePath,'stanfordConf.R'))         # Sam's local computer specific configuration
 source(file.path(conf.basePath,'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
 source(file.path(conf.basePath,'timer.R'))             # adds tic() and toc() functions
 
