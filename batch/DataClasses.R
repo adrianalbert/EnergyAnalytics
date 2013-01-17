@@ -230,7 +230,9 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
   }
   
   obj$df = function() {
-    return( data.frame(kw=obj$kw,tout=obj$tout,dates=obj$dates ) )
+    return( data.frame(kw=obj$kw,
+                       tout=obj$tout,
+                       dates=obj$dates ) )
   }
   
   obj$norm = function(data) {

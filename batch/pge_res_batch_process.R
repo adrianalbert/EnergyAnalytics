@@ -1,26 +1,27 @@
 #!/usr/bin/Rscript
 
-.libPaths('~/R/library') # use my local R library even from the comand line
-
 # todo: is there a better way to detect the current directory?
 conf.basePath = file.path('~/EnergyAnalytics/batch')
 if(Sys.info()['sysname'] == 'Windows') {
-  conf.basePath = file.path('c:/dev/pge_collab/EnergyAnalytics/batch')
+  conf.basePath = file.path('f:/dev/pge_collab/EnergyAnalytics/batch')
+} else {
+  .libPaths('~/R/library') # use my local R library even from the comand line
 }
 # run 'source' on all includes to load them 
-#source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
-source(file.path(conf.basePath,'stanfordConf.R'))     # Stanford on site specific configuration
+source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
+#source(file.path(conf.basePath,'stanfordConf.R'))     # Stanford on site specific configuration
 source(file.path(conf.basePath,'DataClasses.R'))       # Object code for getting meter and weather data 
 source(file.path(conf.basePath,'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
 source(file.path(conf.basePath,'basicFeatures.R'))     # typical max, min, mean, range
 source(file.path(conf.basePath,'regressionSupport.R')) # mostly regressor manipulation
 source(file.path(conf.basePath,'timer.R'))             # adds tic() and toc() functions
 
+library(reshape)
 #library('DAAG') # Data Analysis and Graphics package has k-fold cross validation
 # cv.lm(df=mydata, model, m=5) # 5 fold cross-validation
 #library('cvTools') # cross validation tools
 
-runModelsByZip = function(zipArray,triggerZip=NULL) {
+runModelsByZip = function(zipArray,triggerZip=NULL,truncateAt=-1) {
   nZip     <- length(zipArray)
   zipCount <- 0
   outDir = 'results'
@@ -53,7 +54,7 @@ runModelsByZip = function(zipArray,triggerZip=NULL) {
       # so we speed execution by looking it up once and passing it in
       weather <- WeatherClass(zip)
       tic('modelsBySP')
-      modelResults <- runModelsBySP(sp_ids,zip=zip,data=zipData,weather=weather)
+      modelResults <- runModelsBySP(sp_ids,zip=zip,data=zipData,weather=weather,truncateAt=truncateAt)
       rm(zipData,weather,sp_ids)
       save(modelResults,file=resultsFile)
       res$completedZip <- rbind(res$completedZip,zip)
@@ -84,17 +85,19 @@ models.hourly = list(
 )
 
 models.daily = list(
-  #MOY        = formula(kw.mean ~ tout.mean),
+  tout          = formula(kw.mean ~ tout.mean),
+  DOW           = formula(kw.mean ~ DOW),
   tout_mean     = formula(kw.mean ~ tout.mean + DOW),
+  tout_mean_WKND = formula(kw.mean ~ tout.mean + WKND),
   tout_max      = formula(kw.mean ~ tout.max  + DOW),
   tout_CDD      = formula(kw.mean ~ CDD + HDD + DOW),
   tout_CDD_WKND = formula(kw.mean ~ CDD + HDD + WKND)
 )
 
 models.monthly = list(
-  MOY        = formula(kw.mean ~ tout.mean + MOY),
-  CDD        = formula(kw.mean ~ tout.mean + CDD),
-  CDD_HDD    = formula(kw.mean ~ tout.mean + HDD + CDD)
+  tout       = formula(kw.mean ~ tout.mean),
+  CDD        = formula(kw.mean ~ CDD),
+  CDD_HDD    = formula(kw.mean ~ HDD + CDD)
 )
 
 
@@ -143,26 +146,49 @@ regressorDFAggregated = function(residence,norm=TRUE,bp=65) {
   df$mon   = as.POSIXlt(df$dates)$mon   # raw month data for subset functions Jan=0 ... Dec=11
   df$MOY   = factor(month, levels=sort(unique(month)))
   df <- subset(df, select = -c(dates) )  # melt has a problem with dates but  we don't need anymore
-  
   # melt and cast to reshape data into monthly and daily time averages
   dfm = melt(df,id=c("day",'DOW','MOY','mon','wday','WKND'),na.rm=TRUE)
-  monthly = cast(dfm,MOY + mon ~ variable,fun.aggregate=c(sum,mean,function(ar1) sum(ar1 > bp),function(ar2) sum(ar2 < bp)))
+  monthly = cast(dfm,MOY + mon ~ variable,fun.aggregate=c(sum,mean,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)))
   colnames(monthly) <- c('MOY','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDD','HDD')
   monthly <- subset(monthly, select = -c(junk1, junk2, junk3) )
-  daily = cast(dfm, MOY + day + DOW + mon + wday + WKND ~ variable,fun.aggregate=c(sum,mean,max,function(ar1) sum(ar1 > bp),function(ar2) sum(ar2 < bp)))
+  daily = cast(dfm, MOY + day + DOW + mon + wday + WKND ~ variable,fun.aggregate=c(sum,mean,max,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)))
   colnames(daily) <- c('MOY','day','DOW','mon','wday','WKND','kwh','kw.mean','kw.max','junk1','junk2','junk3','tout.mean','tout.max','CDD','HDD')
   daily <- subset(daily, select = -c(junk1, junk2, junk3) )
   return(list(daily=daily,monthly=monthly))
 }
 
-runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
+# summarize regression model for future use
+summarizeModel = function(m) {
+  #lm(m,subset=m$y > 1)
+  s = summary(m, correlation=FALSE)
+  s$call         <- c()  # lm model call
+  s$terms        <- c()  # lm model terms
+  s$residuals    <- c()  # residuals scaled by weights assigned to the model
+  s$cov.unscaled <- c()  # p x p matrix of (unscaled) covariances
+  s$aliased      <- c()  # named logical vector showing if the original coefficients are aliased
+  #s$sigma               # the square root of the estimated variance of the random error
+  #s$adj.r.squared       # penalizing for higher p
+  #s$r.squared           # 'fraction of variance explained by the model'
+  #s$fstatistic          # 3-vector with the value of the F-statistic with its numerator and denominator degrees of freedom
+  #s$df                  # degs of freedom, vector (p,n-p,p*), the last being the number of non-aliased coefficients.
+  #s$coefficients <- c() # a p x 4 matrix: cols = coefficient, standard error, t-stat, (two-sided) p-value
+  s$logLik <- logLik(m)  # log liklihood for the model
+  s$AIC    <- AIC(m)     # Akaike information criterion
+  
+  # net contribution of each coefficient
+  # todo: ther eare a lot of negative numbers in this, so the contributions aren't directly interpretable
+  s$total = sum(predict(m))
+  s$contribution = colSums(t(m$coefficients * t(m$x)))
+  return(s)
+  # k-fold prediction error, total contribution of each coefficient, 
+  
+}
+
+runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
   features.basic  <- c()
   ids             <- c()
-  betas           <- c()
   summaries       <- c()
-  d_betas         <- c()
   d_summaries     <- c()
-  m_betas         <- c()
   m_summaries     <- c()
   # TODO:
   # use step for forward selection
@@ -184,35 +210,33 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
       r <- tryCatch( {
         tic('model run')
         features.basic  <- rbind(features.basic,basicFeatures(r$kwMat))
-        ids             <- rbind(ids,sp_id)
         
         # hourly regressions
-        df = regressorDF(r) # see also regressorDFAggregated
-        models = models.hourly
-        
-        # add special data to the data frame: piecewise tout data
-        toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
-        df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
-        # define regression formula that uses the piecewise pieces
-        models$toutPIECES = as.formula(paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW'))
-        
-        results   = lapply(models,lm, data=df)
-        betas     = rbind(betas,lapply(results,coef)) # extract model coefficients
-        summaries = rbind(summaries,lapply(results,function(x) { summary(x)$sigma }))
-        
-        dfl = regressorDFAggregated(r)
+        if(TRUE) {
+          df = regressorDF(r,norm=FALSE) # see also regressorDFAggregated
+          models = models.hourly
+          
+          # add special data to the data frame: piecewise tout data
+          toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
+          df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
+          # define regression formula that uses the piecewise pieces
+          models$toutPIECES = as.formula(paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW'))
+          
+          results   = lapply(models,lm, data=df, x=TRUE)
+          summaries = rbind(summaries,lapply(results,summarizeModel))
+        }
+        dfl = regressorDFAggregated(r,norm=FALSE)
         # daily regressions
         models = models.daily
-        results   = lapply(models,lm, data=dfl$daily)
-        d_betas     = rbind(d_betas,lapply(results,coef))
-        d_summaries = rbind(d_summaries,lapply(results,function(x) { summary(x)$sigma }))
+        results   = lapply(models,lm, data=dfl$daily, x=TRUE)
+        d_summaries = rbind(d_summaries,lapply(results,summarizeModel)) #s = summary(x); s$residuals <- C(); s }))
         
         # monthly regressions
         models = models.monthly
-        results   = lapply(models,lm, data=dfl$monthly)
-        m_betas     = rbind(m_betas,lapply(results,coef))
-        m_summaries = rbind(m_summaries,lapply(results,function(x) { summary(x)$sigma }))
+        results   = lapply(models,lm, data=dfl$monthly, x=TRUE)
+        m_summaries = rbind(m_summaries,lapply(results,summarizeModel))
         
+        ids             <- rbind(ids,sp_id)
         # TODO: write our own cross validation code - these are slow and picky! 
         #summaries = rbind(summaries,lapply(results,function(res) {cvFit(res,data=model.frame(res),y=model.frame(res)$kw)$cv}))
         #summaries = rbind(summaries,lapply(results,function(fit) {cv.lm(df=model.frame(fit),form.lm=fit,m=5,plotit=FALSE,printit=TRUE)$ss}))
@@ -225,16 +249,13 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL) {
          # pass
        })
     }
-    #break
+    if (i == truncateAt) break
   } # sp_id loop
   out <- list(
       features.basic  = features.basic,
       ids             = ids,
-      betas           = betas,
       summaries       = summaries,
-      d_betas         = d_betas, 
       d_summaries     = d_summaries,
-      m_betas         = m_betas, 
       m_summaries     = m_summaries    
       )
   print(names(out))
@@ -271,8 +292,11 @@ if (length(args) > 0) {
 # bakersfield, fresno, oakland
 allZips = c('93304','93727','94610')
 print('Beginning batch run')
-runResult = runModelsByZip(allZips,triggerZip=93304)
+runResult = runModelsByZip(allZips,triggerZip=93304,truncateAt=-1)
 summarizeRun(runResult,listFailures=FALSE)
 
+load(file.path(conf.basePath,'results',paste(zip,'_modelResults.RData',sep='')))
+print(names(modelResults))
+print(modelResults$summaries[1,]$standard$coefficients)
 
 

@@ -14,10 +14,12 @@ basicFeatures = function(data){
   
   softMax <-quantile(data,0.97,na.rm=TRUE)
   softMin <-quantile(data,0.03,na.rm=TRUE)
+  nObs    <-prod(dim(data))
   # todo: as dataframe?
   dailyFeatures <- cbind(dMax,dMin,dMean,dRange,dHighD,dMn2mx,dN2d)
   dailyFeatures[dailyFeatures == Inf] = NA # these will be caught by the na.rm in the mean fn
   colnames(dailyFeatures) <- c('max','min','mean','range','dur','mn2mx','n2d')
   # return the means across all days
-  ret <- c(apply(dailyFeatures,2,FUN=mean,na.rm=TRUE),softMax,softMin)
+  ret <- c(apply(dailyFeatures,2,FUN=mean,na.rm=TRUE),softMax,softMin,nObs=nObs)
+  return(ret)
 }

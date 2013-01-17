@@ -10,10 +10,10 @@ require(reshape2)
 # todo: is there a better way to detect the current directory?
 conf.basePath = file.path('~/EnergyAnalytics/batch')
 if(Sys.info()['sysname'] == 'Windows') {
-  conf.basePath = file.path('c:/dev/pge_collab/EnergyAnalytics/batch')
+  conf.basePath = file.path('f:/dev/pge_collab/EnergyAnalytics/batch')
 }
-# resultsDir = 'results' # real
-resultsDir = 'test_results' # sub -sample for testing
+resultsDir = 'results' # real
+#resultsDir = 'test_results' # sub -sample for testing
 
 # run 'source' on all includes to load them 
 source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
@@ -51,22 +51,13 @@ RMSEHists = function(modelResults,zip='unspecified'){
   # convert from data.fram of lists to data.frame of numerics
   # TODO: this is suprisingly clumsy is there a cleaner way?
   
-  MOY=as.numeric(modelResults$summary[,'MOY'])
-  DOW=as.numeric(modelResults$summary[,'DOW'])
-  DOW_HOD=as.numeric(modelResults$summary[,'DOW_HOD'])
-  standard=as.numeric(modelResults$summary[,'standard'])
-  #HOW=as.numeric(modelResults$summary[,'HOW'])
-  toutTOD=as.numeric(modelResults$summary[,'toutTOD'])
-  toutPIECES=as.numeric(modelResults$summary[,'toutPIECES'])
-  #toutPIECES_WKND=as.numeric(modelResults$summary[,'toutPIECES_WKND'])  
-  
   RMSEData = data.frame( #MOY,
-                         DOW,
-                         DOW_HOD,
-                         standard,
+                         DOW=as.numeric(modelResults$summary[,'DOW']),
+                         DOW_HOD=as.numeric(modelResults$summary[,'DOW_HOD']),
+                         standard=as.numeric(modelResults$summary[,'standard']),
                          #HOW,
-                         toutTOD,
-                         toutPIECES
+                         toutTOD=as.numeric(modelResults$summary[,'toutTOD']),
+                         toutPIECES=as.numeric(modelResults$summary[,'toutPIECES'])
                          #toutPIECES_WKND  
                          )
   # turn into a data frame where the model type is 
@@ -74,7 +65,7 @@ RMSEHists = function(modelResults,zip='unspecified'){
   # This is the form that ggplot prefers
   RMSEStats = melt(RMSEData,variable.name='model',value.name='RMSE')
   # plot several density plots at once color coded
-  g = ggplot(RMSEStats, aes(RMSE, fill = model)) + geom_density(size=1, alpha=0.2) + 
+  g = ggplot(RMSEStats, aes(RMSE, color = model)) + geom_density(size=1, alpha=0.2) + 
              xlim(0, 0.6) + ggtitle(paste('RMSE histograms for',zip))
   #png(paste("hist.png",sep=''),height=600,width=800)
   return(g)
@@ -130,10 +121,11 @@ RMSEDiffs = function(modelResults,zip='unspecified'){
 
 
 allResults = list.files(paste(conf.basePath,'/',resultsDir,sep=''),pattern = "[0-9]+_.+RData")
+print(allResults)
 for (resultFile in allResults) {
   zip = strsplit(resultFile,'_')[[1]][1]
   print(zip)
-  if (zip != '94610') { next }
+  if (zip != '93304') { next }
   
   # init the variables (e and modelResults) that load will assign values to
   e = c()               # any errors will loaded as e
