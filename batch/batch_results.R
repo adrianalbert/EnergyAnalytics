@@ -128,8 +128,8 @@ for (resultFile in allResults) {
     print(names(res))
     # "rmse"          "r.squared"     "adj.r.squared" "log.liklihood" "aic" 
     # make a heat map of the goodness of fit
-    g = bestFit(res$hourly,'rmse',sort='standard',zip=zip); g
-    p = hists(res$hourly,'rmse',zip=zip); p
+    #g = bestFit(res$hourly,'rmse',sort='standard',zip=zip); g
+    #p = hists(res$hourly,'rmse',zip=zip); p
     # make a line plot of the goodness of fit    
   }
   if(length(e)>1) { # the zip had a problem if e is a list...
