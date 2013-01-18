@@ -56,12 +56,16 @@ metricSummary = function(modelGroup) {
   ))
 }
 
-hists = function(df,metric='rmse',zip='unspecified'){
+hists = function(df,metric='rmse',zip='unspecified',norm=c()){
   # This is the form that ggplot prefers
-  dfm = melt(df[[metric]],id.vars=c('id'),variable.name='model')
+  raw = df[[metric]]
+  if(length(norm)>0) {
+    raw = raw / norm
+  }
+  dfm = melt(raw,id.vars=c('id'),variable.name='model')
   # plot several density plots at once color coded
   g = ggplot(dfm, aes(value, color = variable)) + geom_density(size=1, alpha=0.2) + 
-    xlim(0, 0.6) + ggtitle(paste(metric,'histograms for',zip))
+    xlim(0, 1) + ggtitle(paste(metric,'histograms for',zip))
   #png(paste("hist.png",sep=''),height=600,width=800)
   return(g)
 }
@@ -74,11 +78,13 @@ bestFit = function(df,metric='rmse',sort=1,zip='unspecified') {
   rnk = rnk[order(rnk[,sort]),]
   rnkm = melt(rnk)
   p = c()
-  if (FALSE) {
+  if (TRUE) {
     p = ggplot(rnkm, aes(x=X1,y=X2,fill=value)) +
       geom_tile() +
       scale_fill_gradient2("Rank",low='blue',mid="blue",high="grey",midpoint = 0) + # no key
-      scale_x_discrete(breaks = 1:n) +   # no ticks or labels - not sure why
+      ylab("Model") +
+      xlab("Residence") +
+      coord_flip() +
       ggtitle(paste(metric,'fit ranking for',zip))
   } else {
     p = ggplot(rnkm, aes(value, color = X2)) + geom_bar(alpha=0.2) + 
@@ -87,20 +93,43 @@ bestFit = function(df,metric='rmse',sort=1,zip='unspecified') {
   return(p) 
 }
 
+rankModel = function(m) {
+  return(t(apply(m[,-1],MARGIN=1,FUN=rank)))
+}
+
+bestFitCount = function(df,metric='rmse',zip='unspecified') {
+  inv = -1
+  if(metric %in% c('rmse')) inv = 1
+  n = dim(df[[metric]])[2]
+  rnk = t(apply(inv*df[[metric]][,-1],MARGIN=1,FUN=rank))
+  counts = apply(rnk<3,MARGIN=2,FUN=sum)
+  barplot(counts,main=paste(metric,'count of 1st or 2nd rank for',zip),
+          xlab="Model")
+  #countsm = melt(counts)
+  #p = ggplot(countsm, aes(value)) +
+  #  geom_bar() +
+  #  ylab("Count") +
+  #  xlab("Model") +
+  #  ggtitle(paste(metric,'fit ranking for',zip))
+  #return(p) 
+}
+
 allResults = list.files(paste(conf.basePath,'/',resultsDir,sep=''),pattern = "[0-9]+_.+RData")
 res = c()
 for (resultFile in allResults) {
   zip = strsplit(resultFile,'_')[[1]][1]
   print(zip)
-  if (zip != '93304') { next }
+  if (zip == '93727') { next }
   e = c()
+  res = c()
   load(file.path(conf.basePath,resultsDir,paste(zip,'_modelResults.RData',sep='')))
   if(length(e)==0) { # the zip ran without a terminal error
-    res = consolidateResults(modelResults)
+    res = rbind(res,consolidateResults(modelResults))
     print(names(res))
     # "rmse"          "r.squared"     "adj.r.squared" "log.liklihood" "aic" 
     # make a heat map of the goodness of fit
-    
+    g = bestFit(res$hourly,'rmse',sort='standard',zip=zip); g
+    p = hists(res$hourly,'rmse',zip=zip); p
     # make a line plot of the goodness of fit    
   }
   if(length(e)>1) { # the zip had a problem if e is a list...

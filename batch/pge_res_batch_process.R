@@ -84,14 +84,16 @@ models.hourly = list(
   toutTOD    = formula(kw ~ tout:HOD + HOW)
 )
 
+
+
 models.daily = list(
-  tout          = formula(kw.mean ~ tout.mean),
-  DOW           = formula(kw.mean ~ DOW),
-  tout_mean     = formula(kw.mean ~ tout.mean + DOW),
+  tout           = formula(kw.mean ~ tout.mean),
+  DOW            = formula(kw.mean ~ DOW),
+  tout_mean      = formula(kw.mean ~ tout.mean + DOW),
   tout_mean_WKND = formula(kw.mean ~ tout.mean + WKND),
-  tout_max      = formula(kw.mean ~ tout.max  + DOW),
-  tout_CDD      = formula(kw.mean ~ CDD + HDD + DOW),
-  tout_CDD_WKND = formula(kw.mean ~ CDD + HDD + WKND)
+  tout_max       = formula(kw.mean ~ tout.max  + DOW),
+  tout_CDD       = formula(kw.mean ~ CDD + HDD + DOW),
+  tout_CDD_WKND  = formula(kw.mean ~ CDD + HDD + WKND)
 )
 
 models.monthly = list(
@@ -101,7 +103,7 @@ models.monthly = list(
 )
 
 
-regressorDF = function(residence,norm=TRUE) {
+regressorDF = function(residence,norm=TRUE,folds=1) {
   WKND       = (residence$dates$wday == 0 | residence$dates$wday == 6) * 1 # weekend indicator
   hStr       = paste('H',sprintf('%02i',residence$dates$hour),sep='')
   dStr       = paste('D',residence$dates$wday,sep='')
@@ -121,6 +123,7 @@ regressorDF = function(residence,norm=TRUE) {
   
   kw = residence$kw
   if(norm) kw = residence$norm(kw)
+  
   df = data.frame(
       kw=kw,
       tout=tout,
@@ -157,10 +160,32 @@ regressorDFAggregated = function(residence,norm=TRUE,bp=65) {
   return(list(daily=daily,monthly=monthly))
 }
 
+kFold = function(df,models,nm,nfolds=5) {
+  folds <- sample(1:nfolds, dim(df)[1], replace=T)
+  residuals = c()
+  for (i in 1:nfolds) {
+    fld = folds == i
+    df$fold = fld
+    subm = lm(models[[nm]], data=df, subset=(!fold),na.action=na.omit)
+    yhat = predict(subm,newdata=df[fld,])
+    #print(length(yhat))
+    ynm = as.character(models[[nm]])[[2]]
+    residuals = c(residuals,df[,ynm][fld] - yhat) # accumulate the errors from all predictions
+  }
+  #plot(residuals)
+  rmnsqerr = sqrt(mean(residuals^2,na.rm=TRUE)) # RMSE
+  return(rmnsqerr)
+}
+
 # summarize regression model for future use
-summarizeModel = function(m) {
+summarizeModel = function(m,df,models,nm,fold=FALSE) {
   #lm(m,subset=m$y > 1)
   s = summary(m, correlation=FALSE)
+  
+  if (fold) {
+    s$fold.rmse = kFold(df,models,nm,nfolds=5)
+  }
+  
   s$call         <- c()  # lm model call
   s$terms        <- c()  # lm model terms
   s$residuals    <- c()  # residuals scaled by weights assigned to the model
@@ -179,9 +204,14 @@ summarizeModel = function(m) {
   # todo: ther eare a lot of negative numbers in this, so the contributions aren't directly interpretable
   s$total = sum(predict(m))
   s$contribution = colSums(t(m$coefficients * t(m$x)))
+  
   return(s)
   # k-fold prediction error, total contribution of each coefficient, 
   
+}
+
+summerlm = function(fmla,df,x) {
+  return(lm(fmla,df,x=x,subset=MOY %in% c('M6','M7','M8','M9')))
 }
 
 runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
@@ -221,22 +251,34 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
           df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
           # define regression formula that uses the piecewise pieces
           models$toutPIECES = as.formula(paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW'))
-          
-          results   = lapply(models,lm, data=df, x=TRUE)
-          summaries = rbind(summaries,lapply(results,summarizeModel))
+          # careful. lapply doesn't pass the right data to re-use the lm model
+          # that's why summarizeModel gets passed everything it needs to repeat the lm
+          # with subsets...
+          # see https://stat.ethz.ch/pipermail/r-help/2007-August/138724.html
+          #summaries = list()
+          #for(nm in names(models)) {
+          #  res = lm(models[[nm]],df, x=TRUE, model=TRUE)
+          #  summaries[nm] = summarizeModel(res,df,models,nm)
+          #}
+          results = lapply(models,FUN=summerlm,df,x=TRUE)
+          summaries = lapply(results,FUN=summarizeModel,df=df,models=models,nm=nm,fold=FALSE)
         }
-        dfl = regressorDFAggregated(r,norm=FALSE)
-        # daily regressions
-        models = models.daily
-        results   = lapply(models,lm, data=dfl$daily, x=TRUE)
-        d_summaries = rbind(d_summaries,lapply(results,summarizeModel)) #s = summary(x); s$residuals <- C(); s }))
-        
-        # monthly regressions
-        models = models.monthly
-        results   = lapply(models,lm, data=dfl$monthly, x=TRUE)
-        m_summaries = rbind(m_summaries,lapply(results,summarizeModel))
-        
-        ids             <- rbind(ids,sp_id)
+
+        if (TRUE) {
+          dfl = regressorDFAggregated(r,norm=FALSE)
+          
+          # daily regressions
+          models = models.daily
+          results = lapply(models,FUN=lm,dfl$daily,x=TRUE)
+          d_summaries = lapply(results,FUN=summarizeModel,df=dfl$daily,models=models,nm=nm,fold=FALSE)
+          
+          # monthly regressions
+          models = models.monthly     
+          results = lapply(models,FUN=lm,dfl$monthly,x=TRUE)
+          m_summaries = lapply(results,FUN=summarizeModel,df=dfl$monthly,models=models,nm=nm,fold=FALSE)
+
+        }
+        ids <- rbind(ids,sp_id)
         # TODO: write our own cross validation code - these are slow and picky! 
         #summaries = rbind(summaries,lapply(results,function(res) {cvFit(res,data=model.frame(res),y=model.frame(res)$kw)$cv}))
         #summaries = rbind(summaries,lapply(results,function(fit) {cv.lm(df=model.frame(fit),form.lm=fit,m=5,plotit=FALSE,printit=TRUE)$ss}))
