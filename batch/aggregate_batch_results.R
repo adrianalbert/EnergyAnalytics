@@ -10,10 +10,10 @@ require(reshape2)
 # todo: is there a better way to detect the current directory?
 conf.basePath = file.path('~/EnergyAnalytics/batch')
 if(Sys.info()['sysname'] == 'Windows') {
-  conf.basePath = file.path('c:/dev/pge_collab/EnergyAnalytics/batch')
+  conf.basePath = file.path('f:/dev/pge_collab/EnergyAnalytics/batch')
 }
 
-conf.dataPath = 'F:/dev/pge_collab/'
+conf.dataPath = 'F:/dev/pge_collab/EnergyAnalytics/batch'
 
 # resultsDir = 'results' # real
 resultsDir = 'results' # sub -sample for testing

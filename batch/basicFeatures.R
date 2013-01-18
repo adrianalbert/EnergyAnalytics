@@ -1,4 +1,4 @@
-basicFeatures = function(data){
+basicFeatures = function(data,id=NULL){
   dMax     <- apply(data,1,FUN=quantile,.95,na.rm=TRUE)
   dMin     <- apply(data,1,FUN=min,.5,na.rm=TRUE)
   dMean    <- rowMeans(data,dims=1,na.rm=TRUE) # rowMeans is faster than apply with FUN=mean ?rowMeans for details
@@ -20,6 +20,6 @@ basicFeatures = function(data){
   dailyFeatures[dailyFeatures == Inf] = NA # these will be caught by the na.rm in the mean fn
   colnames(dailyFeatures) <- c('max','min','mean','range','dur','mn2mx','n2d')
   # return the means across all days
-  ret <- c(apply(dailyFeatures,2,FUN=mean,na.rm=TRUE),softMax,softMin,nObs=nObs)
+  ret <- c(apply(dailyFeatures,2,FUN=mean,na.rm=TRUE),softMax,softMin,nObs=nObs,id=id)
   return(ret)
 }

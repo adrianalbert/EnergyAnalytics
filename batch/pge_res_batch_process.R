@@ -209,7 +209,7 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
     else { # viable residence!
       r <- tryCatch( {
         tic('model run')
-        features.basic  <- rbind(features.basic,basicFeatures(r$kwMat))
+        features.basic  <- rbind(features.basic,basicFeatures(r$kwMat,sp_id))
         
         # hourly regressions
         if(TRUE) {
