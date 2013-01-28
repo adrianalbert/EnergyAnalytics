@@ -1,6 +1,6 @@
 basicFeatures = function(data,id=NULL){
-  dMax     <- apply(data,1,FUN=quantile,.95,na.rm=TRUE)
-  dMin     <- apply(data,1,FUN=min,.5,na.rm=TRUE)
+  dMax     <- apply(data,1,FUN=quantile,.99,na.rm=TRUE)
+  dMin     <- apply(data,1,FUN=min,.1,na.rm=TRUE)
   dMean    <- rowMeans(data,dims=1,na.rm=TRUE) # rowMeans is faster than apply with FUN=mean ?rowMeans for details
   dRange   <- dMax - dMin
   dHalfway <- dMin + (dMax - dMin) / 2

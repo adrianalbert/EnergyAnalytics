@@ -119,7 +119,7 @@ RowWeatherClass = function(zipcode){
 # http://bryer.org/2012/object-oriented-programming-in-r
 WeatherClass = function(zipcode){
   query = paste(
-    'SELECT `date`, TemperatureF, Pressure, HourlyPrecip
+    'SELECT `date`, TemperatureF, Pressure, DewpointF, HourlyPrecip
     FROM',conf.weatherTable(),'where zip5 =',zipcode,'ORDER BY DATE')
   raw = run.query(query,conf.weatherDB())
   if(length(raw)==0) stop(paste('No data found for zipcode',zipcode))
@@ -129,7 +129,8 @@ WeatherClass = function(zipcode){
     dates = as.POSIXlt(raw[,1],tz="PST8PDT",'%Y-%m-%d %H:%M:%S'),
     tout = raw[,'TemperatureF'],
     pout = raw[,'Pressure'],
-    rain = raw[,'HourlyPrecip']
+    rain = raw[,'HourlyPrecip'],
+    dp   = raw[,'DewpointF']
   )
   
   days = unique(as.Date(rawData$dates))
@@ -151,6 +152,16 @@ WeatherClass = function(zipcode){
     set     = function(x, value) obj[[x]] <<- value,
     props   = list()
   )
+  
+  # returns relative humidity as decimal from 0 to 1 given temperature and dewpoint
+  # using August-Roche-Magnus approximation: http://andrew.rsmas.miami.edu/bmcnoldy/humidity_conversions.pdf
+  obj$rh = function(tout,dp) {
+    a = 17.271
+    b = 237.7
+    tout = (tout - 32) * 5/9
+    dp   = (dp   - 32) * 5/9
+    rh = exp(a*dp/(b + dp)) / exp(a*tout/(b + tout))
+  }
   
   obj$add = function(name, value) {
     obj[[name]] = value

@@ -24,7 +24,7 @@ library(reshape)
 runModelsByZip = function(zipArray,triggerZip=NULL,truncateAt=-1) {
   nZip     <- length(zipArray)
   zipCount <- 0
-  outDir = 'results'
+  outDir = 'results_summer'
   
   print(paste('This batch process will run models for',nZip,'zip codes'))
   dir.create(file.path(conf.basePath,outDir),showWarnings=FALSE)
@@ -75,31 +75,49 @@ runModelsByZip = function(zipArray,triggerZip=NULL,truncateAt=-1) {
   return(res)
 }
 
-models.hourly = list(
-  MOY        = formula(kw ~ tout + MOY),
-  DOW        = formula(kw ~ tout + DOW),
-  DOW_HOD    = formula(kw ~ tout + DOW + HOD),
-  standard   = formula(kw ~ tout + DOW + HOD + MOY),
-  HOW        = formula(kw ~ tout + HOW),
-  toutTOD    = formula(kw ~ tout:HOD + HOW)
+# TODO: test rh, pout regressors
+# TODO: define junk shot model for use with "step"
+# TODO: define summer only runs
+# TODO: aks Ram about his k-fold idea and look at serial folds as well as random
+# TODO: normalize the output format for model runs so that consolidate works again
+# TODO: develop consolidate across multiple zips
+# TODO: consolidate after each model run, before serializing to disk
+
+# passing in forula objects directly creates lots of problems
+# formulas are context specific and cant be stored in dataframes
+# to get formula from string, call as.formula(str)
+# to get a string repr of a formula object, call deparse(fmla)
+subset = list(
+  summer=paste("MOY %in% c(",paste("'M",6:9,"'",sep='',collapse=','),")"),
+  day=paste("HOD %in% c(",paste("'H",8:19,"'",sep='',collapse=','),")"),
+  summer_day=paste(summer,'&',day)
 )
 
-
+models.hourly = list(
+  MOY        = "kw ~ tout + MOY",             
+  DOW        = "kw ~ tout + DOW",             
+  DOW_prh    = "kw ~ tout + pout + rh + DOW", 
+  DOW_HOD    = "kw ~ tout + DOW + HOD",
+  standard   = "kw ~ tout + DOW + HOD + MOY",
+  HOW        = "kw ~ tout + HOW",
+  toutTOD    = list(formula="kw ~ tout:HOD + HOW",subset=list(all="TRUE",summer=subset$summer,day=subset$day)),
+  toutTOD_min = "kw_min ~ 0 + tout:HOD + HOW" # no intercept
+)
 
 models.daily = list(
-  tout           = formula(kw.mean ~ tout.mean),
-  DOW            = formula(kw.mean ~ DOW),
-  tout_mean      = formula(kw.mean ~ tout.mean + DOW),
-  tout_mean_WKND = formula(kw.mean ~ tout.mean + WKND),
-  tout_max       = formula(kw.mean ~ tout.max  + DOW),
-  tout_CDD       = formula(kw.mean ~ CDD + HDD + DOW),
-  tout_CDD_WKND  = formula(kw.mean ~ CDD + HDD + WKND)
+  tout           = "kwh ~ tout.mean",
+  DOW            = "kwh ~ DOW",
+  tout_mean      = "kwh ~ tout.mean + DOW",
+  tout_mean_WKND = "kwh ~ tout.mean + WKND",
+  tout_max       = "kwh ~ tout.max  + DOW",
+  tout_CDD       = "kwh ~ CDD + HDD + DOW",
+  tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND"
 )
 
 models.monthly = list(
-  tout       = formula(kw.mean ~ tout.mean),
-  CDD        = formula(kw.mean ~ CDD),
-  CDD_HDD    = formula(kw.mean ~ HDD + CDD)
+  tout       = "kwh ~ tout.mean",
+  CDD        = "kwh ~ CDD",
+  CDD_HDD    = "kwh ~ HDD + CDD"
 )
 
 
@@ -116,6 +134,8 @@ regressorDF = function(residence,norm=TRUE,folds=1) {
   tout = residence$w('tout')
   pout = residence$w('pout')
   rain = residence$w('rain')
+  dp   = residence$w('dp')
+  rh   = residence$weather$rh(tout,dp)
   # todo: we need the names of the toutPIECES to build the model
   # but those names aren't returned form here
   # add special data to the data frame: piecewise tout data
@@ -123,12 +143,15 @@ regressorDF = function(residence,norm=TRUE,folds=1) {
   
   kw = residence$kw
   if(norm) kw = residence$norm(kw)
+  kw_min = kw - quantile(kw,na.rm=TRUE,c(0.02)) # remove the min for regression w/o const term
   
   df = data.frame(
       kw=kw,
+      kw_min=kw_min,
       tout=tout,
       pout=pout,
       rain=rain,
+      rh=rh,
       dates=residence$dates,
       wday=residence$dates$wday,
       MOY,DOW,HOD,HOW,WKND   )
@@ -139,7 +162,9 @@ regressorDF = function(residence,norm=TRUE,folds=1) {
 regressorDFAggregated = function(residence,norm=TRUE,bp=65) {
   # uses melt and cast to reshape and aggregate data
   df = residence$df() # kw, tout, dates
-  if(norm) df$kw = residence$norm(df$kw)
+  if(norm) df$kw_norm = residence$norm(df$kw)
+  df$kw_min = df$kw - quantile(df$kw,na.rm=TRUE,c(0.02)) # remove the min for regression w/o const term
+  
   df$day   = format(df$dates,'%y-%m-%d') # melt has a problem with dates
   df$wday  = as.POSIXlt(df$dates)$wday   # raw for subsetting Su=0 ... Sa=6
   df$DOW   = paste('D',df$wday,sep='')  # Su=0 ... Sa=6
@@ -178,36 +203,43 @@ kFold = function(df,models,nm,nfolds=5) {
 }
 
 # summarize regression model for future use
-summarizeModel = function(m,df,models,nm,fold=FALSE) {
+# designed to be friendly to storing a lot of results in sequence
+# so it separates out the simple scalar metrics from the more complicated
+# coefficients
+summarizeModel = function(m,df,models,nm,id,zip,subnm=NULL,fold=FALSE,formula='',subset='') {
   #lm(m,subset=m$y > 1)
-  s = summary(m, correlation=FALSE)
-  
-  if (fold) {
-    s$fold.rmse = kFold(df,models,nm,nfolds=5)
-  }
-  
-  s$call         <- c()  # lm model call
-  s$terms        <- c()  # lm model terms
-  s$residuals    <- c()  # residuals scaled by weights assigned to the model
-  s$cov.unscaled <- c()  # p x p matrix of (unscaled) covariances
-  s$aliased      <- c()  # named logical vector showing if the original coefficients are aliased
-  #s$sigma               # the square root of the estimated variance of the random error
-  #s$adj.r.squared       # penalizing for higher p
-  #s$r.squared           # 'fraction of variance explained by the model'
-  #s$fstatistic          # 3-vector with the value of the F-statistic with its numerator and denominator degrees of freedom
-  #s$df                  # degs of freedom, vector (p,n-p,p*), the last being the number of non-aliased coefficients.
-  #s$coefficients <- c() # a p x 4 matrix: cols = coefficient, standard error, t-stat, (two-sided) p-value
-  s$logLik <- logLik(m)  # log liklihood for the model
-  s$AIC    <- AIC(m)     # Akaike information criterion
+  s <- as.list(summary(m, correlation=FALSE)) # generic list is more friendly for adding to a data.frame
+  s$call          <- c()     # lm model call (depends on variable scope and can be junk)
+  s$terms         <- c()     # lm model terms (depends on variable scope and can be junk)
+  s$residuals     <- c()     # residuals scaled by weights assigned to the model
+  s$cov.unscaled  <- c()     # p x p matrix of (unscaled) covariances
+  s$aliased       <- c()     # named logical vector showing if the original coefficients are aliased
+  s$na.action     <- c()     # get rid of extra meta info from the model
+  #s$sigma                   # the square root of the estimated variance of the random error
+  #s$adj.r.squared           # penalizing for higher p
+  #s$r.squared               # 'fraction of variance explained by the model'
+  #s$fstatistic              # 3-vector with the value of the F-statistic with its numerator and denominator degrees of freedom
+  #s$df                      # degs of freedom, vector (p,n-p,p*), the last being the number of non-aliased coefficients.
+  #s$coefficients            # a p x 4 matrix: cols = coefficient, standard error, t-stat, (two-sided) p-value
+  s$id          <- id
+  s$zip         <- zip
+  s$model.name  <- nm        # name of model run
+  s$subset.name <- subnm     # name of sample subset criteria (i.e. "summer" or "afternoon" or "weekdays")
+  s$formula     <- formula   # string of lm model call
+  s$subset      <- subset    # string of lm subset argument
+  s$logLik      <- logLik(m) # log liklihood for the model
+  s$AIC         <- AIC(m)    # Akaike information criterion
   
   # net contribution of each coefficient
-  # todo: ther eare a lot of negative numbers in this, so the contributions aren't directly interpretable
-  s$total = sum(predict(m))
-  s$contribution = colSums(t(m$coefficients * t(m$x)))
+  # todo: there are a lot of negative numbers in this, so the contributions aren't directly interpretable
+  s$contribution <- colSums(t(m$coefficients * t(m$x)))
+  s$total        <- sum(predict(m))
   
+  # k-fold prediction error
+  if (fold) {
+    s$fold.rmse <- kFold(df,models,nm,nfolds=5)
+  }
   return(s)
-  # k-fold prediction error, total contribution of each coefficient, 
-  
 }
 
 summerlm = function(fmla,df,x) {
@@ -216,7 +248,6 @@ summerlm = function(fmla,df,x) {
 
 runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
   features.basic  <- c()
-  ids             <- c()
   summaries       <- c()
   d_summaries     <- c()
   m_summaries     <- c()
@@ -250,18 +281,27 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
           toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
           df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
           # define regression formula that uses the piecewise pieces
-          models$toutPIECES = as.formula(paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW'))
+          piecesf = paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW')
+          models$toutPIECES = list(formula=piecesf,subset=list(all="TRUE",summer=subset$summer,day=subset$day)),
           # careful. lapply doesn't pass the right data to re-use the lm model
           # that's why summarizeModel gets passed everything it needs to repeat the lm
           # with subsets...
           # see https://stat.ethz.ch/pipermail/r-help/2007-August/138724.html
-          #summaries = list()
-          #for(nm in names(models)) {
-          #  res = lm(models[[nm]],df, x=TRUE, model=TRUE)
-          #  summaries[nm] = summarizeModel(res,df,models,nm)
-          #}
-          results = lapply(models,FUN=summerlm,df,x=TRUE)
-          summaries = lapply(results,FUN=summarizeModel,df=df,models=models,nm=nm,fold=FALSE)
+          for(nm in names(models)) {
+            fld = FALSE
+            #print(nm) 
+            fmla = models[[nm]]
+            subs = list(all="TRUE") # this will include all obs
+            if (class(fmla) == 'list') { # a list object will contain a formula and list of named subset commands
+              subs = fmla$subset  # list of named subset code snippets
+              fmla = fmla$formula
+            }
+            for(snm in names(subs)) {
+              df$sub = eval(parse(text=subs[[snm]]),envir=df)
+              res = lm(fmla,df, x=TRUE, subset=sub==TRUE)
+              summaries = rbind(summaries,summarizeModel(res,df,models,nm,id=sp_id,zip=zip,subnm=snm,fold=fld,formula=fmla,subset=subs[[snm]]))
+            }
+          }
         }
 
         if (TRUE) {
@@ -269,16 +309,24 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
           
           # daily regressions
           models = models.daily
-          results = lapply(models,FUN=lm,dfl$daily,x=TRUE)
-          d_summaries = lapply(results,FUN=summarizeModel,df=dfl$daily,models=models,nm=nm,fold=FALSE)
+          for(nm in names(models)) {
+            #print(nm)
+            fmla = models[[nm]]
+            res = lm(fmla,dfl$daily, x=TRUE)
+            d_summaries = rbind(d_summaries,summarizeModel(res,dfl$daily,models,nm,id=sp_id,zip=zip,subnm="all",fold=FALSE,formula=fmla))
+          }
+          #results = lapply(models,FUN=lm,dfl$daily,x=TRUE)
+          #d_summaries = lapply(results,FUN=summarizeModel,dfl$daily,models,nm,id=sp_id,zip=zip,fold=FALSE)
           
           # monthly regressions
           models = models.monthly     
-          results = lapply(models,FUN=lm,dfl$monthly,x=TRUE)
-          m_summaries = lapply(results,FUN=summarizeModel,df=dfl$monthly,models=models,nm=nm,fold=FALSE)
-
+          for(nm in names(models)) {
+            #print(nm)
+            fmla = models[[nm]]
+            res = lm(fmla,dfl$monthly, x=TRUE)
+            m_summaries = rbind(m_summaries,summarizeModel(res,dfl$monthly,models,nm,id=sp_id,zip=zip,subnm="all",fold=FALSE,formula=fmla))
+          }
         }
-        ids <- rbind(ids,sp_id)
         # TODO: write our own cross validation code - these are slow and picky! 
         #summaries = rbind(summaries,lapply(results,function(res) {cvFit(res,data=model.frame(res),y=model.frame(res)$kw)$cv}))
         #summaries = rbind(summaries,lapply(results,function(fit) {cv.lm(df=model.frame(fit),form.lm=fit,m=5,plotit=FALSE,printit=TRUE)$ss}))
@@ -294,11 +342,10 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
     if (i == truncateAt) break
   } # sp_id loop
   out <- list(
-      features.basic  = features.basic,
-      ids             = ids,
-      summaries       = summaries,
-      d_summaries     = d_summaries,
-      m_summaries     = m_summaries    
+      features.basic  = as.data.frame(features.basic),
+      summaries       = as.data.frame(summaries),
+      d_summaries     = as.data.frame(d_summaries),
+      m_summaries     = as.data.frame(m_summaries)    
       )
   print(names(out))
   return(out)
@@ -332,13 +379,13 @@ if (length(args) > 0) {
   allZips  <- db.getZips()
 }
 # bakersfield, fresno, oakland
-allZips = c('93304','93727','94610')
+allZips = c('94610','93304')
 print('Beginning batch run')
-runResult = runModelsByZip(allZips,triggerZip=93304,truncateAt=-1)
+runResult = runModelsByZip(allZips,triggerZip=NULL,truncateAt=-1)
 summarizeRun(runResult,listFailures=FALSE)
 
-load(file.path(conf.basePath,'results',paste(zip,'_modelResults.RData',sep='')))
+load(file.path(conf.basePath,'results_summer',paste(zip,'_modelResults.RData',sep='')))
 print(names(modelResults))
-print(modelResults$summaries[1,]$standard$coefficients)
+print(modelResults$summaries[1,]$coefficients)
 
 
