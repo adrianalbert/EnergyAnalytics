@@ -24,7 +24,7 @@ library(reshape)
 runModelsByZip = function(zipArray,triggerZip=NULL,truncateAt=-1) {
   nZip     <- length(zipArray)
   zipCount <- 0
-  outDir = 'results_summer'
+  outDir = 'results_tout_test'
   
   print(paste('This batch process will run models for',nZip,'zip codes'))
   dir.create(file.path(conf.basePath,outDir),showWarnings=FALSE)
@@ -88,25 +88,28 @@ runModelsByZip = function(zipArray,triggerZip=NULL,truncateAt=-1) {
 # to get formula from string, call as.formula(str)
 # to get a string repr of a formula object, call deparse(fmla)
 subset = list(
-  summer=paste("MOY %in% c(",paste("'M",6:9,"'",sep='',collapse=','),")"),
-  day=paste("HOD %in% c(",paste("'H",8:19,"'",sep='',collapse=','),")"),
-  summer_day=paste(summer,'&',day)
+  summer=paste("MOY %in% c(",paste("'M",5:10,"'",sep='',collapse=','),")"),
+  winter=paste("MOY %in% c(",paste("'M",c(11:12,1:4),"'",sep='',collapse=','),")"),
+  day=paste("HOD %in% c(",paste("'H",8:19,"'",sep='',collapse=','),")")
+  
 )
+subset$summer_day=paste(subset$summer,'&',subset$day)
 
 models.hourly = list(
-  MOY        = "kw ~ tout + MOY",             
-  DOW        = "kw ~ tout + DOW",             
-  DOW_prh    = "kw ~ tout + pout + rh + DOW", 
-  DOW_HOD    = "kw ~ tout + DOW + HOD",
-  standard   = "kw ~ tout + DOW + HOD + MOY",
-  HOW        = "kw ~ tout + HOW",
-  toutTOD    = list(formula="kw ~ tout:HOD + HOW",subset=list(all="TRUE",summer=subset$summer,day=subset$day)),
-  toutTOD_min = "kw_min ~ 0 + tout:HOD + HOW" # no intercept
+  #MOY        = "kw ~ tout + MOY",             
+  #DOW        = "kw ~ tout + DOW",             
+  #DOW_prh    = "kw ~ tout + pout + rh + DOW", 
+  #DOW_HOD    = "kw ~ tout + DOW + HOD",
+  #standard   = "kw ~ tout + DOW + HOD + MOY",
+  #HOW        = "kw ~ tout + HOW",
+  toutTOD_WKND = list(formula="kw ~ 0 + tout65:HODWK + HODWK",subset=list(all="TRUE",summer=subset$summer,winter=subset$winter)),
+  toutTOD    = list(formula="kw ~ 0 + tout65:HOD + HOD",subset=list(all="TRUE",summer=subset$summer,winter=subset$winter))
+  #toutTOD_min = "kw_min ~ 0 + tout:HOD + HOW" # no intercept
 )
 
 models.daily = list(
-  tout           = "kwh ~ tout.mean",
-  DOW            = "kwh ~ DOW",
+  #tout           = "kwh ~ tout.mean",
+  #DOW            = "kwh ~ DOW",
   tout_mean      = "kwh ~ tout.mean + DOW",
   tout_mean_WKND = "kwh ~ tout.mean + WKND",
   tout_max       = "kwh ~ tout.max  + DOW",
@@ -122,14 +125,16 @@ models.monthly = list(
 
 
 regressorDF = function(residence,norm=TRUE,folds=1) {
-  WKND       = (residence$dates$wday == 0 | residence$dates$wday == 6) * 1 # weekend indicator
+  WKND       = c('WK','ND')[(residence$dates$wday == 0 | residence$dates$wday == 6) * 1 + 1] # weekend indicator
   hStr       = paste('H',sprintf('%02i',residence$dates$hour),sep='')
+  hwkndStr     = paste(hStr,WKND,sep='')
   dStr       = paste('D',residence$dates$wday,sep='')
   mStr       = paste('M',residence$dates$mon,sep='')
   howStrs    = paste(dStr,hStr,sep='')
   MOY = factor(mStr,levels=sort(unique(mStr)))       # month of year
   DOW = factor(dStr,levels=sort(unique(dStr)))       # day of week
   HOD = factor(hStr,levels=sort(unique(hStr)))       # hour of day
+  HODWK = factor(hwkndStr,levels=sort(unique(hwkndStr)))       # hour of day for weekdays and weekends
   HOW = factor(howStrs,levels=sort(unique(howStrs))) # hour of week
   tout = residence$w('tout')
   pout = residence$w('pout')
@@ -149,12 +154,13 @@ regressorDF = function(residence,norm=TRUE,folds=1) {
       kw=kw,
       kw_min=kw_min,
       tout=tout,
+      tout65=pmax(0,tout-65),
       pout=pout,
       rain=rain,
       rh=rh,
       dates=residence$dates,
       wday=residence$dates$wday,
-      MOY,DOW,HOD,HOW,WKND   )
+      MOY,DOW,HOD,HODWK,HOW,WKND   )
   #df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
   return(df)
 }
@@ -209,6 +215,7 @@ kFold = function(df,models,nm,nfolds=5) {
 summarizeModel = function(m,df,models,nm,id,zip,subnm=NULL,fold=FALSE,formula='',subset='') {
   #lm(m,subset=m$y > 1)
   s <- as.list(summary(m, correlation=FALSE)) # generic list is more friendly for adding to a data.frame
+  class(s) <- 'list'         # make sure the class is no longer summary.lm
   s$call          <- c()     # lm model call (depends on variable scope and can be junk)
   s$terms         <- c()     # lm model terms (depends on variable scope and can be junk)
   s$residuals     <- c()     # residuals scaled by weights assigned to the model
@@ -276,13 +283,14 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
         if(TRUE) {
           df = regressorDF(r,norm=FALSE) # see also regressorDFAggregated
           models = models.hourly
-          
-          # add special data to the data frame: piecewise tout data
-          toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
-          df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
-          # define regression formula that uses the piecewise pieces
-          piecesf = paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW')
-          models$toutPIECES = list(formula=piecesf,subset=list(all="TRUE",summer=subset$summer,day=subset$day)),
+          if (FALSE) {
+            # add special data to the data frame: piecewise tout data
+            toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
+            df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
+            # define regression formula that uses the piecewise pieces
+            piecesf = paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW')
+            models$toutPIECES = list(formula=piecesf,subset=list(all="TRUE",summer=subset$summer,day=subset$day))
+          }
           # careful. lapply doesn't pass the right data to re-use the lm model
           # that's why summarizeModel gets passed everything it needs to repeat the lm
           # with subsets...
@@ -381,10 +389,10 @@ if (length(args) > 0) {
 # bakersfield, fresno, oakland
 allZips = c('94610','93304')
 print('Beginning batch run')
-runResult = runModelsByZip(allZips,triggerZip=NULL,truncateAt=-1)
+runResult = runModelsByZip(allZips,triggerZip=NULL,truncateAt=2)
 summarizeRun(runResult,listFailures=FALSE)
 
-load(file.path(conf.basePath,'results_summer',paste(zip,'_modelResults.RData',sep='')))
+load(file.path(conf.basePath,'results_tout_schedule',paste(zip,'_modelResults.RData',sep='')))
 print(names(modelResults))
 print(modelResults$summaries[1,]$coefficients)
 
