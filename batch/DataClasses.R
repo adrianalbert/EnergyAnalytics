@@ -226,14 +226,15 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
   #keepers   = which(kw > 0)
   
   obj = list (
+    id = sp_id,
     dates = dates,
     kw  = kw,
     kwMat = kwMat,
-    days = dateMat[,1],
+    days = days,
     zipcode = zipcode,
     weather = weather,
     tout = tout,
-    toutMat = matrix(tout,ncol=24),
+    toutMat = matrix(tout,ncol=24,byrow=TRUE),
     get = function(x) obj[[x]],
     # Not sure why <<- is used here
     # <<- searches parent environments before assignment
@@ -280,3 +281,45 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
   return(obj)
 }
 
+mapColors = function(data,colorMap,log=FALSE) {
+  mn = min(data,na.rm=TRUE)
+  data_mn = data - mn + 0.001
+  if(log) {
+    data_mn = log(data_mn + 1) # nothing below zero after we take the log
+  }
+  idx = ceiling(data_mn / max(data_mn,na.rm=TRUE) * length(colorMap))
+  return(colorMap[idx])
+}
+
+hmap = function(data,colorMap=NA,yvals=NA,xvals=NA,log=FALSE,...) {
+  n = dim(data)[1]
+  m = dim(data)[2]
+  # defailt values
+  if(length(colorMap) < 2) { colorMap = heat.colors(100) }
+  if(length(xvals)    < 2) { xvals=1:m }
+  if(length(yvals)    < 2) { yvals=1:n }
+  
+  cols = rep(xvals,n) # duplicate column position values across all rows
+  rows = rep(yvals,each=m) # duplicate y values across a whole row of data
+  vals = as.vector(t(as.matrix(data))) # linearize the matrix of data
+  plot(cols,rows,col=mapColors(vals,colorMap,log=log),
+       ylim=c(max(yvals),min(yvals)),
+       cex=5,pch=15,
+       xlab='Hour of day',ylab='Date',...)
+}
+
+plot.ResDataClass = function(r,colorMap=NA,main=NA) {
+  if(is.na(main)) { main <- paste(r$id,' (',r$zip,') summary info',sep='') }
+  op <- par( mfrow=c(2,2),
+       oma=c(0,0,3,0))# Room for the title
+  #plot(r$kw,xlab='Date',ylab='kWh/h',main='Raw usage')
+  hmap(r$kwMat,yvals=r$days,colorMap=colorMap,log=TRUE,main='Heatmap')
+  end = min(length(r$kw),240)
+  plot(r$dates[1:end],r$kw[1:end],type='l',xlab='Date',ylab='kWh/h',main='Raw usage zoom')
+  plot(r$days,rowSums(r$kwMat),ylab='kWh/day',xlab='Day',main='kWh/day')
+  plot(rowMeans(r$toutMat),rowSums(r$kwMat),main='kWh/day vs mean outside temp (F)',xlab='mean T (degs F)',ylab='kWh/day')
+  #par(op) # Leave the last plot
+  mtext(main, line=0, font=2, cex=1.2,outer=TRUE)
+  par(op)
+  #heatmap(as.matrix(r$kwMat),Rowv=NA,Colv=NA,labRow=NA,labCol=NA)
+}

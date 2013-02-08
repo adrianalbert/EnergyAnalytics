@@ -13,49 +13,13 @@ conf.basePath = file.path('~/EnergyAnalytics/batch')
 if(Sys.info()['sysname'] == 'Windows') {
   conf.basePath = file.path('f:/dev/pge_collab/EnergyAnalytics/batch')
 }
-resultsDir = 'results_tout_schedule' # real
+resultsDir = 'results_test' # real
 #resultsDir = 'test_results' # sub -sample for testing
 
 # run 'source' on all includes to load them 
 source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
 source(file.path(conf.basePath,'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
 source(file.path(conf.basePath,'timer.R'))             # adds tic() and toc() functions
-
-consolidateResults = function(modelResults) {
-  
-  # TODO: set up a data structures for these more complex outputs
-  #modelResults$summaries[[1,'DOW']]$coefficients
-  #modelResults$summaries[[1,'DOW']]$contribution
-  
-  res = list(
-      features = modelResults$features.basic,
-      hourly   = metricSummary(modelResults$summaries),
-      daily    = metricSummary(modelResults$d_summaries),
-      monthly  = metricSummary(modelResults$m_summaries)
-    )
-  return(res)
-}
-
-toRow = function(res,var) {
-  return(data.frame(lapply(res,function(x) x[[var]])))
-}
-
-resultDF = function(modelGroup,var) {
-  res = adply(modelGroup,.margins=1,.fun=toRow,var=var)
-  res$X1 <- c() # some sort of artifact of adply
-  return(res)
-}
-
-metricSummary = function(modelGroup) {
-  return( list (
-    rmse          = cbind(id=modelResults$id,resultDF(modelGroup,'sigma')),
-    r.squared     = cbind(id=modelResults$id,resultDF(modelGroup,'r.squared')),
-    adj.r.squared = cbind(id=modelResults$id,resultDF(modelGroup,'adj.r.squared')),
-    log.liklihood = cbind(id=modelResults$id,resultDF(modelGroup,'logLik')),
-    aic           = cbind(id=modelResults$id,resultDF(modelGroup,'AIC')),
-    total         = cbind(id=modelResults$id,resultDF(modelGroup,'total'))
-  ))
-}
 
 hists = function(df,metric='sigma',zip='unspecified',norm=c()){
   .e <- environment() # capture local environment for use in ggplot
@@ -115,34 +79,6 @@ bestFitCount = function(df,metric='rmse',zip='unspecified') {
           xlab="Model")
 }
 
-allResults = list.files(paste(conf.basePath,'/',resultsDir,sep=''),pattern = "[0-9]+_modelResults.RData")
-resr = list()
-resc = list()
-for (resultFile in allResults) {
-  zip = strsplit(resultFile,'_')[[1]][1]
-  print(zip)
-  if (zip %in% c(93727)) { next }
-  e = c()
-  load(file.path(conf.basePath,resultsDir,paste(zip,'_modelResults.RData',sep='')))
-  if(length(e)==0) { # the zip ran without a terminal error
-    resc[[paste('z_',zip,sep='')]] = consolidatedResults
-    resr[[paste('z_',zip,sep='')]] = modelResults
-    #consolidatedResults = consolidateResults(modelResults)
-    #save(consolidatedResults, file=file.path(conf.basePath,resultsDir,paste(zip,'_consolidatedResults.RData',sep='')))
-    print(names(consolidatedResults))
-    print(names(modelResults))
-    # "rmse"          "r.squared"     "adj.r.squared" "log.liklihood" "aic" 
-    # make a heat map of the goodness of fit
-    #g = bestFit(res$hourly,'rmse',sort='standard',zip=zip); g
-    #p = hists(res$hourly,'rmse',zip=zip); p
-    # make a line plot of the goodness of fit    
-  }
-  if(length(e)>1) { # the zip had a problem if e is a list...
-    print(paste(zip,'had a problem:',e$message,'on call to:'))
-    print(e$call)
-  }
-  rm(e)
-}
 
 Mode <- function(x) {
   ux <- unique(x)
@@ -165,64 +101,182 @@ scalars = function(a,model.name=NULL,subset.name=NULL) {
   return(c) # when above and this were one line, the cols were factors ?!!
 }
 
-cf = function(a,model.name,subset.name) {
+cf = function(a,model.name,subset.name,col='Estimate') {
   keepers = (a$model.name==model.name & a$subset.name==subset.name)
   b = subset(a,keepers)
+  allCols = data.frame(id=NA,t(b[[1,'contribution']])) # df with cols for all model params (including those that were aliased)
   b$id = as.numeric(b$id) # if this is not numeric, the whole rbinded matrix is character and the data frame has factors instead of numeric cols
-  b$idx = 1:length(b$id)
-  c = dlply(b,.(idx),function(x) c(id=x$id,x$coefficients[[1]][,'Estimate']))
-  c$idx = c()
+  b$idx = 1:length(b$id) # setup ply to work on one row at a time
+  c = dlply(b,.(idx),function(x) c(id=x$id,x$coefficients[[1]][,col]))
+  c$idx = c() # drop the index column
   g = as.numeric(lapply(c,length)) # calculate coefficient list lengths...
   c[g != Mode(g)] = c()            # remove the abnormal lengths
   h = as.numeric(lapply(c,function(x) any(x[-1] != 0))) # check for blank rows
   c[!h] = c() #remove rows of all zeros
-  return(data.frame(do.call(rbind,c))) # when above and this were one line, the cols were factors ?!!
+  mergedDF = rbind.fill(allCols,data.frame(do.call(rbind,c))) # add missing cols using  rbind.fill
+  return(mergedDF[-1,]) # return the coefficient data, without the first extra row added to get the extra cols from rbind.fill
 }
   
 clean = function(a) {
   return (subset(a,a$total!=0))
 }
 
+demean = function(data,col_exp) {
+  cols = grep(col_exp,colnames(data),value=TRUE)
+  #row_var = apply(data[,cols],MARGIN=1,FUN=sd,na.rm=TRUE)
+  row_mean = rowMeans(data[,cols],na.rm=TRUE)
+  data[,cols] = (data[,cols] / row_mean)
+  return(data)
+}
+
+p_summary = function(pvals,pmax=0.05,pattern='^HODWKWK') {
+  n = dim(pvals)[1]
+  m = dim(pvals)[2]
+  pn = length(pattern)
+  par(mfrow=c(pn,2))
+  for (i in 1:pn) {
+    significant = pvals[,-1] < pmax # boolean array of which values are stat. significant
+    cols = grep(pattern[i],colnames(significant),value=TRUE)
+    plot(colSums(significant[,cols],na.rm=TRUE), type='b',
+         ylim=c(0,n),
+         main=paste(pattern[i],' count p<',pmax,' per coefficient',sep=''),
+         xlab='Coefficient',ylab='Count'  )
+    hist(rowSums(significant[,cols],na.rm=TRUE),breaks=length(cols),
+         #ylim=c(0,n),
+         xlim=c(0,length(cols)+1),
+         main=paste('Count hours p<',pmax,' per residence',sep=''),
+         xlab='Hours'  )
+  }
+  par(mfrow=c(1,1))
+}
+
+c_summary = function(cvals,pvals,pmax=0.05,pattern='^HODWKWK') {
+  significant = cbind(id=TRUE,pvals[,-1] < pmax) # boolean array of which values are stat. significant
+  cvals[!significant] = NA
+  n = dim(pvals)[1]
+  m = dim(pvals)[2]
+  pn = length(pattern)
+  par(mfrow=c(pn,1))
+  for (i in 1:pn) {
+    cols = grep(pattern[i],colnames(significant),value=TRUE)
+    plot(colMeans(cvals[,cols],na.rm=TRUE), type='b',
+         #ylim=c(0,n),
+         main=paste(pattern[i],' mean coef values p<',pmax,' N=',n,sep=''),
+         xlab='Coefficient',ylab='coef / 24hr mean'  )
+  }
+  par(mfrow=c(1,1))
+}
 
 
 quad_chart = function(d,title) {
-  hodWK  = d[, c('id',grep("^HOD.+WK$", colnames(d), value=TRUE))]
-  toutWK = d[, c('id',grep("^tout65.+WK$", colnames(d), value=TRUE))]
-  hodND  = d[, c('id',grep("^HOD.+ND$", colnames(d), value=TRUE))]
-  toutND = d[, c('id',grep("^tout65.+ND$", colnames(d), value=TRUE))]
+  
+  # todo: update tehse for subsequent data runs:
+  # the WK and ND suffixes have been moved to the beginning of the names
+  # so "^HOD.+WK$" will become simply '^WKHOD'
+  hodWK  = d[, c('id',grep("^HODWKWK", colnames(d), value=TRUE))]
+  toutWK = d[, c('id',grep("^tout65.HODWKWK", colnames(d), value=TRUE))]
+  hodND  = d[, c('id',grep("^HODWKND", colnames(d), value=TRUE))]
+  toutND = d[, c('id',grep("^tout65.HODWKND", colnames(d), value=TRUE))]
   
   hodmWK =  melt(hodWK,id.vars=c('id'))
   toutmWK = melt(toutWK,id.vars=c('id'))
   hodmND =  melt(hodND,id.vars=c('id'))
   toutmND = melt(toutND,id.vars=c('id'))
   
-  g1 = ggplot(hodmWK, aes(variable, value, group = id)) + geom_line(alpha = 0.05) + ylim(-1,3) + 
+  g1 = ggplot(hodmWK, aes(variable, value, group = id)) + geom_line(alpha = 0.05) + ylim(-0.1,3) + #ylim(-0.5,3) + 
     scale_x_discrete(labels=c('12am',1:11,'12pm',1:11)) + labs(title='Hour of day fixed effects (weekday)', x='Hour of day', y='fixed effect (kW)')
-  g2 = ggplot(toutmWK, aes(variable, value, group = id)) + geom_line(alpha = 0.05) + ylim(-.1,0.2) + 
+  g2 = ggplot(toutmWK, aes(variable, value, group = id)) + geom_line(alpha = 0.05) + ylim(-.01,4) + 
     scale_x_discrete(labels=c('12am',1:11,'12pm',1:11)) + labs(title='Hour of day temperature effects (weekday)', x='Hour of day', y='temperature effect (kW/deg above 65F)')
-  g3 = ggplot(hodmND, aes(variable, value, group = id)) + geom_line(alpha = 0.05) + ylim(-1,3) + 
+  g3 = ggplot(hodmND, aes(variable, value, group = id)) + geom_line(alpha = 0.05) + ylim(-0.1,3) + #ylim(-0.5,3) + 
     scale_x_discrete(labels=c('12am',1:11,'12pm',1:11)) + labs(title='Hour of day fixed effects (weekend)', x='Hour of day', y='fixed effect (kW)')
-  g4 = ggplot(toutmND, aes(variable, value, group = id)) + geom_line(alpha = 0.05) + ylim(-.1,0.2) + 
+  g4 = ggplot(toutmND, aes(variable, value, group = id)) + geom_line(alpha = 0.05) + ylim(-.01,4) + 
     scale_x_discrete(labels=c('12am',1:11,'12pm',1:11)) + labs(title='Hour of day temperature effects (weekend)', x='Hour of day', y='temperature effect (kW/deg above 65F)')
   
   grid.arrange(g1,g2,g3,g4,nrow=2, as.table=FALSE, main=title)
 }
 
+model  = 'toutTOD_WKND'
+
 zip = 94610
 load(file.path(conf.basePath,resultsDir,paste(zip,'_modelResults.RData',sep='')))
-#d = cf(modelResults$summaries,'toutTOD','summer')
-quad_chart(cf(clean(modelResults$summaries),'toutTOD_WKND','summer'),title=paste(zip,' (coast/moderate $) tout65:HOD + HOD model (summer only)'))
+summary   = clean(modelResults$summaries)
+estimates.s = cf(summary,model,'summer')
+estimates.w = cf(summary,model,'winter')
+pvals.w     = cf(summary,model,'winter',col='Pr(>|t|)')
+pvals.s     = cf(summary,model,'summer',col='Pr(>|t|)')
 
-g1 = hists(scalars(clean(modelResults$summaries),subset.name='all'),'sigma',zip)
+quad_chart(estimates.s,title=paste(zip,model,' (coast/moderate income', 'summer', 'only)'))
+
+
+plot(colMeans(pvals.s[,grep("^HODWKWK", colnames(pvals.s), value=TRUE)]),main=paste(zip,' p-values'))
+
+g1 = hists(scalars(summary,subset.name='summer'),'sigma',zip)
   
 zip = 93304
 load(file.path(conf.basePath,resultsDir,paste(zip,'_modelResults.RData',sep='')))
-#d = cf(modelResults$summaries,'toutTOD','summer')
-quad_chart(cf(clean(modelResults$summaries),'toutTOD_WKND','summer'),title=paste(zip,' (inland/moderate $) tout65:HOD + HOD model (summer only)'))
+summary   = clean(modelResults$summaries)
+estimates.s = cf(summary,model,'summer')
+estimates.w = cf(summary,model,'winter')
+pvals.w     = cf(summary,model,'winter',col='Pr(>|t|)')
+pvals.s     = cf(summary,model,'summer',col='Pr(>|t|)')
 
-g2 = hists(scalars(clean(modelResults$summaries),subset.name='all'),'r.squared',zip)
+# eliminate values not different from zero
+pmax = 0.4 # maximum acceptable p-value in (0,1), with 0.05 being 95% confidence
+estimates.s[cbind(FALSE,pvals.s[,-1] > pmax)] = NA
+estimates.w[cbind(FALSE,pvals.w[,-1] > pmax)] = NA
+
+# demean each set of coefficients
+estimates.s = demean(estimates.s,"^tout65.HODWKWK")
+estimates.w = demean(estimates.w,"^tout65.HODWKWK")
+estimates.s = demean(estimates.s,"^tout65.HODWKND")
+estimates.w = demean(estimates.w,"^tout65.HODWKND")
+estimates.s = demean(estimates.s,"^HODWKWK")
+estimates.w = demean(estimates.w,"^HODWKWK")
+estimates.s = demean(estimates.s,"^HODWKND")
+estimates.w = demean(estimates.w,"^HODWKND")
+
+c_summary(estimates.s,pvals.s,0.05,pattern=c('^HODWKWK','^tout65.HODWKWK'))
+
+p_summary(pvals.s,0.05,pattern=c('^HODWKWK','^tout65.HODWKWK'))
+
+
+d_summary = clean(modelResults$d_summaries)
+
+g1 = hists(scalars(d_summary,subset.name='all'),'r.squared',zip)
+g2 = hists(scalars(d_summary,subset.name='all'),'sigma',zip)
+grid.arrange(g1,g2)
+
+# eliminate values not different from zero
+#pmax = 0.05 # maximum acceptable p-value in (0,1), with 0.05 being 95% confidence
+#estimates.s[cbind(FALSE,pvals.s[,-1] > pmax)] = NA
+#estimates.w[cbind(FALSE,pvals.w[,-1] > pmax)] = NA
+
+quad_chart(estimates.w,title=paste(zip,model,'(inland/lower income', 'winter', 'only)'))
+
+
+par(mfrow=c(1,2))
+plot(colMeans(pvals.w[,grep("^HODWKWK", colnames(pvals), value=TRUE)]),
+     col='blue',
+     ylim=c(0,1),
+     main=paste(zip,'HOD p-values'),
+     xlab='Hour of day',
+     ylab='p-value (significant at < 0.05)')
+points(colMeans(pvals.s[,grep("^HODWKWK", colnames(pvals), value=TRUE)]) / 2,pch=2,col='red')
+
+plot(colMeans(pvals.w[,grep("^tout65.HODWKWK", colnames(pvals), value=TRUE)]),
+     col='blue',
+     ylim=c(0,1),
+     main=paste(zip,'tout65xHOD p-values'),
+     xlab='Hour of day',
+     ylab='p-value (significant at < 0.05)')
+points(colMeans(pvals.s[,grep("^tout65.HODWKWK", colnames(pvals), value=TRUE)]) / 2,pch=2,col='red')
+
+
+g2 = hists(scalars(summary,subset.name='summer'),'sigma',zip)
 grid.arrange(g2)
   
+g2 = hists(scalars(summary,subset.name='all'),'r.squared',zip) + xlab('kWh/day')
+grid.arrange(g2)
 
 
 b = subset(modelResults$summaries,model.name == 'toutTOD' & subset.name == 'all',select=c(id,coefficients))

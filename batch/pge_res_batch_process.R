@@ -17,22 +17,189 @@ source(file.path(conf.basePath,'regressionSupport.R')) # mostly regressor manipu
 source(file.path(conf.basePath,'timer.R'))             # adds tic() and toc() functions
 
 library(reshape)
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+library(timeDate)
+
 #library('DAAG') # Data Analysis and Graphics package has k-fold cross validation
 # cv.lm(df=mydata, model, m=5) # 5 fold cross-validation
 #library('cvTools') # cross validation tools
 
+outDir = 'results_test'
+PLOT_INVALID=TRUE
+
+# passing in forula objects directly creates lots of problems
+# formulas are context specific and cant be stored in dataframes
+# to get formula from string, call as.formula(str)
+# to get a string repr of a formula object, call deparse(fmla)
+models.hourly = list(
+  #MOY         = "kw ~ tout + MOY",             
+  #DOW         = "kw ~ tout + DOW",
+  #DOW_HOD65    = list(formula="kw ~ tout65 + DOW + HOD",subset=list(all="TRUE",summer=subset$summer)),
+  #HOW65        = list(formula="kw ~ tout65 + HOW",subset=list(all="TRUE",summer=subset$summer)),
+  #wea          = list(formula="kw ~ tout   + pout + rh + HOW + MOY",subset=list(all="TRUE",summer=subset$summer)), 
+  #wea65        = list(formula="kw ~ tout65 + pout + rh + HOW + MOY",subset=list(all="TRUE",summer=subset$summer)),
+  #HOW         = "kw ~ tout + HOW",
+  #toutTOD_WKND = list(formula="kw ~ 0 + tout65:HODWK + HODWK",subset=list(all="TRUE",summer=subset$summer,winter=subset$winter))
+  #toutTOD      = list(formula="kw ~ 0 + tout65:HOD + HOD",subset=list(summer=subset$summer)),
+  #toutTOD_d1   = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout_d1 + HOD",subset=list(summer=subset$summer)),
+  #toutTOD_65d1 = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_d1 + HOD",subset=list(summer=subset$summer)),
+  #toutTOD_l1   = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l1 + HOD",subset=list(summer=subset$summer)),
+  #toutTOD_l3   = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l3 + HOD",subset=list(summer=subset$summer))
+  #toutTOD_min = "kw_min ~ 0 + tout:HOD + HOW" # no intercept
+)
+
+# todo: integration vacation days into regression
+models.daily = list(
+  #tout           = "kwh ~ tout.mean",
+  #DOW            = "kwh ~ DOW",
+  tout_mean      = "kwh ~ tout.mean + DOW",
+  tout_mean_WKND = "kwh ~ tout.mean + WKND",
+  tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
+  #tout_max       = "kwh ~ tout.max  + DOW",
+  #tout_CDD       = "kwh ~ CDD + HDD + DOW",
+  #tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND",
+  wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac"
+)
+
+models.monthly = list(
+  tout       = "kwh ~ tout.mean",
+  CDD        = "kwh ~ CDD",
+  CDD_HDD    = "kwh ~ HDD + CDD"
+)
+
+# generate the string values that will identify the desired subset of a data.frame
+# using the command subset(df,subset=str,...)
+subset = list(
+  summer=paste("MOY %in% c(",paste("'M",5:10,"'",sep='',collapse=','),")"),
+  winter=paste("MOY %in% c(",paste("'M",c(11:12,1:4),"'",sep='',collapse=','),")"),
+  day=paste("HOD %in% c(",paste("'H",8:19,"'",sep='',collapse=','),")")
+  
+)
+subset$summer_day=paste(subset$summer,'&',subset$day)
+
+lag   = function(v,n=1) { return(c(rep(NA,n),head(v,-n))) } # prepend NAs and truncate to preserve length
+diff2 = function(v,n=1) { return(c(rep(NA,n),diff(v, n))) } # prepend NAs to preserve length of standard diff
+
+regressorDF = function(residence,norm=TRUE,folds=1) {
+  WKND       = c('WK','ND')[(residence$dates$wday == 0 | residence$dates$wday == 6) * 1 + 1] # weekend indicator
+  dateDays   = as.Date(residence$dates)
+  # holidaysNYSE is a function from the dateTime package
+  hdays      = as.Date(holidayNYSE(min(residence$dates$year + 1900):max(residence$dates$year + 1900)))
+  vac        = factor(dateDays %in% hdays)
+  hStr       = paste('H',sprintf('%02i',residence$dates$hour),sep='')
+  hwkndStr   = paste(WKND,hStr,sep='')
+  dStr       = paste('D',residence$dates$wday,sep='')
+  mStr       = paste('M',residence$dates$mon,sep='')
+  howStrs    = paste(dStr,hStr,sep='')
+  MOY        = factor(mStr,levels=sort(unique(mStr)))         # month of year
+  DOW        = factor(dStr,levels=sort(unique(dStr)))         # day of week
+  HOD        = factor(hStr,levels=sort(unique(hStr)))         # hour of day
+  HODWK      = factor(hwkndStr,levels=sort(unique(hwkndStr))) # hour of day for weekdays and weekends
+  HOW        = factor(howStrs,levels=sort(unique(howStrs))) # hour of week
+  tout       = residence$w('tout')
+  tout65     = pmax(0,tout-65)
+  
+  pout = residence$w('pout')
+  rain = residence$w('rain')
+  dp   = residence$w('dp')
+  rh   = residence$weather$rh(tout,dp)
+  # todo: we need the names of the toutPIECES to build the model
+  # but those names aren't returned form here
+  # add special data to the data frame: piecewise tout data
+  #toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
+  
+  kw = residence$kw
+  if(norm) kw = residence$norm(kw)
+  kw_min = kw - quantile(kw,na.rm=TRUE,c(0.02)) # remove the min for regression w/o const term
+  
+  df = data.frame(
+    kw=kw,
+    kw_min=kw_min,
+    tout=tout,
+    tout65=tout65,
+    tout65_l1 = lag(tout65,1),
+    tout65_l3 = lag(tout65,3),
+    tout_d1 = diff2(tout,1),
+    tout65_d1 = diff2(tout,1)*(tout65 > 0),
+    #tout_d3 = diff2(tout,3),
+    pout=pout,
+    rain=rain,
+    rh=rh,
+    dates=residence$dates,
+    vac=vac,
+    wday=residence$dates$wday,
+    MOY,DOW,HOD,HODWK,HOW,WKND   )
+  #df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
+  return(df)
+}
+
+regressorDFAggregated = function(residence,norm=TRUE,bp=65) {
+  # uses melt and cast to reshape and aggregate data
+  df = residence$df() # kw, tout, dates
+  if(norm) df$kw_norm = residence$norm(df$kw)
+  df$kw_min = df$kw - quantile(df$kw,na.rm=TRUE,c(0.02)) # remove the min for regression w/o const term
+  
+  df$pout  = residence$w('pout')
+  dp       = residence$w('dp')
+  df$rh    = residence$weather$rh(df$tout,dp)
+  df$day   = format(df$dates,'%Y-%m-%d') # melt has a problem with dates
+  df$wday  = as.POSIXlt(df$dates)$wday   # raw for subsetting Su=0 ... Sa=6
+  df$DOW   = paste('D',df$wday,sep='')  # Su=0 ... Sa=6
+  df$WKND  = (df$wday == 0 | df$wday == 6) * 1 # weekend indicator
+  df$DOW   = factor(df$DOW, levels=sort(unique(df$DOW)))
+  month    = format(df$dates,'%y-%m')   # as.POSIXlt(df$dates)$mon
+  df$mon   = as.POSIXlt(df$dates)$mon   # raw month data for subset functions Jan=0 ... Dec=11
+  df$MOY   = factor(month, levels=sort(unique(month)))
+  df <- subset(df, select = -c(dates) )  # melt has a problem with dates but we don't need anymore
+  # melt and cast to reshape data into monthly and daily time averages
+  dfm = melt(df,id.vars=c("day",'DOW','MOY','mon','wday','WKND'),measure.vars=c('kw','tout','pout','rh'),na.rm=TRUE)
+  
+  monthly = cast(dfm,MOY + mon ~ variable,fun.aggregate=c(sum,mean,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)),subset= variable %in% c('kw','tout'))
+  colnames(monthly) <- c('MOY','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDD','HDD')
+  monthly <- subset(monthly, select = -c(junk1, junk2, junk3) )
+  
+  daily = cast(dfm, MOY + day + DOW + mon + wday + WKND ~ variable,fun.aggregate=c(sum,mean,max,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)),subset= variable %in% c('kw','tout','pout','rh'))
+  colnames(daily) <- c('MOY','day','DOW','mon','wday','WKND','kwh','kw.mean','kw.max','junk1','junk2','junk3','tout.mean','tout.max','CDD','HDD','junk4','pout.mean','pout.max','junk5','junk6','junk7','rh.mean','rh.max','junk8','junk9')
+  daily <- subset(daily, select = grep("^junk", colnames(daily), invert=TRUE) )
+  
+  # add vacation days flags
+  dateDays   = as.Date(daily$day)
+  # holidaysNYSE is a function from the dateTime package
+  hdays      = as.Date(holidayNYSE(min(as.POSIXlt(dateDays)$year+1900):max(as.POSIXlt(dateDays)$year+1900)))
+  daily$vac  = factor(dateDays %in% hdays)
+  
+  if(FALSE) {
+    M <- rbind(c(1, 2), c(3, 4), c(5, 6))
+    layout(M)
+    pacf(daily$kwh)
+    acf(daily$kwh)
+    plot(daily$pout.mean, daily$kwh)
+    plot(daily$rh.mean, daily$kwh)
+    plot(daily$tout.max, daily$kwh)
+    plot(daily$kwh,type='l',main=paste('',residence$id))
+    Sys.sleep(1)
+  }
+  
+  return(list(daily=daily,monthly=monthly))
+}
+
+
 runModelsByZip = function(zipArray,triggerZip=NULL,truncateAt=-1) {
   nZip     <- length(zipArray)
   zipCount <- 0
-  outDir = 'results_tout_test'
+  
   
   print(paste('This batch process will run models for',nZip,'zip codes'))
   dir.create(file.path(conf.basePath,outDir),showWarnings=FALSE)
   print(paste('<zipcode>_modelResults.RData files for each can be found in',file.path(conf.basePath,outDir)))
-  res = list(attemptedZip=zipArray,
-             completedZip=c(),
-             attemptedSP=c(),
-             completedSP=c())
+  res = list(attemptedZip =zipArray,
+             completedZip =c(),
+             attemptedSP  =c(),
+             completedSP  =c(),
+             invalid.ids  =c() )
   triggered = FALSE
   for (zip in zipArray) { # i.e. 94610
     zipCount <- zipCount + 1
@@ -58,7 +225,8 @@ runModelsByZip = function(zipArray,triggerZip=NULL,truncateAt=-1) {
       rm(zipData,weather,sp_ids)
       save(modelResults,file=resultsFile)
       res$completedZip <- rbind(res$completedZip,zip)
-      res$completedSP  <- rbind(res$completedSP,modelResults$ids)
+      res$completedSP  <- c(res$completedSP,modelResults$features.basic$id)
+      res$invalid.ids  <- rbind.fill(res$invalid.ids,modelResults$invalid.ids)
       rm(modelResults)
       toc('modelsBySP')
     }, 
@@ -77,119 +245,11 @@ runModelsByZip = function(zipArray,triggerZip=NULL,truncateAt=-1) {
 
 # TODO: test rh, pout regressors
 # TODO: define junk shot model for use with "step"
-# TODO: define summer only runs
 # TODO: aks Ram about his k-fold idea and look at serial folds as well as random
 # TODO: normalize the output format for model runs so that consolidate works again
 # TODO: develop consolidate across multiple zips
 # TODO: consolidate after each model run, before serializing to disk
 
-# passing in forula objects directly creates lots of problems
-# formulas are context specific and cant be stored in dataframes
-# to get formula from string, call as.formula(str)
-# to get a string repr of a formula object, call deparse(fmla)
-subset = list(
-  summer=paste("MOY %in% c(",paste("'M",5:10,"'",sep='',collapse=','),")"),
-  winter=paste("MOY %in% c(",paste("'M",c(11:12,1:4),"'",sep='',collapse=','),")"),
-  day=paste("HOD %in% c(",paste("'H",8:19,"'",sep='',collapse=','),")")
-  
-)
-subset$summer_day=paste(subset$summer,'&',subset$day)
-
-models.hourly = list(
-  #MOY        = "kw ~ tout + MOY",             
-  #DOW        = "kw ~ tout + DOW",             
-  #DOW_prh    = "kw ~ tout + pout + rh + DOW", 
-  #DOW_HOD    = "kw ~ tout + DOW + HOD",
-  #standard   = "kw ~ tout + DOW + HOD + MOY",
-  #HOW        = "kw ~ tout + HOW",
-  toutTOD_WKND = list(formula="kw ~ 0 + tout65:HODWK + HODWK",subset=list(all="TRUE",summer=subset$summer,winter=subset$winter)),
-  toutTOD    = list(formula="kw ~ 0 + tout65:HOD + HOD",subset=list(all="TRUE",summer=subset$summer,winter=subset$winter))
-  #toutTOD_min = "kw_min ~ 0 + tout:HOD + HOW" # no intercept
-)
-
-models.daily = list(
-  #tout           = "kwh ~ tout.mean",
-  #DOW            = "kwh ~ DOW",
-  tout_mean      = "kwh ~ tout.mean + DOW",
-  tout_mean_WKND = "kwh ~ tout.mean + WKND",
-  tout_max       = "kwh ~ tout.max  + DOW",
-  tout_CDD       = "kwh ~ CDD + HDD + DOW",
-  tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND"
-)
-
-models.monthly = list(
-  tout       = "kwh ~ tout.mean",
-  CDD        = "kwh ~ CDD",
-  CDD_HDD    = "kwh ~ HDD + CDD"
-)
-
-
-regressorDF = function(residence,norm=TRUE,folds=1) {
-  WKND       = c('WK','ND')[(residence$dates$wday == 0 | residence$dates$wday == 6) * 1 + 1] # weekend indicator
-  hStr       = paste('H',sprintf('%02i',residence$dates$hour),sep='')
-  hwkndStr     = paste(hStr,WKND,sep='')
-  dStr       = paste('D',residence$dates$wday,sep='')
-  mStr       = paste('M',residence$dates$mon,sep='')
-  howStrs    = paste(dStr,hStr,sep='')
-  MOY = factor(mStr,levels=sort(unique(mStr)))       # month of year
-  DOW = factor(dStr,levels=sort(unique(dStr)))       # day of week
-  HOD = factor(hStr,levels=sort(unique(hStr)))       # hour of day
-  HODWK = factor(hwkndStr,levels=sort(unique(hwkndStr)))       # hour of day for weekdays and weekends
-  HOW = factor(howStrs,levels=sort(unique(howStrs))) # hour of week
-  tout = residence$w('tout')
-  pout = residence$w('pout')
-  rain = residence$w('rain')
-  dp   = residence$w('dp')
-  rh   = residence$weather$rh(tout,dp)
-  # todo: we need the names of the toutPIECES to build the model
-  # but those names aren't returned form here
-  # add special data to the data frame: piecewise tout data
-  #toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
-  
-  kw = residence$kw
-  if(norm) kw = residence$norm(kw)
-  kw_min = kw - quantile(kw,na.rm=TRUE,c(0.02)) # remove the min for regression w/o const term
-  
-  df = data.frame(
-      kw=kw,
-      kw_min=kw_min,
-      tout=tout,
-      tout65=pmax(0,tout-65),
-      pout=pout,
-      rain=rain,
-      rh=rh,
-      dates=residence$dates,
-      wday=residence$dates$wday,
-      MOY,DOW,HOD,HODWK,HOW,WKND   )
-  #df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
-  return(df)
-}
-
-regressorDFAggregated = function(residence,norm=TRUE,bp=65) {
-  # uses melt and cast to reshape and aggregate data
-  df = residence$df() # kw, tout, dates
-  if(norm) df$kw_norm = residence$norm(df$kw)
-  df$kw_min = df$kw - quantile(df$kw,na.rm=TRUE,c(0.02)) # remove the min for regression w/o const term
-  
-  df$day   = format(df$dates,'%y-%m-%d') # melt has a problem with dates
-  df$wday  = as.POSIXlt(df$dates)$wday   # raw for subsetting Su=0 ... Sa=6
-  df$DOW   = paste('D',df$wday,sep='')  # Su=0 ... Sa=6
-  df$WKND  = (df$wday == 0 | df$wday == 6) * 1 # weekend indicator
-  df$DOW   = factor(df$DOW, levels=sort(unique(df$DOW)))
-  month    = format(df$dates,'%y-%m')   # as.POSIXlt(df$dates)$mon
-  df$mon   = as.POSIXlt(df$dates)$mon   # raw month data for subset functions Jan=0 ... Dec=11
-  df$MOY   = factor(month, levels=sort(unique(month)))
-  df <- subset(df, select = -c(dates) )  # melt has a problem with dates but  we don't need anymore
-  # melt and cast to reshape data into monthly and daily time averages
-  dfm = melt(df,id=c("day",'DOW','MOY','mon','wday','WKND'),na.rm=TRUE)
-  monthly = cast(dfm,MOY + mon ~ variable,fun.aggregate=c(sum,mean,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)))
-  colnames(monthly) <- c('MOY','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDD','HDD')
-  monthly <- subset(monthly, select = -c(junk1, junk2, junk3) )
-  daily = cast(dfm, MOY + day + DOW + mon + wday + WKND ~ variable,fun.aggregate=c(sum,mean,max,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)))
-  colnames(daily) <- c('MOY','day','DOW','mon','wday','WKND','kwh','kw.mean','kw.max','junk1','junk2','junk3','tout.mean','tout.max','CDD','HDD')
-  daily <- subset(daily, select = -c(junk1, junk2, junk3) )
-  return(list(daily=daily,monthly=monthly))
-}
 
 kFold = function(df,models,nm,nfolds=5) {
   folds <- sample(1:nfolds, dim(df)[1], replace=T)
@@ -220,7 +280,7 @@ summarizeModel = function(m,df,models,nm,id,zip,subnm=NULL,fold=FALSE,formula=''
   s$terms         <- c()     # lm model terms (depends on variable scope and can be junk)
   s$residuals     <- c()     # residuals scaled by weights assigned to the model
   s$cov.unscaled  <- c()     # p x p matrix of (unscaled) covariances
-  s$aliased       <- c()     # named logical vector showing if the original coefficients are aliased
+  #s$aliased      <- c()     # named logical vector showing if the original coefficients are aliased
   s$na.action     <- c()     # get rid of extra meta info from the model
   #s$sigma                   # the square root of the estimated variance of the random error
   #s$adj.r.squared           # penalizing for higher p
@@ -253,20 +313,42 @@ summerlm = function(fmla,df,x) {
   return(lm(fmla,df,x=x,subset=MOY %in% c('M6','M7','M8','M9')))
 }
 
+validate = function(r) {
+  issues = data.frame(id=r$id)
+  timeDiffs = diff(r$dates)
+  units(timeDiffs) <- "hours"
+  maxtd = max(timeDiffs) / 24
+  span = difftime(tail(r$dates, n=1),r$dates[1],units='days')
+  zerospct = sum((r$kw == 0)*1,na.rm=TRUE) / length(r$kw)
+  kwmean = mean(r$kw,na.rm=TRUE)
+  daylen = length(r$days)
+  if( daylen < 180)     issues$days180    = daylen # less than 180 days (could be non-consecutive)
+  #if( span < 270 )      issues$span270    = span # spanning less than 270 days total
+  #if( maxtd > 60 )      issues$bigdiff    = maxtd # more than 2 months of missing data
+  if( kwmean < 0.110 )  issues$lowmean    = kwmean # mean less than 150W is almost always empty or bad readings
+  if( zerospct > 0.15 ) issues$zerospct15 = zerospct # over 15% of readings are zero
+  return(issues)
+}
+
 runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
   features.basic  <- c()
   summaries       <- c()
   d_summaries     <- c()
   m_summaries     <- c()
+  
+  invalid_ids     <- data.frame()
   # TODO:
   # use step for forward selection
   # find a faster method of cross validation than cvTools or DAAG provide
   # add other weather covariates.
   splen  <- length(sp_ids)
   i <- 0
+  skip = FALSE
   for (sp_id in sp_ids) { # i.e. "820735863"
     i <- i+1
     print(paste('  ',sp_id,' (',i,'/',splen,') in ',zip,sep=''))
+    if(sp_id == 6502353905) { skip = FALSE }
+    if(skip) { next }
     resData = NULL
     if (!is.null(data)) {  resData = data[data[,'sp_id']== sp_id,] }
     r <- tryCatch(ResDataClass(sp_id,zip=zip,weather=weather,data=resData,db=conf.meterDB()), 
@@ -276,6 +358,20 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
     }
     else { # viable residence!
       r <- tryCatch( {
+        issues = validate(r)
+        if(length(issues)>1) # all issues will return with an id set, so > 1 is a problem
+        { 
+          invalid_ids <- rbind.fill(invalid_ids,issues)
+          print(paste('Bad or insufficient data:',paste(colnames(issues),collapse=', ')))
+          if(PLOT_INVALID) {
+            png(file.path(conf.basePath,outDir,paste(r$id,'_invalid.png',sep='')))
+            colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
+            plot(  r, colorMap=colorMap, 
+                   main=paste(r$zip, r$id, paste(colnames(issues),collapse=', ')) )
+            dev.off()
+          }
+          next 
+        } 
         tic('model run')
         features.basic  <- rbind(features.basic,basicFeatures(r$kwMat,sp_id))
         
@@ -347,13 +443,14 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
          # pass
        })
     }
-    if (i == truncateAt) break
+    if (truncateAt > 0 & i >= truncateAt) break
   } # sp_id loop
   out <- list(
       features.basic  = as.data.frame(features.basic),
       summaries       = as.data.frame(summaries),
       d_summaries     = as.data.frame(d_summaries),
-      m_summaries     = as.data.frame(m_summaries)    
+      m_summaries     = as.data.frame(m_summaries),
+      invalid.ids     = invalid_ids
       )
   print(names(out))
   return(out)
@@ -367,6 +464,7 @@ summarizeRun = function(runResult,listFailures=FALSE) {
   toc('batchRun',prefixStr='Batch execution took ')
   print(paste('Zip code completion: ',length(runResult$completedZip),'/',length(runResult$attemptedZip)))
   print(paste('SP completion: ',length(runResult$completedSP),'/',length(runResult$attemptedSP)))
+  print(paste('Validation errors: ',dim(runResult$invalid.ids)[1],'/',length(runResult$attemptedSP)))
   if(listFailures) {
     print('Failed zips:')
     print(setdiff(runResult$attemptedZip,runResult$completedZip))
@@ -389,11 +487,14 @@ if (length(args) > 0) {
 # bakersfield, fresno, oakland
 allZips = c('94610','93304')
 print('Beginning batch run')
-runResult = runModelsByZip(allZips,triggerZip=NULL,truncateAt=2)
+runResult = runModelsByZip(allZips,triggerZip=NULL,truncateAt=-1)
 summarizeRun(runResult,listFailures=FALSE)
 
-load(file.path(conf.basePath,'results_tout_schedule',paste(zip,'_modelResults.RData',sep='')))
+zip = allZips[1]
+load(file.path(conf.basePath,outDir,paste(zip,'_modelResults.RData',sep='')))
 print(names(modelResults))
 print(modelResults$summaries[1,]$coefficients)
+
+r = ResDataClass(820735863,94610)
 
 
