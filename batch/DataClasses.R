@@ -309,6 +309,13 @@ hmap = function(data,colorMap=NA,yvals=NA,xvals=NA,log=FALSE,...) {
 }
 
 plot.ResDataClass = function(r,colorMap=NA,main=NA) {
+  # needs a list, called r with:
+  # r$id unique identifier (just for the title)
+  # r$zip zipcode for the title
+  # r$days (1 date per day of data)
+  # r$kw (vector of kw readings)
+  # r$kwMat (matrix of kw readings with 24 columns)
+  # r$toutMat (matrix of Tout readings with 24 columns)
   if(is.na(main)) { main <- paste(r$id,' (',r$zip,') summary info',sep='') }
   op <- par( mfrow=c(2,2),
        oma=c(0,0,3,0))# Room for the title

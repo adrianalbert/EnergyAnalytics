@@ -42,3 +42,4 @@ regressor.piecewise = function(regressor,bins) {
   colnames(mat) <- nm
   return(mat)
 }
+

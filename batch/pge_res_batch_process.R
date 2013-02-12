@@ -28,7 +28,7 @@ library(timeDate)
 #library('cvTools') # cross validation tools
 
 outDir = 'results_test'
-PLOT_INVALID=TRUE
+PLOT_INVALID=FALSE
 
 # passing in forula objects directly creates lots of problems
 # formulas are context specific and cant be stored in dataframes
@@ -83,7 +83,7 @@ subset$summer_day=paste(subset$summer,'&',subset$day)
 lag   = function(v,n=1) { return(c(rep(NA,n),head(v,-n))) } # prepend NAs and truncate to preserve length
 diff2 = function(v,n=1) { return(c(rep(NA,n),diff(v, n))) } # prepend NAs to preserve length of standard diff
 
-regressorDF = function(residence,norm=TRUE,folds=1) {
+regressorDF = function(residence,norm=TRUE,folds=1,rm.na=FALSE) {
   WKND       = c('WK','ND')[(residence$dates$wday == 0 | residence$dates$wday == 6) * 1 + 1] # weekend indicator
   dateDays   = as.Date(residence$dates)
   # holidaysNYSE is a function from the dateTime package
@@ -132,11 +132,12 @@ regressorDF = function(residence,norm=TRUE,folds=1) {
     vac=vac,
     wday=residence$dates$wday,
     MOY,DOW,HOD,HODWK,HOW,WKND   )
+  if(rm.na) { df = df[!rowSums(is.na(df)),] }
   #df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
   return(df)
 }
 
-regressorDFAggregated = function(residence,norm=TRUE,bp=65) {
+regressorDFAggregated = function(residence,norm=TRUE,bp=65,rm.na=FALSE) {
   # uses melt and cast to reshape and aggregate data
   df = residence$df() # kw, tout, dates
   if(norm) df$kw_norm = residence$norm(df$kw)
@@ -182,7 +183,10 @@ regressorDFAggregated = function(residence,norm=TRUE,bp=65) {
     plot(daily$kwh,type='l',main=paste('',residence$id))
     Sys.sleep(1)
   }
-  
+  if(rm.na) { 
+    daily   = daily[!rowSums(is.na(daily)),] 
+    monthly = monthly[!rowSums(is.na(monthly)),] 
+  }
   return(list(daily=daily,monthly=monthly))
 }
 
@@ -335,6 +339,7 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
   summaries       <- c()
   d_summaries     <- c()
   m_summaries     <- c()
+  steps           <- c()
   
   invalid_ids     <- data.frame()
   # TODO:
@@ -406,6 +411,17 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
               summaries = rbind(summaries,summarizeModel(res,df,models,nm,id=sp_id,zip=zip,subnm=snm,fold=fld,formula=fmla,subset=subs[[snm]]))
             }
           }
+          df = regressorDF(r,norm=FALSE,rm.na=TRUE)
+          stepped = step(lm(kw ~ 0,df),direction='forward',k=2,trace=0,
+                          scope=kw ~ 0 + tout65:HOD + pout + rh + tout65_d1 + HOD)
+          ano = stepped$anova
+          matchOrder = ano[,'Step']
+          matchOrder = matchOrder[matchOrder != ""]
+          row = data.frame(t(matchOrder != ""))
+          row[1,] = 1:length(matchOrder)
+          colnames(row) <- matchOrder # b is now ready to be rbound with regressors as col heads.
+          row$id = r$id
+          steps = rbind.fill(steps,row)
         }
 
         if (TRUE) {
@@ -450,6 +466,7 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
       summaries       = as.data.frame(summaries),
       d_summaries     = as.data.frame(d_summaries),
       m_summaries     = as.data.frame(m_summaries),
+      steps           = as.data.frame(steps),
       invalid.ids     = invalid_ids
       )
   print(names(out))
@@ -487,7 +504,7 @@ if (length(args) > 0) {
 # bakersfield, fresno, oakland
 allZips = c('94610','93304')
 print('Beginning batch run')
-runResult = runModelsByZip(allZips,triggerZip=NULL,truncateAt=-1)
+runResult = runModelsByZip(allZips,triggerZip=93304,truncateAt=200)
 summarizeRun(runResult,listFailures=FALSE)
 
 zip = allZips[1]
