@@ -1,28 +1,13 @@
+# this file contains all the major knowledge about the structure of the PGE data
+# in the database and the methods and classes required to access and manipulate
+# that data.
+# It requires that localConf.R is properly setup and has been run prior to invocation
+# of the functions it contains.
+# The two main classes are WeatherClass and ResDataClass, whcih provide a simple
+# object interface to the data in the database.
 require(RMySQL)
 
-run.query = function(query,db='pge_res') {
-  #print(query)
-  data <- c()
-  tryCatch({
-    con  <- conf.dbCon(db)
-    res  <- dbGetQuery(con, query)
-    if(length(res)>0) data  <- res
-    
-  },
-           error = function(e) {print(e)},
-           finally = {
-             # close the results set if necessary
-             resultSet <- dbListResults(con)
-             if(length(resultSet)>0) { 
-               dbClearResult(resultSet[[1]])
-               rm(resultSet)
-             }
-             dbDisconnect(con)
-             rm(con)
-           } )
-  return(data)
-}
-
+# utility function that 
 db.getZips = function() {
   query    <- paste("select distinct zip5 from",conf.weatherTable(),'order by zip5')
   return(run.query(query,conf.weatherDB())[[1]])
@@ -36,83 +21,12 @@ db.getSPs = function(zip=NA) {
 
 db.getAllData = function(zip=NULL) {
   query = paste(
-         'SELECT 
+    'SELECT 
          sp_id, zip5, DATE,
          hkw1, hkw2, hkw3, hkw4, hkw5, hkw6, hkw7, hkw8, hkw9, hkw10,hkw11,hkw12,
          hkw13,hkw14,hkw15,hkw16,hkw17,hkw18,hkw19,hkw20,hkw21,hkw22,hkw23,hkw24 
          FROM',conf.meterTable(zip),'ORDER BY sp_id, DATE')
   return(run.query(query,conf.meterDB()))
-}
-
-# class structure based on example from
-# http://bryer.org/2012/object-oriented-programming-in-r
-RowWeatherClass = function(zipcode){
-  query = paste(
-    'SELECT `date`,
-    htempF1, htempF2, htempF3, htempF4, htempF5, htempF6, htempF7, htempF8, htempF9, htempF10,htempF11,htempF12,
-    htempF13,htempF14,htempF15,htempF16,htempF17,htempF18,htempF19,htempF20,htempF21,htempF22,htempF23,htempF24
-    FROM',conf.temperatureTable(),'where zip5 =',zipcode,'ORDER BY DATE')
-  raw = run.query(query,conf.weatherDB())
-  
-  days = as.POSIXct(raw[,1],tz="PST8PDT", '%Y-%m-%d')
-  # create a row of hourly values for each day
-  daySteps = 24
-  dtDay = daySteps/24 * 60 * 60 # in seconds
-  # sapply returns an array of numeric epoch seconds (for origin '1970-01-01')
-  dateMat = sapply(days,FUN=function(x) x + (0:(daySteps-1) * dtDay))
-  
-  # flatten into a vector and re-convert into date objects
-  dates = as.POSIXlt(as.vector(dateMat),origin='1970-01-01')
-  
-  toutMat = raw[,2:25]
-  # reshape the tout readings into a vector matching the dates
-  tout = as.vector(t(toutMat))
-  
-  # TODO: do we need to do anything about the NA values?
-  
-  obj = list (
-    days    = days,
-    dateMat = dateMat,
-    dates   = dates,
-    tout    = tout,
-    toutMat = toutMat,
-    get     = function(x) obj[[x]],
-    # Not sure why <<- is used here
-    # <<- searches parent environments before assignment
-    # http://stat.ethz.ch/R-manual/R-patched/library/base/html/assignOps.html
-    set     = function(x, value) obj[[x]] <<- value,
-    props   = list()
-  )
-  
-  obj$add = function(name, value) {
-    obj[[name]] = value
-  }
-  
-  # note how list manipulation requires the use of assign
-  # not sure why values can't be set in place, but it 
-  # appears to have to do with variable scoping
-  obj$addProp = function(name, value) {
-    p <- obj$props
-    p[[name]] <- value
-    assign('props', p, envir=obj)
-  }
-  
-  obj$resample = function(newDates) {
-    # approx returns both the newDates and the interpreted values
-    # but we only need the values
-    a = approx(obj$dates, obj$tout, newDates, method="linear")[[2]]
-    #b = a[2]
-    if (all(is.na(a))){
-      print(paste(obj$dates[1],obj$dates[-1]))
-      print(paste(newDates[1],newDates[-1]))
-      stop("No weather data available")
-    }
-    return(a)
-  }
-  
-  #obj <- list2env(obj)
-  class(obj) = "RowWeatherClass"
-  return(obj)
 }
 
 # class structure based on example from

@@ -8,8 +8,8 @@ if(Sys.info()['sysname'] == 'Windows') {
   .libPaths('~/R/library') # use my local R library even from the comand line
 }
 # run 'source' on all includes to load them 
-source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
-#source(file.path(conf.basePath,'stanfordConf.R'))     # Stanford on site specific configuration
+source(file.path(conf.basePath,'localConf.R'))         # Local computer specific configuration, especially db account info 
+source(file.path(conf.basePath,'dbUtil.R'))            # generic database support functions for things like connection management
 source(file.path(conf.basePath,'DataClasses.R'))       # Object code for getting meter and weather data 
 source(file.path(conf.basePath,'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
 source(file.path(conf.basePath,'basicFeatures.R'))     # typical max, min, mean, range
@@ -22,6 +22,7 @@ if (!require("RColorBrewer")) {
   library(RColorBrewer)
 }
 library(timeDate)
+library(reshape)
 
 #library('DAAG') # Data Analysis and Graphics package has k-fold cross validation
 # cv.lm(df=mydata, model, m=5) # 5 fold cross-validation
