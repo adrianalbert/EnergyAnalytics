@@ -13,13 +13,14 @@ conf.basePath = file.path('~/EnergyAnalytics/batch')
 if(Sys.info()['sysname'] == 'Windows') {
   conf.basePath = file.path('f:/dev/pge_collab/EnergyAnalytics/batch')
 }
+setwd(conf.basePath)
 resultsDir = 'results_climate_test' # real
 #resultsDir = 'test_results' # sub -sample for testing
 
 # run 'source' on all includes to load them 
-source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
-source(file.path(conf.basePath,'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
-source(file.path(conf.basePath,'timer.R'))             # adds tic() and toc() functions
+source(file.path(getwd(),'localConf.R'))         # Sam's local computer specific configuration
+source(file.path(getwd(),'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
+source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
 
 hists = function(df,metric='sigma',zip='unspecified',norm=c()){
   .e <- environment() # capture local environment for use in ggplot
@@ -199,7 +200,7 @@ combineSummaries = function(ziplist) {
   summaries = c()
   for (zip in ziplist) { 
     print(paste('loading data for',zip))
-    load(file.path(conf.basePath,resultsDir,paste(zip,'_modelResults.RData',sep='')))
+    load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
     summaries = rbind.fill(summaries,clean(modelResults$summaries))
   }
   return(summaries)
@@ -219,7 +220,7 @@ allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
 summary = combineSummaries(allZips)
 
 zip = 94610
-load(file.path(conf.basePath,resultsDir,paste(zip,'_modelResults.RData',sep='')))
+load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
 summary   = clean(modelResults$summaries)
 estimates.s = cf(summary,model,'summer')
 estimates.w = cf(summary,model,'winter')
@@ -234,7 +235,7 @@ plot(colMeans(pvals.s[,grep("^HODWKWK", colnames(pvals.s), value=TRUE)]),main=pa
 g1 = hists(scalars(summary,subset.name='summer'),'sigma',zip)
   
 zip = 95223
-load(file.path(conf.basePath,resultsDir,paste(zip,'_modelResults.RData',sep='')))
+load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
 summary   = clean(modelResults$summaries)
 estimates.s = cf(summary,model,'summer')
 estimates.w = cf(summary,model,'winter')

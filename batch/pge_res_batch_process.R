@@ -7,22 +7,21 @@ if(Sys.info()['sysname'] == 'Windows') {
 } else {
   .libPaths('~/R/library') # use my local R library even from the comand line
 }
+setwd(conf.basePath)
 # run 'source' on all includes to load them 
-source(file.path(conf.basePath,'localConf.R'))         # Local computer specific configuration, especially db account info 
-source(file.path(conf.basePath,'dbUtil.R'))            # generic database support functions for things like connection management
-source(file.path(conf.basePath,'DataClasses.R'))       # Object code for getting meter and weather data 
-source(file.path(conf.basePath,'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
-source(file.path(conf.basePath,'basicFeatures.R'))     # typical max, min, mean, range
-source(file.path(conf.basePath,'regressionSupport.R')) # mostly regressor manipulation
-source(file.path(conf.basePath,'timer.R'))             # adds tic() and toc() functions
+source(file.path(getwd(),'localConf.R'))         # Local computer specific configuration, especially db account info 
+source(file.path(getwd(),'dbUtil.R'))            # generic database support functions for things like connection management
+source(file.path(getwd(),'DataClasses.R'))       # Object code for getting meter and weather data 
+source(file.path(getwd(),'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
+source(file.path(getwd(),'basicFeatures.R'))     # typical max, min, mean, range
+source(file.path(getwd(),'regressionSupport.R')) # mostly regressor manipulation
+source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
 
 library(reshape)
-if (!require("RColorBrewer")) {
-  install.packages("RColorBrewer")
-  library(RColorBrewer)
-}
 library(timeDate)
-library(reshape)
+library(RColorBrewer)
+# run this if you need it, but everything should be installed by a setup script
+# if (!require("RColorBrewer")) { install.packages("RColorBrewer") }
 
 #library('DAAG') # Data Analysis and Graphics package has k-fold cross validation
 # cv.lm(df=mydata, model, m=5) # 5 fold cross-validation
@@ -203,8 +202,8 @@ runModelsByZip = function(zipArray,triggerZip=NULL,truncateAt=-1) {
   
   
   print(paste('This batch process will run models for',nZip,'zip codes'))
-  dir.create(file.path(conf.basePath,outDir),showWarnings=FALSE)
-  print(paste('<zipcode>_modelResults.RData files for each can be found in',file.path(conf.basePath,outDir)))
+  dir.create(file.path(getwd(),outDir),showWarnings=FALSE)
+  print(paste('<zipcode>_modelResults.RData files for each can be found in',file.path(getwd(),outDir)))
   res = list(attemptedZip =zipArray,
              completedZip =c(),
              attemptedSP  =c(),
@@ -219,7 +218,7 @@ runModelsByZip = function(zipArray,triggerZip=NULL,truncateAt=-1) {
     }
     
     print(paste('Running models for ',zip,' (',zipCount,'/',nZip,')', sep=''))
-    resultsFile <- file.path(conf.basePath,outDir,paste(zip,'_modelResults.RData',sep=''))
+    resultsFile <- file.path(getwd(),outDir,paste(zip,'_modelResults.RData',sep=''))
     tryCatch( {
       tic('allDataForZip')
       zipData <- db.getAllData(zip)
@@ -376,7 +375,7 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
           invalid_ids <- rbind.fill(invalid_ids,issues)
           print(paste('Bad or insufficient data:',paste(colnames(issues),collapse=', ')))
           if(PLOT_INVALID) {
-            png(file.path(conf.basePath,outDir,paste(r$zip,r$id,'invalid.png',sep='_')))
+            png(file.path(getwd(),outDir,paste(r$zip,r$id,'invalid.png',sep='_')))
             colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
             plot(  r, colorMap=colorMap, 
                    main=paste(r$zip, r$id, paste(colnames(issues),collapse=', ')) )
@@ -385,7 +384,7 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
           next # no further processing
         }
         if(PLOT_VALID) {
-          png(file.path(conf.basePath,outDir,paste(r$zip,'_',r$id,'.png',sep='')))
+          png(file.path(getwd(),outDir,paste(r$zip,'_',r$id,'.png',sep='')))
           redblue = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
           plot( r,colorMap=redblue,main=paste(r$zip, r$id) )
           dev.off()
@@ -529,7 +528,7 @@ runResult = runModelsByZip(testZips,triggerZip=93304,truncateAt=200)
 summarizeRun(runResult,listFailures=FALSE)
 
 zip = allZips[1]
-load(file.path(conf.basePath,outDir,paste(zip,'_modelResults.RData',sep='')))
+load(file.path(getwd(),outDir,paste(zip,'_modelResults.RData',sep='')))
 print(names(modelResults))
 print(modelResults$summaries[1,]$coefficients)
 

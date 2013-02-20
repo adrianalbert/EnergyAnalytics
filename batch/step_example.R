@@ -5,14 +5,16 @@ if(Sys.info()['sysname'] == 'Windows') {
 } else {
   .libPaths('~/R/library') # use my local R library even from the comand line
 }
+setwd(conf.basePath)
+
 # run 'source' on all includes to load them 
-source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
-#source(file.path(conf.basePath,'stanfordConf.R'))     # Stanford on site specific configuration
-source(file.path(conf.basePath,'DataClasses.R'))       # Object code for getting meter and weather data 
-source(file.path(conf.basePath,'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
-source(file.path(conf.basePath,'basicFeatures.R'))     # typical max, min, mean, range
-source(file.path(conf.basePath,'regressionSupport.R')) # mostly regressor manipulation
-source(file.path(conf.basePath,'timer.R'))             # adds tic() and toc() functions
+source(file.path(getwd(),'localConf.R'))         # Sam's local computer specific configuration
+source(file.path(getwd(),'dbUtil.R'))            # database utilities
+source(file.path(getwd(),'DataClasses.R'))       # Object code for getting meter and weather data 
+source(file.path(getwd(),'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
+source(file.path(getwd(),'basicFeatures.R'))     # typical max, min, mean, range
+source(file.path(getwd(),'regressionSupport.R')) # mostly regressor manipulation
+source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
 
 r = ResDataClass(820735863,94610)
 dfd = regressorDFAggregated(r,rm.na=TRUE)$daily

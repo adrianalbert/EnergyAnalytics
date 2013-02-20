@@ -12,18 +12,17 @@ conf.basePath = file.path('~/EnergyAnalytics/batch')
 if(Sys.info()['sysname'] == 'Windows') {
   conf.basePath = file.path('f:/dev/pge_collab/EnergyAnalytics/batch')
 }
-
-conf.dataPath = 'F:/dev/pge_collab/EnergyAnalytics/batch'
+setwd(conf.basePath)
 
 # resultsDir = 'results' # real
 resultsDir = 'results' # sub -sample for testing
 
 # run 'source' on all includes to load them 
-source(file.path(conf.basePath,'localConf.R'))         # Sam's local computer specific configuration
-source(file.path(conf.basePath,'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
-source(file.path(conf.basePath,'timer.R'))             # adds tic() and toc() functions
+source(file.path(getwd(),'localConf.R'))         # Sam's local computer specific configuration
+source(file.path(getwd(),'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
+source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
 
-allResults = list.files(paste(conf.dataPath,resultsDir,sep=''),pattern = "[0-9]+_.+RData")
+allResults = list.files(paste(getwd(),resultsDir,sep=''),pattern = "[0-9]+_.+RData")
 allSummary = data.frame()
 idx = 0
 n = length(allResults)
@@ -36,7 +35,7 @@ for (resultFile in allResults) {
   # init the variables (e and modelResults) that load will assign values to
   e = c()               # any errors will loaded as e
   modelResults = list() # model run outcomes load as modelResults
-  load(file.path(conf.dataPath,resultsDir,paste(zip,'_modelResults.RData',sep='')))
+  load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
   # TODO: we want to make a hist out of all the model results across every zipcode
   if(length(e)==0) { # the zip ran without a terminal error
     if(length(modelResults$ids)>0) {
