@@ -27,8 +27,23 @@ library(timeDate)
 # cv.lm(df=mydata, model, m=5) # 5 fold cross-validation
 #library('cvTools') # cross validation tools
 
-outDir = 'results_test'
-PLOT_INVALID=FALSE
+outDir = 'results_climate_test'
+
+PLOT_INVALID = FALSE # create png plots for residences that fail validaiton
+PLOT_VALID   = TRUE  # create png plots for residences that pass validaiton
+
+RUN_AGGREGATED_MODELS = FALSE # run daily and monthly summary data models (moderate time consuming)
+RUN_STEP_SELECTION    = FALSE # run nested model selection algorithm (time consuming)
+
+# generate the string values that will identify the desired subset of a data.frame
+# using the command subset(df,subset=str,...)
+subset = list(
+  summer=paste("MOY %in% c(",paste("'M",5:10,"'",sep='',collapse=','),")"),
+  winter=paste("MOY %in% c(",paste("'M",c(11:12,1:4),"'",sep='',collapse=','),")"),
+  day=paste("HOD %in% c(",paste("'H",8:19,"'",sep='',collapse=','),")")
+  
+)
+subset$summer_day=paste(subset$summer,'&',subset$day)
 
 # passing in forula objects directly creates lots of problems
 # formulas are context specific and cant be stored in dataframes
@@ -42,7 +57,7 @@ models.hourly = list(
   #wea          = list(formula="kw ~ tout   + pout + rh + HOW + MOY",subset=list(all="TRUE",summer=subset$summer)), 
   #wea65        = list(formula="kw ~ tout65 + pout + rh + HOW + MOY",subset=list(all="TRUE",summer=subset$summer)),
   #HOW         = "kw ~ tout + HOW",
-  #toutTOD_WKND = list(formula="kw ~ 0 + tout65:HODWK + HODWK",subset=list(all="TRUE",summer=subset$summer,winter=subset$winter))
+  toutTOD_WKND = list(formula="kw ~ 0 + tout65:HODWK + HODWK",subset=list(summer=subset$summer))
   #toutTOD      = list(formula="kw ~ 0 + tout65:HOD + HOD",subset=list(summer=subset$summer)),
   #toutTOD_d1   = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout_d1 + HOD",subset=list(summer=subset$summer)),
   #toutTOD_65d1 = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_d1 + HOD",subset=list(summer=subset$summer)),
@@ -55,30 +70,20 @@ models.hourly = list(
 models.daily = list(
   #tout           = "kwh ~ tout.mean",
   #DOW            = "kwh ~ DOW",
-  tout_mean      = "kwh ~ tout.mean + DOW",
-  tout_mean_WKND = "kwh ~ tout.mean + WKND",
-  tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
+  #tout_mean      = "kwh ~ tout.mean + DOW",
+  #tout_mean_WKND = "kwh ~ tout.mean + WKND",
+  #tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
   #tout_max       = "kwh ~ tout.max  + DOW",
   #tout_CDD       = "kwh ~ CDD + HDD + DOW",
   #tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND",
-  wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac"
+  #wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac"
 )
 
 models.monthly = list(
-  tout       = "kwh ~ tout.mean",
-  CDD        = "kwh ~ CDD",
-  CDD_HDD    = "kwh ~ HDD + CDD"
+  #tout       = "kwh ~ tout.mean",
+  #CDD        = "kwh ~ CDD"
+  #CDD_HDD    = "kwh ~ HDD + CDD"
 )
-
-# generate the string values that will identify the desired subset of a data.frame
-# using the command subset(df,subset=str,...)
-subset = list(
-  summer=paste("MOY %in% c(",paste("'M",5:10,"'",sep='',collapse=','),")"),
-  winter=paste("MOY %in% c(",paste("'M",c(11:12,1:4),"'",sep='',collapse=','),")"),
-  day=paste("HOD %in% c(",paste("'H",8:19,"'",sep='',collapse=','),")")
-  
-)
-subset$summer_day=paste(subset$summer,'&',subset$day)
 
 lag   = function(v,n=1) { return(c(rep(NA,n),head(v,-n))) } # prepend NAs and truncate to preserve length
 diff2 = function(v,n=1) { return(c(rep(NA,n),diff(v, n))) } # prepend NAs to preserve length of standard diff
@@ -364,19 +369,26 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
     else { # viable residence!
       r <- tryCatch( {
         issues = validate(r)
+        savePlot = FALSE
         if(length(issues)>1) # all issues will return with an id set, so > 1 is a problem
         { 
           invalid_ids <- rbind.fill(invalid_ids,issues)
           print(paste('Bad or insufficient data:',paste(colnames(issues),collapse=', ')))
           if(PLOT_INVALID) {
-            png(file.path(conf.basePath,outDir,paste(r$id,'_invalid.png',sep='')))
+            png(file.path(conf.basePath,outDir,paste(r$zip,r$id,'invalid.png',sep='_')))
             colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
             plot(  r, colorMap=colorMap, 
                    main=paste(r$zip, r$id, paste(colnames(issues),collapse=', ')) )
             dev.off()
           }
-          next 
-        } 
+          next # no further processing
+        }
+        if(PLOT_VALID) {
+          png(file.path(conf.basePath,outDir,paste(r$zip,'_',r$id,'.png',sep='')))
+          redblue = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
+          plot( r,colorMap=redblue,main=paste(r$zip, r$id) )
+          dev.off()
+        }
         tic('model run')
         features.basic  <- rbind(features.basic,basicFeatures(r$kwMat,sp_id))
         
@@ -384,13 +396,14 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
         if(TRUE) {
           df = regressorDF(r,norm=FALSE) # see also regressorDFAggregated
           models = models.hourly
-          if (FALSE) {
+          if (TRUE) {
             # add special data to the data frame: piecewise tout data
-            toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
+            #toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
+            toutPIECES = regressor.piecewise(r$tout,c(60,75))
             df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
             # define regression formula that uses the piecewise pieces
             piecesf = paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW')
-            models$toutPIECES = list(formula=piecesf,subset=list(all="TRUE",summer=subset$summer,day=subset$day))
+            models$toutPIECES = list(formula=piecesf,subset=list(all="TRUE",summer=subset$summer))
           }
           # careful. lapply doesn't pass the right data to re-use the lm model
           # that's why summarizeModel gets passed everything it needs to repeat the lm
@@ -411,20 +424,22 @@ runModelsBySP = function(sp_ids,zip=NULL,data=NULL,weather=NULL,truncateAt=-1) {
               summaries = rbind(summaries,summarizeModel(res,df,models,nm,id=sp_id,zip=zip,subnm=snm,fold=fld,formula=fmla,subset=subs[[snm]]))
             }
           }
-          df = regressorDF(r,norm=FALSE,rm.na=TRUE)
-          stepped = step(lm(kw ~ 0,df),direction='forward',k=2,trace=0,
-                          scope=kw ~ 0 + tout65:HOD + pout + rh + tout65_d1 + HOD)
-          ano = stepped$anova
-          matchOrder = ano[,'Step']
-          matchOrder = matchOrder[matchOrder != ""]
-          row = data.frame(t(matchOrder != ""))
-          row[1,] = 1:length(matchOrder)
-          colnames(row) <- matchOrder # b is now ready to be rbound with regressors as col heads.
-          row$id = r$id
-          steps = rbind.fill(steps,row)
+          if(RUN_STEP_SELECTION) { 
+            df = regressorDF(r,norm=FALSE,rm.na=TRUE)
+            stepped = step(lm(kw ~ 0,df),direction='forward',k=2,trace=0,
+                           scope=kw ~ 0 + tout65:HOD + pout + rh + tout65_d1 + HOD)
+            ano = stepped$anova
+            matchOrder = ano[,'Step']
+            matchOrder = matchOrder[matchOrder != ""]
+            row = data.frame(t(matchOrder != ""))
+            row[1,] = 1:length(matchOrder)
+            colnames(row) <- matchOrder # b is now ready to be rbound with regressors as col heads.
+            row$id = r$id
+            steps = rbind.fill(steps,row)
+          }
         }
 
-        if (TRUE) {
+        if (RUN_AGGREGATED_MODELS) {
           dfl = regressorDFAggregated(r,norm=FALSE)
           
           # daily regressions
@@ -501,10 +516,15 @@ if (length(args) > 0) {
   print('Initializing batch run with list of all zips')
   allZips  <- db.getZips()
 }
-# bakersfield, fresno, oakland
-allZips = c('94610','93304')
+# bakersfield, oakland
+testZips = c(94610,93304)
+
+allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
+            95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
+            95202,93619,93614,93304,93701,95631,95726,95223,95666)
+
 print('Beginning batch run')
-runResult = runModelsByZip(allZips,triggerZip=93304,truncateAt=200)
+runResult = runModelsByZip(testZips,triggerZip=93304,truncateAt=200)
 summarizeRun(runResult,listFailures=FALSE)
 
 zip = allZips[1]
@@ -512,6 +532,11 @@ load(file.path(conf.basePath,outDir,paste(zip,'_modelResults.RData',sep='')))
 print(names(modelResults))
 print(modelResults$summaries[1,]$coefficients)
 
-r = ResDataClass(820735863,94610)
+r = ResDataClass(820735863,94610)  # heat, no cooling
+r = ResDataClass(553991005,93304)  # very clear cooling 24x7
+r = ResDataClass(554622151,93304)  # very clear cooling possible timed setback
+r = ResDataClass(637321210,93304)  # very clear cooling some bad data in july?
+r = ResDataClass(1064423310,93304) # cooling with high outliers. Unclear setpoint
+r = ResDataClass(1366549405,93304) # heat and cooling. slight tout slopes
 
 

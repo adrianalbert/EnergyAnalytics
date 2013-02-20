@@ -13,7 +13,7 @@ conf.basePath = file.path('~/EnergyAnalytics/batch')
 if(Sys.info()['sysname'] == 'Windows') {
   conf.basePath = file.path('f:/dev/pge_collab/EnergyAnalytics/batch')
 }
-resultsDir = 'results_tout_test' # real
+resultsDir = 'results_climate_test' # real
 #resultsDir = 'test_results' # sub -sample for testing
 
 # run 'source' on all includes to load them 
@@ -105,15 +105,15 @@ cf = function(a,model.name,subset.name,col='Estimate') {
   keepers = (a$model.name==model.name & a$subset.name==subset.name)
   b = subset(a,keepers)
   allCols = data.frame(id=NA,t(b[[1,'contribution']])) # df with cols for all model params (including those that were aliased)
-  b$id = as.numeric(b$id) # if this is not numeric, the whole rbinded matrix is character and the data frame has factors instead of numeric cols
-  b$idx = 1:length(b$id) # setup ply to work on one row at a time
-  c = dlply(b,.(idx),function(x) c(id=x$id,x$coefficients[[1]][,col]))
+  b$id = as.numeric(b$id)                              # if this is not numeric, the whole rbinded matrix is character and the data frame has factors instead of numeric cols
+  b$idx = 1:length(b$id)                               # setup ply to work on one row at a time
+  c = dlply(b,.(idx),function(x) c(id=x$id,x$coefficients[[1]][,col])) # retrieve the named column from the coefficients matrix
   c$idx = c() # drop the index column
   g = as.numeric(lapply(c,length)) # calculate coefficient list lengths...
-  c[g != Mode(g)] = c()            # remove the abnormal lengths
+  c[g != Mode(g)] = c()            # remove the abnormal lengths caused by missing data
   h = as.numeric(lapply(c,function(x) any(x[-1] != 0))) # check for blank rows
   c[!h] = c() #remove rows of all zeros
-  mergedDF = rbind.fill(allCols,data.frame(do.call(rbind,c))) # add missing cols using  rbind.fill
+  mergedDF = rbind.fill(allCols,data.frame(do.call(rbind,c))) # add missing cols using rbind.fill
   return(mergedDF[-1,]) # return the coefficient data, without the first extra row added to get the extra cols from rbind.fill
 }
   
@@ -195,7 +195,28 @@ quad_chart = function(d,title) {
   grid.arrange(g1,g2,g3,g4,nrow=2, as.table=FALSE, main=title)
 }
 
+combineSummaries = function(ziplist) {
+  summaries = c()
+  for (zip in ziplist) { 
+    print(paste('loading data for',zip))
+    load(file.path(conf.basePath,resultsDir,paste(zip,'_modelResults.RData',sep='')))
+    summaries = rbind.fill(summaries,clean(modelResults$summaries))
+  }
+  return(summaries)
+}
+
+addZipData = function(summaries) {
+  zipData = db.getZipData()
+  summaries$zip = as.numeric(summaries$zip)
+  return(merge(summaries,zipData,by.x='zip',by.y='zip5'))
+}
+
 model  = 'toutTOD_WKND'
+
+allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
+            95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
+            95202,93619,93614,93304,93701,95631,95726,95223,95666)
+summary = combineSummaries(allZips)
 
 zip = 94610
 load(file.path(conf.basePath,resultsDir,paste(zip,'_modelResults.RData',sep='')))
@@ -212,7 +233,7 @@ plot(colMeans(pvals.s[,grep("^HODWKWK", colnames(pvals.s), value=TRUE)]),main=pa
 
 g1 = hists(scalars(summary,subset.name='summer'),'sigma',zip)
   
-zip = 93304
+zip = 95223
 load(file.path(conf.basePath,resultsDir,paste(zip,'_modelResults.RData',sep='')))
 summary   = clean(modelResults$summaries)
 estimates.s = cf(summary,model,'summer')
