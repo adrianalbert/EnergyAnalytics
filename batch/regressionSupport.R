@@ -686,15 +686,17 @@ evalCP = function(cp,df,reweight=F) {
   df$w = rep(1,n) # default weights
   if(reweight) { 
     # find the index of the last column with a non-zero value
-    # for a piecewise regressor, this happens to be the number of non-zero values per row
-    highestCol = rowSums(tPieces != 0) 
+    # for a piecewise regressor, this happens to be the number of non-zero 
+    # values per row
+    highestCol = rowSums(tPieces != 0,na.rm=T) 
     colCounts  = table(highestCol)
     # only alter the weights when all columns are participating
     if(length(colCounts) == m) { 
       names(colCounts) <- colnames(tPieces)
       nobs       = sum(colCounts)
       ncols      = length(colCounts)
-      colWeights = (nobs/ncols) / colCounts
+      colWeights = (nobs/ncols) / colCounts # spread equal weight across segments
+                                            # even if one has fewer obs than the other
       #print(colWeights)
       #print(cp)
       #print(colCounts)
@@ -716,7 +718,7 @@ evalCP = function(cp,df,reweight=F) {
   pvals        = s_cp$coefficients[,'Pr(>|t|)'] # coefficient pvalues
   # if one of our partitions has no data, we need to fill in the missing columns 
   # in the returned data to ensure that sapply comes back as a matrix, not a list
-  if(any(colSums(tPieces != 0)==0)) { 
+  if(any(colSums(tPieces != 0,na.rm=T)==0)) { 
     missingCols = setdiff(colnames(tPieces),names(coefficients))
     coefficients[missingCols] = NA
     pvals[missingCols]        = NA
@@ -726,6 +728,8 @@ evalCP = function(cp,df,reweight=F) {
   # weights to enforce a bayesian idea that higher temps should matter more
   # t > 75 gets a double weighting in the SSR
   #w = (df$tout > 75)*3 + 1 
+  #print(length(df$w))
+  #print(length(fit_cp$residuals))
   SSR_cp = (df$w * fit_cp$residuals) %*% (df$w * fit_cp$residuals)
   SSR_0  = (df$w * fit_0$residuals ) %*% (df$w * fit_0$residuals )
   k = 1 # we have one regressor, so k = 1
