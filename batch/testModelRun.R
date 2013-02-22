@@ -29,10 +29,8 @@ library(timeDate)
 library(RColorBrewer)
 
 
-testModelRun = function(cfg) {
+testModelRun = function(r,cfg) {
   print(cfg)
-  #r = ResDataClass(553991005,93304);
-  r = ResDataClass(2547072505,94610);
   df = regressorDF(r)
   summaries   = c()
   d_summaries = c()
@@ -119,11 +117,12 @@ cfg$models.daily = list(
   dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE"))
 )
 
-runOut = testModelRun(cfg)
+r = ResDataClass(4890175954,94043)
+runOut = testModelRun(r,cfg)
 summaries = runOut$summaries
 others = runOut$others
 d_summaries = runOut$d_summaries
 d_others = runOut$d_others
 #rm(runOut)
-print(others$toutPiecesL[,'data']) # all 'other' data is accessed this way
+#print(others$toutPiecesL[,'data']) # all 'other' data is accessed this way
 r = ResDataClass(553991005,93304);plot(r,estimates= toutChangePoint(df=rDFA(r),trange=c(50:85),reweight=F))

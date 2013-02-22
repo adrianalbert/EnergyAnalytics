@@ -156,11 +156,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
         if(cfg$PLOT_VALID) {
           save.png.plot(r,file.path(getwd(),cfg$outDir,paste(r$zip,'_',r$id,'.png',sep='')))
         }
-        basics = basicFeatures(r)
-        
-        tic()
-        features.basic[[i]]  <- basics # max, min, etc.
-        toc(prefix='features.basic')
+        features.basic[[i]]  <- basicFeatures(r) # max, min, etc.
         # hourly regressions
         if(cfg$RUN_HOURLY_MODELS) {
           df = regressorDF(r,norm=FALSE) # see also regressorDFAggregated
@@ -199,9 +195,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             md = cfg$models.daily[[mdName]]
             #print(mdName)
             runOut = md$run(r,dfd)
-            tic()
             d_summaries[[i]] = runOut$summaries
-            toc(prefix='rbind d_summaries')
             if(! empty(runOut$other)) {
               d_others[[md$name]] = rbind(d_others[[md$name]],list(id=r$id,data=runOut$other))
             }
