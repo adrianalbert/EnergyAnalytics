@@ -103,7 +103,7 @@ combineSummaries = function(ziplist,resultType='summaries') {
   return(summaries)
 }
 
-combine = function(ziplist,resultType='summaries',fun=function(x) { x },model.name=NULL,subset.name=NULL,appendZipData=F) {
+combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=function(x) { x },model.name=NULL,subset.name=NULL,appendZipData=F) {
   result = c()
   rList = as.list(rep(NA,600)) # there are < 600 zips so far... 
   i = 0
@@ -118,7 +118,15 @@ combine = function(ziplist,resultType='summaries',fun=function(x) { x },model.na
       next
     }
     load(dataFile)
-    if(empty(modelResults[[resultType]])) {
+    if(! resultType %in% names(modelResults) ) {
+      print(paste('no entry for',resultType))
+      next
+    }
+    data = modelResults[[resultType]]
+    if(! is.null(subResultType)) {
+      data = data[[subResultType]]
+    }
+    if(length(data) == 0) {
       print(paste('no results for',zip))
       next
     }
@@ -126,11 +134,12 @@ combine = function(ziplist,resultType='summaries',fun=function(x) { x },model.na
     #print(class(modelResults$d_summaries))
     #print(cf(modelResults[['d_summaries']],model.name=model.name,subset.name=NULL))
     if(is.null(model.name)) {
-      new = fun(modelResults[[resultType]])
+      new = fun(data)
     } else {
-      new = fun(modelResults[[resultType]],model.name=model.name,subset.name=subset.name)
+      new = fun(data,model.name=model.name,subset.name=subset.name)
     }
-    if(empty(new)) { next }
+    #print(new)
+    if(length(new) == 0) { next }
     new = cbind(new,zip5=zip) # ensure the zipcode is there
     rownames(new) <- c()
     #print(dim(result))
