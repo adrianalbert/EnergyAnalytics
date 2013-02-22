@@ -29,6 +29,19 @@ db.getAllData = function(zip=NULL) {
   return(run.query(query,conf.meterDB()))
 }
 
+# return the available summary information for every zipcode
+# including sp_id count, climate zone, weather station, and income stats
+db.getZipData = function(zip=NULL) {
+  where = ''
+  if(!is.null(zip)) { where = paste('where zip5=',zip) }
+  query = paste(
+    'SELECT zip5, COUNT(DISTINCT sp_id), cecclmzn, climate, GCOUNTY, WTHRSTN,
+    median_income, median_income_quantiles
+    FROM', conf.accountTable(), where, 'GROUP BY zip5')
+  print(query)
+  return(run.query(query,conf.meterDB()))
+}
+
 # class structure based on example from
 # http://bryer.org/2012/object-oriented-programming-in-r
 WeatherClass = function(zipcode){
@@ -195,19 +208,22 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
   return(obj)
 }
 
-# return the available summary information for every zipcode
-# including sp_id count, climate zone, weather station, and income stats
-db.getZipData = function(zip=NULL) {
-  where = ''
-  if(!is.null(zip)) { where = paste('where zip5=',zip) }
-  query = paste(
-    'SELECT zip5, COUNT(DISTINCT sp_id), cecclmzn, climate, GCOUNTY, WTHRSTN,
-    median_income, median_income_quantiles
-    FROM', conf.accountTable(), where, 'GROUP BY zip5')
-  print(query)
-  return(run.query(query,conf.meterDB()))
+validateRes = function(r) {
+  issues = data.frame(id=r$id)
+  timeDiffs = diff(r$dates)
+  units(timeDiffs) <- "hours"
+  maxtd = max(timeDiffs) / 24
+  span = difftime(tail(r$dates, n=1),r$dates[1],units='days')
+  zerospct = sum((r$kw == 0)*1,na.rm=TRUE) / length(r$kw)
+  kwmean = mean(r$kw,na.rm=TRUE)
+  daylen = length(r$days)
+  if( daylen < 180)     issues$days180    = daylen # less than 180 days (could be non-consecutive)
+  #if( span < 270 )      issues$span270    = span # spanning less than 270 days total
+  #if( maxtd > 60 )      issues$bigdiff    = maxtd # more than 2 months of missing data
+  if( kwmean < 0.110 )  issues$lowmean    = kwmean # mean less than 150W is almost always empty or bad readings
+  if( zerospct > 0.15 ) issues$zerospct15 = zerospct # over 15% of readings are zero
+  return(issues)
 }
-
 
 mapColors = function(data,colorMap=NA,log=FALSE) {
   if(length(colorMap) < 2) { colorMap = heat.colors(100) }

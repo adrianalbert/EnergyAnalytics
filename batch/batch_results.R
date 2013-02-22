@@ -1,6 +1,6 @@
 #!/usr/bin/Rscript
 
-#.libPaths('~/R/library') # use my local R library even from the comand line
+#.libPaths('~/R/library') # use my local R library even from the command line
 
 require(ggplot2)
 require(gtools)
@@ -14,6 +14,7 @@ if(Sys.info()['sysname'] == 'Windows') {
   conf.basePath = file.path('f:/dev/pge_collab/EnergyAnalytics/batch')
 }
 setwd(conf.basePath)
+
 resultsDir = 'results_climate_test' # real
 #resultsDir = 'test_results' # sub -sample for testing
 
@@ -219,13 +220,52 @@ allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
             95202,93619,93614,93304,93701,95631,95726,95223,95666)
 summary = combineSummaries(allZips)
 
+zip=93304
+load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
+summary   = clean(modelResults$summaries)
+estimates = cf(summary,'toutPIECES24','all')
+pvals     = cf(summary,'toutPIECES24','all',col='Pr(>|t|)')
+
+slopeCols = grep('tout75_Inf',colnames(estimates),value=T)
+hodCols   = grep('^HODH[0-9]+$',colnames(estimates),value=T)
+
+slope75   = estimates[,c('id',slopeCols)]
+slope75p  = pvals[,c('id',slopeCols)]
+sig       = slope75p[,-1] > 0.05
+slope75[cbind(rep(FALSE,dim(sig)[1]),sig)] <- NA
+slope75m = melt(slope75,id.vars='id')
+ggplot(data=slope75m,aes(x=variable, y=value,color=id)) + scale_x_discrete(labels=c('12am',1:11,'12pm',1:11)) + geom_line(aes(group=id))
+
+hodConst  = estimates[,c('id',hodCols)]
+hodConstp = pvals[,c('id',hodCols)]
+sig       = hodConstp[,-1] > 0.05
+#hodConst[cbind(rep(FALSE,dim(sig)[1]),sig)] <- NA
+hodConstm = melt(hodConst,id.vars='id')
+ggplot(data=hodConstm,aes(x=variable, y=value)) + scale_x_discrete(labels=c('12am',1:11,'12pm',1:11)) + geom_line(aes(group=id))
+
+# create estimates for temperatures 0:100 by doing some linear algbra
+pmCols    = grep('HODH15',colnames(estimates),value=T)
+pmSlopes  = estimates[,c('id',pmCols)]
+#pmConst   = estimates[,c('id',pmCols[1])]
+pmSlopesp = pvals[,c('id',pmCols)]
+X = regressor.piecewise(0:100,c(55,65,75)) # piecewise tout values from 0:100
+X = cbind(1,X)                             # constant term
+# one col of values per id
+est = apply(as.matrix(pmSlopes[,-1]),MARGIN=1,FUN=function(row) t(X %*% as.matrix(row)))
+colnames(est) <- pmSlopes[,1]
+estm = melt(est)
+ggplot(data=estm,aes(x=X1, y=value)) + geom_line(aes(group=X2))
+
+#b = t(as.matrix(pmSlopes[5,-1]))
+#plot(X %*% b)
+
 zip = 94610
 load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
 summary   = clean(modelResults$summaries)
-estimates.s = cf(summary,model,'summer')
-estimates.w = cf(summary,model,'winter')
-pvals.w     = cf(summary,model,'winter',col='Pr(>|t|)')
-pvals.s     = cf(summary,model,'summer',col='Pr(>|t|)')
+estimates.s = cf(summary,'toutTOD_WKND','summer')
+estimates.w = cf(summary,'toutTOD_WKND','winter')
+pvals.w     = cf(summary,'toutTOD_WKND','winter',col='Pr(>|t|)')
+pvals.s     = cf(summary,'toutTOD_WKND','summer',col='Pr(>|t|)')
 
 quad_chart(estimates.s,title=paste(zip,model,' (coast/moderate income', 'summer', 'only)'))
 
