@@ -59,7 +59,13 @@ cf = function(a,model.name,subset.name=NULL,col='Estimate') {
     sn = unlist(a[,'subset.name'])==subset.name
   }
   b = subset(a,mn & sn) # filter to the subset and model requested
-  out = t(apply(b,1,function(x) c(id=x$id,x['coefficients'][[1]][,col])))
+  if(empty(b)) { return(c()) }
+  out = t(apply(b,1,function(x) return(c(id=x$id,x['coefficients'][[1]][,col]))))
+  if(class(out[1]) == 'list') { # this seems to happen when some regessons had fewer non-NA coefficients than others.
+    print('warning. Some regressons have incomplete coefficients and are being dropped.')
+    lengths = as.numeric(lapply(out,length))
+    out = do.call(rbind,out[lengths == Mode(lengths)])
+  }
   return(out)
 }
 
@@ -99,10 +105,12 @@ combineSummaries = function(ziplist,resultType='summaries') {
 
 combine = function(ziplist,resultType='summaries',fun=function(x) { x },model.name=NULL,subset.name=NULL,appendZipData=F) {
   result = c()
+  rList = as.list(rep(NA,600)) # there are < 600 zips so far... 
   i = 0
   n = length(ziplist)
   for (zip in ziplist) { 
     i = i+1
+    zip = as.numeric(zip)
     print(paste('loading data for',zip,'(',i,'/',n,')'))
     dataFile = file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep=''))
     if (! file.exists(dataFile)){
@@ -110,16 +118,29 @@ combine = function(ziplist,resultType='summaries',fun=function(x) { x },model.na
       next
     }
     load(dataFile)
+    if(empty(modelResults[[resultType]])) {
+      print(paste('no results for',zip))
+      next
+    }
+    #print(class(modelResults[['d_summaries']]))
+    #print(class(modelResults$d_summaries))
+    #print(cf(modelResults[['d_summaries']],model.name=model.name,subset.name=NULL))
     if(is.null(model.name)) {
       new = fun(modelResults[[resultType]])
     } else {
       new = fun(modelResults[[resultType]],model.name=model.name,subset.name=subset.name)
     }
+    if(empty(new)) { next }
     new = cbind(new,zip5=zip) # ensure the zipcode is there
     rownames(new) <- c()
-    result = rbind(result,new)
+    #print(dim(result))
+    #print(colnames(new))
+    rList[[i]] = new # inserting into a pre-allocated list is faster than running rbind all the time
+    #rList[[length(rList)+1]] = new
     rm(modelResults)
   }
+  
+  result = do.call(rbind,rList[!is.na(rList)]) # here we bind the results together
   if(appendZipData) { result = addZipData(result) }
   return(result)
 }

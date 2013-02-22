@@ -32,9 +32,9 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 #library('cvTools') # cross validation tools
 
 cfg = list()
-cfg$outDir = 'results_daily'
+cfg$outDir = 'results_daily_test'
 
-cfg$SKIP_EXISTING_RDATA = T # don't run models if the RData file for their zip is present
+cfg$SKIP_EXISTING_RDATA = F # don't run models if the RData file for their zip is present
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
 cfg$PLOT_VALID   = F  # create png plots for residences that pass validaiton
 
@@ -87,8 +87,8 @@ cfg$models.daily = list(
   #tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
   tout_max       = "kwh ~ tout.max  + DOW",
   kitchen        = "kwh ~ tout.max + tout.min + tout.mean + pout.mean + DOW + vac",
-  #tout_CDD       = "kwh ~ CDD + HDD + DOW",
-  tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND",
+  #tout_CDD       = "kwh ~ CDH + HDH + DOW",
+  tout_CDH_WKND  = "kwh ~ CDH + HDH + WKND",
   wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
   dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
   dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE"))

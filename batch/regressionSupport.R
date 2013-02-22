@@ -514,8 +514,8 @@ rDFA = function(residence,norm=F,bp=65,rm.na=FALSE) {
   df$kwh   = residence$daily('kw',sum)
   df$kw.mean = residence$daily('kw',mean)
   df$kw.max = residence$daily('kw',max)
-  df$CDD = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout  > bp,na.rm=na.rm))
-  df$HDD = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout <= bp,na.rm=na.rm))
+  df$CDH = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout  > bp,na.rm=na.rm))
+  df$HDH = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout <= bp,na.rm=na.rm))
   w = residence$weather
   dayMatch = as.Date(w$dayMeans$day) %in% as.Date(df$day)
   
@@ -567,11 +567,11 @@ regressorDFAggregated = function(residence,norm=F,bp=65,rm.na=FALSE) {
   dfm = melt(df,id.vars=c("day",'DOW','MOY','mon','wday','WKND'),measure.vars=c('kw','tout','pout','rh'),na.rm=TRUE)
   
   #monthly = cast(dfm,MOY + mon ~ variable,fun.aggregate=c(sum,mean,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)),subset= variable %in% c('kw','tout'))
-  #colnames(monthly) <- c('MOY','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDD','HDD')
+  #colnames(monthly) <- c('MOY','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDH','HDH')
   #monthly <- subset(monthly, select = -c(junk1, junk2, junk3) )
   monthly = c()
   daily = cast(dfm, MOY + day + DOW + mon + wday + WKND ~ variable,fun.aggregate=c(sum,mean,max,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)),subset= variable %in% c('kw','tout','pout','rh'))
-  colnames(daily) <- c('MOY','day','DOW','mon','wday','WKND','kwh','kw.mean','kw.max','junk1','junk2','junk3','tout.mean','tout.max','CDD','HDD','junk4','pout.mean','pout.max','junk5','junk6','junk7','rh.mean','rh.max','junk8','junk9')
+  colnames(daily) <- c('MOY','day','DOW','mon','wday','WKND','kwh','kw.mean','kw.max','junk1','junk2','junk3','tout.mean','tout.max','CDH','HDD','junk4','pout.mean','pout.max','junk5','junk6','junk7','rh.mean','rh.max','junk8','junk9')
   daily <- subset(daily, select = grep("^junk", colnames(daily), invert=TRUE) )
   
   # add vacation days flags

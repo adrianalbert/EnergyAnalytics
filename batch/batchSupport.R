@@ -93,12 +93,13 @@ runModelsByZip = function(cfg) {
 # TODO: consolidate after each model run, before serializing to disk
 
 runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
-  features.basic  <- c()
-  summaries       <- c()
+  naList = as.list(rep(NA,length(sp_ids)))
+  features.basic  <- naList
+  summaries       <- naList
   others          <- list() # special model specific data not found in the summaries
-  d_summaries     <- c()
+  d_summaries     <- naList
   d_others        <- list() # special model specific data not found in the summaries
-  m_summaries     <- c()
+  m_summaries     <- naList
   m_others        <- list() # special model specific data not found in the summaries
   steps           <- c()  
   invalid_ids     <- data.frame()
@@ -141,7 +142,6 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
     else { # viable residence!
       r <- tryCatch( {
         issues = validateRes(r)
-        savePlot = FALSE
         if(length(issues)>1) # all issues will return with an id, so > 1 indicates a problem
         { 
           invalid_ids <- rbind.fill(invalid_ids,issues)
@@ -158,7 +158,9 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
         }
         basics = basicFeatures(r)
         
-        features.basic  <- rbind(features.basic,basics) # max, min, etc.
+        tic()
+        features.basic[[i]]  <- basics # max, min, etc.
+        toc(prefix='features.basic')
         # hourly regressions
         if(cfg$RUN_HOURLY_MODELS) {
           df = regressorDF(r,norm=FALSE) # see also regressorDFAggregated
@@ -169,7 +171,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             #print(mdName)
             md = cfg$models.hourly[[mdName]]
             runOut = md$run(r,df)
-            summaries = rbind(summaries,runOut$summaries)
+            summaries[[i]] = runOut$summaries
             if(! empty(runOut$other)) {
               others[[md$name]] = rbind(others[[md$name]],list(id=r$id,data=runOut$other))
             }
@@ -197,7 +199,9 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             md = cfg$models.daily[[mdName]]
             #print(mdName)
             runOut = md$run(r,dfd)
-            d_summaries = rbind(d_summaries,runOut$summaries)
+            tic()
+            d_summaries[[i]] = runOut$summaries
+            toc(prefix='rbind d_summaries')
             if(! empty(runOut$other)) {
               d_others[[md$name]] = rbind(d_others[[md$name]],list(id=r$id,data=runOut$other))
             }
@@ -211,9 +215,9 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             #print(nm)
             fmla = models[[nm]]
             lm.result = lm(fmla,dfl$monthly, x=TRUE)
-            m_summaries = rbind(m_summaries,summarizeModel(lm.result,dfl$monthly,models,nm,
+            m_summaries[[i]] = summarizeModel(lm.result,dfl$monthly,models,nm,
                                                            id=sp_id,zip=zip,subnm="all",
-                                                           fold=FALSE,formula=fmla)  )
+                                                           fold=FALSE,formula=fmla)
           }
         }
         # TODO: write our own cross validation code - these are slow and picky! 
@@ -236,15 +240,20 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
     # successful fits
     if (cfg$truncateAt > 0 & i >= cfg$truncateAt) break
   } # sp_id loop
+  # strip out NAs from the lists
+  fbArray        <- features.basic[! is.na(features.basic)] 
+  summaryArray   <- summaries[! is.na(summaries)]
+  d_summaryArray <- d_summaries[! is.na(d_summaries)]
+  m_summaryArray <- m_summaries[! is.na(m_summaries)]
   out <- list(
       inputs          = inputs,
-      features.basic  = as.data.frame(features.basic),
+      features.basic  = as.data.frame(do.call(rbind,fbArray)),
       others          = others,
-      summaries       = as.data.frame(summaries),   # why data.frame?
+      summaries       = as.data.frame(do.call(rbind,summaryArray)),
       d_others        = d_others,
-      d_summaries     = as.data.frame(d_summaries),
+      d_summaries     = as.data.frame(do.call(rbind,d_summaryArray)),
       m_others        = m_others,
-      m_summaries     = as.data.frame(m_summaries),
+      m_summaries     = as.data.frame(do.call(rbind,m_summaryArray)),
       steps           = as.data.frame(steps),
       invalid.ids     = invalid_ids
       )

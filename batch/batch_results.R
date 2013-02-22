@@ -14,9 +14,14 @@ if(Sys.info()['sysname'] == 'Windows' & Sys.info()['user'] == 'Sam') {
 }
 setwd(conf.basePath)
 source(file.path(getwd(),'resultAnalysis.R'))
+source(file.path(getwd(),'dbUtil.R'))
+source(file.path(getwd(),'DataClasses.R'))
 source(file.path(getwd(),'zipMap.R'))
 
 resultsDir = 'results_daily' # real
+
+# get a list of all the data filees in the dir and extract their zips
+dirZips = do.call(rbind,strsplit(list.files(file.path(getwd(),resultsDir),pattern='modelResults.RData'),'_'))[,1]
 
 if(exists('cfg')) { resultsDir = cfg$outDir }
 
@@ -26,6 +31,8 @@ allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
 #summary = combineSummaries(allZips,resultType='d_summaries') # fails from too much data?!
 
 allZips = c(94923,94503,94574,94559)
+
+allZips = dirZips
 #comb = combineSummaries(allZips,resultType='d_summaries')
 basics     = combine(allZips,resultType='features.basic',as.matrix,appendZipData=T)
 basicMeans = combine(allZips,resultType='features.basic',function(x) { t(colMeans(x)) },appendZipData=T )
@@ -37,6 +44,7 @@ pvs  = list()
 tvs  = list()
 models = unique(sclrs$model.name)
 for(model in models) {
+  print(model)
   cfs[[model]]  = combine(allZips,resultType='d_summaries',cf,     model.name=model,appendZipData=T)
   stde[[model]] = combine(allZips,resultType='d_summaries',stderrs,model.name=model,appendZipData=T)
   pvs[[model]]  = combine(allZips,resultType='d_summaries',pvals,  model.name=model,appendZipData=T)
