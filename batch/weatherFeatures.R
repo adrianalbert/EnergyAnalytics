@@ -19,7 +19,14 @@ getWeatherSummary = function(w) {
       print(paste(zip,'(',i,'/',n,')'))
       wList[[i]] = weatherFeatures(WeatherClass(zip,doMeans=F))
     }
-    weatherSummary = do.call(rbind,wList)
+    weatherSummary = data.frame(do.call(rbind,wList))
+    colnames(weatherSummary)[1] <- c('zip5')
+    for(col in colnames(weatherSummary)) {
+      if(is.factor(weatherSummary[[col]])) {
+        # as.numeric(levels(f))[f] is the preferred way to convert factors to numerics
+        weatherSummary[[col]] = as.numeric(levels(weatherSummary[[col]] ))[weatherSummary[[col]]]
+      }
+    }
     save(weatherSummary,file=summaryFile)
   }
   return(weatherSummary)

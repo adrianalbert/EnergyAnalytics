@@ -141,9 +141,8 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
     #print(new)
     if(length(new) == 0) { next }
     new = cbind(new,zip5=zip) # ensure the zipcode is there
-    rownames(new) <- c()
-    #print(dim(result))
     #print(colnames(new))
+    rownames(new) <- c()
     rList[[i]] = new # inserting into a pre-allocated list is faster than running rbind all the time
     #rList[[length(rList)+1]] = new
     rm(modelResults)
@@ -236,7 +235,7 @@ clusterHeatMaps = function(regData,kscClusters){
   return(plot.list)
 }
 
-hists = function(df,metric='sigma',zip='unspecified',norm=c()){
+hists = function(df,metric='sigma',zip='unspecified',norm=c(),xlim=NULL,ylim=NULL,xlab=NULL,ylab=NULL){
   .e <- environment() # capture local environment for use in ggplot
   dfsub = delist(subset(df,model.name != 'DOW', select=c(metric,'id','model.name')))
   colnames(dfsub)[1] <- c('value')
@@ -244,12 +243,14 @@ hists = function(df,metric='sigma',zip='unspecified',norm=c()){
   #dfm = melt(dfsub,id.vars=c('id'),variable.name='model.name')
   # plot several density plots at once color coded
   g = ggplot(dfsub, aes(x=value, color=model.name), environment=.e) + geom_density(size=1, alpha=0.2) + 
-    ggtitle(paste(metric,'histograms for',zip))
+    labs(title=paste(metric,'density for',zip))
+  if(! is.null(xlim)) { g = g + xlim(xlim[1],xlim[2]) }
+  if(! is.null(ylim)) { g = g + ylim(ylim[1],ylim[2]) }
   #png(paste("hist.png",sep=''),height=600,width=800)
   return(g)
 }
 
-zipHists = function(df,metric='sigma',model.name,norm=c(),zip=NULL){
+zipHists = function(df,metric='sigma',model.name,norm=c(),zip=NULL,xlim=NULL,ylim=NULL,xlab=NULL,ylab=NULL){
   .e <- environment() # capture local environment for use in ggplot
   filter = df$model.name == model.name 
   if(! is.null(zip)) { filter = filter & df$zip5==zip }
@@ -259,7 +260,11 @@ zipHists = function(df,metric='sigma',model.name,norm=c(),zip=NULL){
   #dfm = melt(dfsub,id.vars=c('id'),variable.name='model.name')
   # plot several density plots at once color coded
   g = ggplot(dfsub, aes(x=value, color=cecclmzn), environment=.e) + geom_density(size=1, alpha=0.2) + 
-    ggtitle(paste(metric,'histograms for',model.name))
+    labs(title=paste(metric,'density for',model.name)) 
+  if(! is.null(xlim)) { g = g + xlim(xlim[1],xlim[2]) }
+  if(! is.null(ylim)) { g = g + ylim(ylim[1],ylim[2]) }
+  if(! is.null(xlab)) { g = g + labs(x=xlab) }
+  if(! is.null(ylab)) { g = g + labs(y=ylab) }
   #png(paste("hist.png",sep=''),height=600,width=800)
   return(g)
 }
