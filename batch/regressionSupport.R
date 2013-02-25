@@ -28,13 +28,14 @@ regressor.split = function(regressor,membership) {
 # so we might need to prune the columns when we're done and keep track of
 # which bins are in play when comparing across regressions
 regressor.piecewise = function(regressor,bins) {
+  if(any(is.na(bins))) return(as.matrix(regressor)) # if bins itself is NA or any of its values are NA, return the original data
   binLower = 0
   mat <- c()
   nm = c()
   for(binUpper in c(bins,Inf)) {
     col = regressor - binLower
     col[col < 0] = 0
-    col[(col> binUpper-binLower)] = binUpper-binLower
+    col[(col > binUpper-binLower)] = binUpper-binLower
     mat = cbind(mat,col)
     nm = c(nm,paste('tout',binLower,'_',binUpper,sep=''))
     binLower = binUpper
@@ -43,10 +44,13 @@ regressor.piecewise = function(regressor,bins) {
   return(mat)
 }
 
+# convienience function putting the bins first for apply style calls...
+piecewise.regressor = function(bins,regressor) return(regressor.piecewise(regressor, bins))
+
 lag   = function(v,n=1) { return(c(rep(NA,n),head(v,-n))) } # prepend NAs and truncate to preserve length
 diff2 = function(v,n=1) { return(c(rep(NA,n),diff(v, n))) } # prepend NAs to preserve length of standard diff
 
-regressorDF = function(residence,norm=TRUE,folds=1,rm.na=FALSE) {
+regressorDF = function(residence,norm=FALSE,folds=1,rm.na=FALSE) {
   WKND       = c('WK','ND')[(residence$dates$wday == 0 | residence$dates$wday == 6) * 1 + 1] # weekend indicator
   dateDays   = as.Date(residence$dates)
   # holidaysNYSE is a function from the dateTime package
@@ -154,7 +158,99 @@ regressorDFAggregated = function(residence,norm=TRUE,bp=65,rm.na=FALSE) {
   return(list(daily=daily,monthly=monthly))
 }
 
+hourlyChangePoint = function(df,hourBins=list(1:24),trange=c(50:80)) {
+  # hourBins should be a list of n numeric arrays such that each member of the list 
+  # is 1 or more hours of the day to use with the subset command to get 
+  # n change point estimates. So the default list(1:24) corresponds to using
+  # all the data. Whereas as.list(1:24) would fit 24 subsets...
+  if(class(hourBins) != 'list') hourBins = as.list(hourBins)
+  cps = sapply(hourBins,toutChangePointFast,subset(df),trange)
+  return(cps)
+}
 
+# this runs all the models and chooss the minimum one.
+# likely waste of CPU on models past the min. See faster impl below
+toutChangePoint = function(hrs,df,trange=c(50:80)) {
+  sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='') # pull out hrs subset (#0-23 in the df)
+  df = df[sub,]
+  df = df[!is.na(df$kw),]
+  steps = sapply(trange,FUN=evalCP,df)  # run all the models in the range
+  bestFit = steps[,which.min(steps['SSR',])] # find and return the min SSR in the range
+  return(bestFit)
+}
+
+# this takes advantage of the fact that for one change point, 
+# the SSR will be convex so it stops when the change in SSR is positive
+# note that each cp in trange could be a list c(40,50,60,70) or just a number
+toutChangePointFast = function(hrs,df,trange=c(50:85)) {
+  sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='')  # define hrs subset (#0-23 in the df)
+  df = df[sub,]                                                # pull out the subset from the df
+  df = df[!is.na(df$kw),]                                      # no NA's. Breaks the algorithm
+  rng = floor(quantile(df$tout,c(0.1,0.90)))
+  trange = c( rng[1]:rng[2]  )
+  prev = c(cp=-1,SSR=Inf)                                      # init the compare options
+  warnMulti = F
+  for(cp in trange) {
+    if(length(cp)>1) warnMulti = T # there is no guarantee against global minima
+    out = evalCP(cp,df)                                        # run piecewise regression
+    if(out['SSR'] > prev['SSR']) { # the previous value was the min
+      #plot(df$tout,df$kw,main=paste('Hr',paste(hrs,collapse=',')))
+      #points(quickEst(cp,prev['(Intercept)'],prev['lower'],prev['upper']),type='l')
+      if(warnMulti) {
+        print(paste('warning: toutChangePointFast returning multiple change points: ',
+                    paste(prev[grep('^cp[0-9]+',names(prev))],collapse=','),'. ',
+                    'May be a local minima. Consider toutChangePoint instead.',sep=''))
+      }
+      return(prev)
+    }
+    prev = out
+  }
+  # failed search
+  print(paste('Warning. SSR min not found for hr ',paste(hrs,collapse=','),
+                  '. Increase your temperature range? Returning higest value: ',
+                  paste(prev[grep('^cp',names(prev),value=T)],collapse=','),sep=''))
+  return(prev)
+}
+
+evalCP = function(cp,df) {
+  out = list()
+  tPieces = regressor.piecewise(df$tout,c(cp))
+  middle = c()
+  nSegs = dim(tPieces)[2]
+  if(nSegs > 2) middle = paste('middle_',1:(nSegs-2),sep='')
+  colnames(tPieces) <- c('lower',middle,'upper')
+  df = cbind(df,tPieces) # add the columns from the matrix to the df
+  # define regression formula that uses the piecewise pieces
+  f_0  = 'kw ~ tout'
+  f_cp = paste('kw ~',paste(colnames(tPieces),collapse=" + ",sep=''))
+  fit_0  = lm(f_0, df)
+  fit_cp = lm(f_cp,df)
+  s_cp = summary(fit_cp)
+  s_0  = summary(fit_0)
+  coefficients = s_cp$coefficients[,'Estimate'] # regression model coefficients
+  pvals        = s_cp$coefficients[,'Pr(>|t|)'] # coefficient pvalues
+  names(pvals) = paste('pval',names(pvals))
+  
+  # weights to enforce a bayesian idea that higher temps should matter more
+  # t > 75 gets a double weighting in the SSR
+  w = (df$tout > 75)*3 + 1 
+  SSR_cp = (w * fit_cp$residuals) %*% (w * fit_cp$residuals)
+  SSR_0  = (w * fit_0$residuals ) %*% (w * fit_0$residuals )
+  k = 1 # we have one regressor, so k = 1
+  n = length(fit_cp$residuals)
+  out$SSR = SSR_cp
+  out$RMSE = sqrt(out$SSR/(n - 1))
+  out$AIC_cp <- AIC(fit_cp)
+  out$AIC_0  <- AIC(fit_0)
+  k_cp = s_cp$df[1] #- 1 # degs of freedom, assuming intercept doesn't count
+  k_0  = s_0$df[1]  #- 1
+  # for comparison of models, see also f-test http://en.wikipedia.org/wiki/F-test#Regression_problems
+  fstat = ( (SSR_0 - SSR_cp) / (k_cp - k_0) ) / ( SSR_cp / (n - k_cp) )
+  #print(paste((SSR_0 - SSR_cp),(k_cp - k_0),SSR_cp,(n - k_cp)))
+  plower = pf(fstat,k_cp - k_0, n - k_cp) # single sided
+  nullModelTest = 2 * min(plower, 1 - plower)      # double sided p test for whether the cp model improves on a non-cp model
+  return(c(cp=cp,SSR=out$SSR,AIC_cp=out$AIC_cp,AIC_0=out$AIC_0,nullModelTest=nullModelTest,coefficients,pvals))
+}
 
 kFold = function(df,models,nm,nfolds=5) {
   folds <- sample(1:nfolds, dim(df)[1], replace=T)

@@ -93,6 +93,7 @@ runModelsByZip = function(cfg) {
 summarizeModel = function(m,df,models,nm,id,zip,subnm=NULL,fold=FALSE,formula='',subset='') {
   #lm(m,subset=m$y > 1)
   s <- as.list(summary(m, correlation=FALSE)) # generic list is more friendly for adding to a data.frame
+  s$hist = hist(s$residuals,breaks=100,plot=F)
   class(s) <- 'list'         # make sure the class is no longer summary.lm
   s$call          <- c()     # lm model call (depends on variable scope and can be junk)
   s$terms         <- c()     # lm model terms (depends on variable scope and can be junk)
@@ -130,6 +131,7 @@ summarizeModel = function(m,df,models,nm,id,zip,subnm=NULL,fold=FALSE,formula=''
 runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
   features.basic  <- c()
   summaries       <- c()
+  changePoints    <- c()
   d_summaries     <- c()
   m_summaries     <- c()
   steps           <- c()
@@ -190,7 +192,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             piecesf = paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW')
             models$toutPIECES = list(formula=piecesf,subset=list(all="TRUE",summer=cfg$subset$summer))
           }
-          if (TRUE) {
+          if (cfg$RUN_PIECES_24) {
             # add special data to the data frame: piecewise tout data
             #toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
             toutPIECES = regressor.piecewise(r$tout,c(55,65,75))
@@ -198,6 +200,27 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             # define regression formula that uses the piecewise pieces
             piecesf24 = paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ HOD - 1')
             models$toutPIECES24 = list(formula=piecesf24,subset=list(all="TRUE"))          
+          }
+          if(cfg$RUN_CP_24 ) {
+            hourlyFits=hourlyChangePoint(df,as.list(1:24),trange=c(50:(max(df$tout,rm.na=T)-5)))
+            cps = hourlyFits['cp',]
+            cps[hourlyFits['nullModelTest',] > 0.05] <- NA # if the cp model failed the f-test afgainst the no cp model, don't include it
+            splitToutList = alply(cps,.fun=piecewise.regressor,.margin=1,r$tout) # get a list of hourly piecewise splits for tout
+            # combinne the list into a sensible set of regressors
+            hourlyCP = c() # hourly change point pieces
+            for (hr in 1:length(cps)) { # for every hour, get the piecewise regressors, select just the right hours, and combine with cbind
+              splitTout = splitToutList[[hr]]
+              if (dim(splitTout)[2] == 1) colnames(splitTout) <- c(paste('tout_',hr,sep='')) # no split made
+              if (dim(splitTout)[2] == 2) colnames(splitTout) <- paste(c('tout_lower_','tout_upper_'),hr,sep='') # 2 cols: abov eand below cp
+              hrFilter = df$HOD %in% paste('H',sprintf('%02i',(hr-1)),sep='')
+              splitTout[!hrFilter,] <- 0 # zero out values not matching the hour the change point comes from
+              hourlyCP = cbind(hourlyCP,splitTout)
+            }
+            df = cbind(df,hourlyCP) # add the columns with names from the matrix to the df
+            hourlyCPf = paste('kw ~',paste(colnames(hourlyCP),collapse=" + ",sep=''),'+ HOD - 1')
+            models$hourlyCP = list(formula=hourlyCPf,subset=list(all="TRUE"))
+            changePoints = rbind(changePoints,list(id=r$id,changePoints=hourlyFits))
+            
           }
           # careful. lapply doesn't pass the right data to re-use the lm model
           # that's why summarizeModel gets passed everything it needs to repeat the lm
@@ -291,6 +314,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
   } # sp_id loop
   out <- list(
       features.basic  = as.data.frame(features.basic),
+      changePoints    = as.data.frame(changePoints),
       summaries       = as.data.frame(summaries),
       d_summaries     = as.data.frame(d_summaries),
       m_summaries     = as.data.frame(m_summaries),

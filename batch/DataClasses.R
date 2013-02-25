@@ -258,7 +258,15 @@ hmap = function(data,colorMap=NA,yvals=NA,xvals=NA,log=FALSE,...) {
   #axis(2,pretty(c(min(yvals),max(yvals))),mgp=c(1,0,0),tcl=0.5) # yaxis
 }
 
-plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary') {
+# quickly find the estimates for a simple change point model with one cp
+quickEst = function(cp,const,lower,upper,tlim=c(0,100)) {
+  tlim=c(floor(tlim[1]),ceiling(tlim[2]))
+  x = tlim[1]:tlim[2]
+  y = c(c(const + tlim[1]:cp * lower),c(const + cp * lower + ((cp+1):tlim[2] -cp) * upper))
+  return(cbind(x,y))
+}
+
+plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NA) {
   # needs a list, called r with:
   # r$id unique identifier (just for the title)
   # r$zip zipcode for the title
@@ -283,6 +291,7 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary') {
          xlab='mean T (degs F)',ylab='kWh/day',mgp=c(1,0,0),tcl=0.5)
     #par(op) # Leave the last plot
     mtext(main, line=0, font=2, cex=1.2,outer=TRUE)
+    par(new=F)
     par(op)
     #heatmap(as.matrix(r$kwMat),Rowv=NA,Colv=NA,labRow=NA,labCol=NA)
   } else if(type=='temp') {
@@ -310,7 +319,24 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary') {
       sub = r$dates$hour==i
       plot(subset(r$tout,sub),subset(r$kw,sub),
            col=subset(colors,sub),
-           xlim=xlm,ylim=ylm,yaxt=yax,xaxt=xax )
+           xlim=xlm,ylim=ylm,yaxt=yax,xaxt=xax 
+           )
+      if(length(estimates) > 1) {
+        if(length(estimates[,i+1]) > 1) {
+          fit = estimates[,i+1]
+          color = 'black'
+          if (fit['AIC_0'] < fit['AIC_cp']) color = 'gray'
+          if (fit['nullModelTest'] > 0.1)   color = 'red'
+          par(new=T)
+          qe = quickEst(fit['cp'],fit['(Intercept)'],fit['lower'],fit['upper'],
+                   c(min(subset(r$tout,sub),na.rm=T),max(subset(r$tout,sub),na.rm=T)))
+          #print(qe[,1])
+          plot(qe[,1],qe[,2],
+                type='l',
+                xlim=xlm,ylim=ylm,axes=F,lwd=2,col=color )
+          par(new=F)
+        }
+      }
       grid()
       text(mean(xlm),ylm[2] * 0.95,paste('hr',i),font=2, cex=1.2)
     }

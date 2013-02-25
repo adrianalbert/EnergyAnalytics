@@ -40,13 +40,7 @@ clusterPlots = function(regData,kscClusters){
   return(plot.list)
 }
 
-clusterHist = function(kscClusters) {
-  df = as.data.frame(list(cluster=kscClusters$mem))
-  maxX= length(unique(a$cluster))
-  p = qplot(cluster, data=df, geom="histogram",binwidth=0.5) +
-            scale_x_discrete(breaks=0:8)
-  return(p)
-}
+
 RMSEHists = function(modelResults,zip='unspecified'){
   # convert from data.fram of lists to data.frame of numerics
   # TODO: this is suprisingly clumsy is there a cleaner way?

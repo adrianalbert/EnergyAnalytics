@@ -7,6 +7,7 @@ require(gtools)
 require(gridExtra)
 require(reshape2)
 require(plyr)
+require(scales) # for muted
 
 # todo: is there a better way to detect the current directory?
 conf.basePath = file.path('~/EnergyAnalytics/batch')
@@ -15,7 +16,7 @@ if(Sys.info()['sysname'] == 'Windows') {
 }
 setwd(conf.basePath)
 
-resultsDir = 'results_climate_test' # real
+resultsDir = 'results_change_test' # real
 #resultsDir = 'test_results' # sub -sample for testing
 
 # run 'source' on all includes to load them 
@@ -23,10 +24,74 @@ source(file.path(getwd(),'localConf.R'))         # Sam's local computer specific
 source(file.path(getwd(),'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
 source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
 
+delist = function(df) {
+  df$idx = 1:dim(df)[1]
+  df2 <- ddply(df,'idx',function(X) apply(X,2,function(y) y[[1]])) # pull every column of every row of data out of its list of length 1
+  df2 <- subset(df2, select = -c(idx) )
+  return(df2)
+}
+
+clusterHist = function(kscClusters) {
+  df = as.data.frame(list(cluster=kscClusters$mem))
+  maxX= length(unique(kscClusters$cluster))
+  p = qplot(cluster, data=df, geom="histogram",binwidth=0.5) +
+    scale_x_discrete(breaks=0:8) + ggtitle('Count of cluster members')
+  return(p)
+}
+
+plotClusterCenters = function(kscClusters) {
+  clusterCounts = table(kscClusters$mem)
+  p = list()
+  n = dim(kscClusters$center)[1]
+  par(mfrow=c(2,ceiling(n/2)))
+  for (i in 1:n) {
+    values = kscClusters$center[i,]
+    
+    plot(values,type='b',xlab='TOD',ylab='change point (normalized)',
+                        main=paste('C',i,' n=',clusterCounts[i],sep=''))
+    #p[[i]] = qplot(1:length(values),values, 
+    #               geom='line',
+    #               xlab='TOD',ylab='change point (F)',
+    #               main=paste('C',i,' n=',clusterCounts[i]))
+  }
+  #print(p)
+  #do.call(grid.arrange,p)
+}
+
+showClusters = function(kscClusters) {
+  df = data.frame(kscClusters$center)
+  df$idx = 1:dim(kscClusters$center)[1]
+  dfm = melt(df,id.vars=c('idx'))
+  ggplot(dfm,aes(x=variable,y=value)) + geom_line(aes(group=idx)) 
+}
+
+clusterHeatMaps = function(regData,kscClusters){
+  clusterCounts = table(kscClusters$mem)
+  plot.list = list()
+  for (i in 1:max(kscClusters$mem)){
+    ggdata = melt(regData[(kscClusters$mem == i),])
+    if(is.null(ggdata$X2)) {
+      ggdata$X1 = 1
+      ggdata$X2 = row.names(ggdata)
+    }
+    names(ggdata)[names(ggdata)=="X2"] <- "hour"
+    names(ggdata)[names(ggdata)=="X1"] <- "idx"
+    p = ggplot(ggdata, 
+               aes(x=hour, y=idx, fill=value)) + 
+      geom_tile() + 
+      scale_fill_gradient2("change point",midpoint=60,low="blue",mid="white",high="red") + # no key
+      scale_x_discrete(breaks = 1:24) + # no ticks or labels - not sure why
+      ggtitle(paste('C',i,' n=',clusterCounts[i],sep=''))
+    plot.list[[i]] = p
+  }
+  return(plot.list)
+}
+
 hists = function(df,metric='sigma',zip='unspecified',norm=c()){
   .e <- environment() # capture local environment for use in ggplot
-  dfsub = subset(df,select=c(metric,'id','model.name'))
+  dfsub = delist(subset(df,select=c(metric,'id','model.name')))
   colnames(dfsub)[1] <- c('value')
+  dfsub$value = as.numeric(dfsub$value)
   #dfm = melt(dfsub,id.vars=c('id'),variable.name='model.name')
   # plot several density plots at once color coded
   g = ggplot(dfsub, aes(x=value, color=model.name), environment=.e) + geom_density(size=1, alpha=0.2) + 
@@ -220,22 +285,37 @@ allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
             95202,93619,93614,93304,93701,95631,95726,95223,95666)
 summary = combineSummaries(allZips)
 
-zip=93304
+zip='93304_CP'
 load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
 summary   = clean(modelResults$summaries)
+cp = modelResults$changePoints
+cpgrid = t(apply(cp,1,function(X) X[['changePoints']]['cp',]))
+changes = ksc(cpgrid,8)
+plotClusterCenters(changes)
+showClusters(changes)
+clusterHist(changes)
+p = clusterHeatMaps(regData,kscClusters)
+do.call(grid.arrange,p)
+
+hists(summary,metric='sigma',zip=zip)
+hists(summary,metric='r.squared',zip=zip)
+
 estimates = cf(summary,'toutPIECES24','all')
 pvals     = cf(summary,'toutPIECES24','all',col='Pr(>|t|)')
 
-slopeCols = grep('tout75_Inf',colnames(estimates),value=T)
-hodCols   = grep('^HODH[0-9]+$',colnames(estimates),value=T)
-
+slopeCols = grep('tout75_Inf',colnames(estimates),value=T)[-c(1:8)]
 slope75   = estimates[,c('id',slopeCols)]
 slope75p  = pvals[,c('id',slopeCols)]
-sig       = slope75p[,-1] > 0.05
-slope75[cbind(rep(FALSE,dim(sig)[1]),sig)] <- NA
+sig       = slope75p[,-1] >= 0.0
+slope75[cbind(rep(FALSE,dim(sig)[1]),!sig)] <- NA
 slope75m = melt(slope75,id.vars='id')
-ggplot(data=slope75m,aes(x=variable, y=value,color=id)) + scale_x_discrete(labels=c('12am',1:11,'12pm',1:11)) + geom_line(aes(group=id))
+ggplot(data=slope75m,aes(x=variable, y=value)) + scale_x_discrete(labels=c('12am',1:11,'12pm',1:11)) + geom_line(aes(group=id),alpha = 0.05)
 
+a = as.matrix(slope75[,-1])
+
+
+
+hodCols   = grep('^HODH[0-9]+$',colnames(estimates),value=T)
 hodConst  = estimates[,c('id',hodCols)]
 hodConstp = pvals[,c('id',hodCols)]
 sig       = hodConstp[,-1] > 0.05
@@ -252,12 +332,10 @@ X = regressor.piecewise(0:100,c(55,65,75)) # piecewise tout values from 0:100
 X = cbind(1,X)                             # constant term
 # one col of values per id
 est = apply(as.matrix(pmSlopes[,-1]),MARGIN=1,FUN=function(row) t(X %*% as.matrix(row)))
-colnames(est) <- pmSlopes[,1]
+colnames(est) <- paste('id_',pmSlopes[,1],sep='') # restore id names
 estm = melt(est)
-ggplot(data=estm,aes(x=X1, y=value)) + geom_line(aes(group=X2))
+ggplot(data=estm,aes(x=X1, y=value,color=X2)) + geom_line(aes(group=X2))
 
-#b = t(as.matrix(pmSlopes[5,-1]))
-#plot(X %*% b)
 
 zip = 94610
 load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
