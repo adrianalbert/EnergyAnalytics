@@ -29,15 +29,16 @@ library(RColorBrewer)
 #library('cvTools') # cross validation tools
 
 cfg = list()
-cfg$outDir = 'results_change_test'
+cfg$outDir = 'results_basics'
 
 cfg$PLOT_INVALID = FALSE # create png plots for residences that fail validaiton
-cfg$PLOT_VALID   = FALSE # create png plots for residences that pass validaiton
+cfg$PLOT_VALID   = TRUE  # create png plots for residences that pass validaiton
 
+cfg$RUN_HOURLY_MODELS     = FALSE # run hourly models
 cfg$RUN_AGGREGATED_MODELS = FALSE # run daily and monthly summary data models (moderate time consuming)
 cfg$RUN_STEP_SELECTION    = FALSE # run nested model selection algorithm (time consuming)
-cfg$RUN_PIECES_24         = FALSE # run piecewise model for every HOD
-cfg$RUN_CP_24             = FALSE # fit changepoint for every HOD
+cfg$RUN_PIECES_24         = FALSE # run piecewise model for every HOD (within hourly)
+cfg$RUN_CP_24             = FALSE # fit changepoint for every HOD (within hourly)
 
 # generate the string values that will identify the desired subset of a data.frame
 # using the command subset(df,subset=str,...)
@@ -89,7 +90,7 @@ cfg$models.monthly = list(
   #CDD_HDD    = "kwh ~ HDD + CDD"
 )
 
-cfg$triggerZip=NULL #NULL # default to NULL
+cfg$triggerZip=93304 #NULL # default to NULL
 cfg$truncateAt=-1 #-1 # default to -1
 
 tic('batchRun')
@@ -113,12 +114,35 @@ cfg$allZips = c(94610,93304)
 
 print('Beginning batch run')
 runResult = runModelsByZip(cfg)
-summarizeRun(runResult,listFailures=FALSE)
+summarizeRun(runResult,listFailures=F)
+
+
+
+plot.modelResults = function(modelResults,vars=NULL) {
+  op <- par(no.readonly = TRUE)
+  if(is.null(vars)) {
+    vars = c('kw.mean','kw.var','min.3%','max.97%','kw.tout.cor','kw.pout.cor','daily.kw.var','daily.kw.min.var','daily.kw.max.var')
+  }
+  a = ceiling(sqrt(length(vars)))
+  b = floor(sqrt(length(vars)))
+  par(mfrow=c(b,a), oma=c(2,0,3,0),mar=c(2,2,2,2))# Room for the title
+  for(var in vars){
+    hist(modelResults$features.basic[,var],breaks=100,main=var,xlab=var,mgp=c(1,0,0),tcl=0.5)
+  }
+  zip = 'unknown'
+  if(length(modelResults$inputs) > 0) {
+    zip = modelResults$inputs$zip
+  }
+  mtext(paste('Summary stats from',zip), line=0, font=2, cex=1.2,outer=TRUE)
+  par(op)
+}
+
 
 if(F) {
-  zip = cfg$allZips[2]
+  zip = cfg$allZips[1]
   load(file.path(getwd(),cfg$outDir,paste(zip,'_modelResults.RData',sep='')))
   print(names(modelResults))
+  plot(modelResults)
   print(modelResults$summaries[1,]$coefficients)
 
 

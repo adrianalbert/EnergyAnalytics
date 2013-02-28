@@ -79,7 +79,7 @@ clusterHeatMaps = function(regData,kscClusters){
     p = ggplot(ggdata, 
                aes(x=hour, y=idx, fill=value)) + 
       geom_tile() + 
-      scale_fill_gradient2("change point",midpoint=60,low="blue",mid="white",high="red") + # no key
+      scale_fill_gradient2("change point",midpoint=70,low="red",mid="white",high="blue") + # no key
       scale_x_discrete(breaks = 1:24) + # no ticks or labels - not sure why
       ggtitle(paste('C',i,' n=',clusterCounts[i],sep=''))
     plot.list[[i]] = p
@@ -89,7 +89,7 @@ clusterHeatMaps = function(regData,kscClusters){
 
 hists = function(df,metric='sigma',zip='unspecified',norm=c()){
   .e <- environment() # capture local environment for use in ggplot
-  dfsub = delist(subset(df,select=c(metric,'id','model.name')))
+  dfsub = delist(subset(df,model.name != 'DOW', select=c(metric,'id','model.name')))
   colnames(dfsub)[1] <- c('value')
   dfsub$value = as.numeric(dfsub$value)
   #dfm = melt(dfsub,id.vars=c('id'),variable.name='model.name')
@@ -240,14 +240,14 @@ quad_chart = function(d,title) {
   # todo: update tehse for subsequent data runs:
   # the WK and ND suffixes have been moved to the beginning of the names
   # so "^HOD.+WK$" will become simply '^WKHOD'
-  hodWK  = d[, c('id',grep("^HODWKWK", colnames(d), value=TRUE))]
+  hodWK  = d[, c('id',grep("^HODWKWK",        colnames(d), value=TRUE))]
   toutWK = d[, c('id',grep("^tout65.HODWKWK", colnames(d), value=TRUE))]
-  hodND  = d[, c('id',grep("^HODWKND", colnames(d), value=TRUE))]
+  hodND  = d[, c('id',grep("^HODWKND",        colnames(d), value=TRUE))]
   toutND = d[, c('id',grep("^tout65.HODWKND", colnames(d), value=TRUE))]
   
-  hodmWK =  melt(hodWK,id.vars=c('id'))
+  hodmWK  = melt(hodWK, id.vars=c('id'))
   toutmWK = melt(toutWK,id.vars=c('id'))
-  hodmND =  melt(hodND,id.vars=c('id'))
+  hodmND  = melt(hodND, id.vars=c('id'))
   toutmND = melt(toutND,id.vars=c('id'))
   
   g1 = ggplot(hodmWK, aes(variable, value, group = id)) + geom_line(alpha = 0.05) + ylim(-0.1,3) + #ylim(-0.5,3) + 
@@ -262,12 +262,12 @@ quad_chart = function(d,title) {
   grid.arrange(g1,g2,g3,g4,nrow=2, as.table=FALSE, main=title)
 }
 
-combineSummaries = function(ziplist) {
+combineSummaries = function(ziplist,resultType='summaries') {
   summaries = c()
   for (zip in ziplist) { 
     print(paste('loading data for',zip))
     load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
-    summaries = rbind.fill(summaries,clean(modelResults$summaries))
+    summaries = rbind.fill(summaries,clean(modelResults[resultType]))
   }
   return(summaries)
 }
@@ -285,20 +285,28 @@ allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
             95202,93619,93614,93304,93701,95631,95726,95223,95666)
 summary = combineSummaries(allZips)
 
+zips=c('93304','93304_HR','93304_CP')
 zip='93304_CP'
+summary = combineSummaries(zips)
+d_summary = modelResults$d_summary #combineSummaries(zips,'d_summaries')
 load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
-summary   = clean(modelResults$summaries)
+#summary   = clean(modelResults$summaries)
 cp = modelResults$changePoints
 cpgrid = t(apply(cp,1,function(X) X[['changePoints']]['cp',]))
 changes = ksc(cpgrid,8)
 plotClusterCenters(changes)
 showClusters(changes)
 clusterHist(changes)
-p = clusterHeatMaps(regData,kscClusters)
+p = clusterHeatMaps(cpgrid,changes)
 do.call(grid.arrange,p)
 
-hists(summary,metric='sigma',zip=zip)
-hists(summary,metric='r.squared',zip=zip)
+hists(summary,metric='sigma',zip=zips[1])
+hists(summary,metric='r.squared',zip=zips[1])
+hists(summary,metric='adj.r.squared',zip=zips[1])
+
+hists(d_summary,metric='sigma',zip=zips[1])
+hists(d_summary,metric='r.squared',zip=zips[1])
+hists(d_summary,metric='adj.r.squared',zip=zips[1])
 
 estimates = cf(summary,'toutPIECES24','all')
 pvals     = cf(summary,'toutPIECES24','all',col='Pr(>|t|)')

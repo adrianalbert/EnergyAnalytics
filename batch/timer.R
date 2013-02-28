@@ -18,12 +18,13 @@ toc <- function(name='default',prefixStr=NA)
   dt   <- proc.time()[type] - as.numeric(tic[name])
   
   # must be ints...
-  h <- floor(dt / 3600)
-  m <- floor(dt / 60)
+  d <- floor(dt / 3600 / 24)
+  h <- floor(dt / 3600) %% 24
+  m <- floor(dt / 60)   %% 60
   s <- dt %% 60
   #f <- s - floor(s)
   #s <- floor(s)
   if(is.na(prefixStr)) prefixStr <- name
-  print(paste(prefixStr,': ',sprintf('%02i:%02i:%05.2f',h,m,s),sep=''))
+  print(paste(prefixStr,': ',sprintf('%02i:%02i:%02i:%05.2f',d,h,m,s),sep=''))
 
 }

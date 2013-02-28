@@ -134,9 +134,9 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
   changePoints    <- c()
   d_summaries     <- c()
   m_summaries     <- c()
-  steps           <- c()
-  
+  steps           <- c()  
   invalid_ids     <- data.frame()
+  inputs          <- list(zip=zip,ids=sp_ids,config=cfg)
   # TODO:
   # find a faster method of cross validation than cvTools or DAAG provide
   splen  <- length(sp_ids)
@@ -171,16 +171,19 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
           }
           next # no further processing
         }
+        tic('model run')
+        
         if(cfg$PLOT_VALID) {
           png(file.path(getwd(),cfg$outDir,paste(r$zip,'_',r$id,'.png',sep='')))
           redblue = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
           plot( r,colorMap=redblue,main=paste(r$zip, r$id) )
           dev.off()
         }
-        tic('model run')
-        features.basic  <- rbind(features.basic,basicFeatures(r$kwMat,sp_id))
+        basics = basicFeatures(r)
+        
+        features.basic  <- rbind(features.basic,basics)
         # hourly regressions
-        if(TRUE) {
+        if(cfg$RUN_HOURLY_MODELS) {
           df = regressorDF(r,norm=FALSE) # see also regressorDFAggregated
           models = cfg$models.hourly
           if (FALSE) {
@@ -313,6 +316,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
     if (cfg$truncateAt > 0 & i >= cfg$truncateAt) break
   } # sp_id loop
   out <- list(
+      inputs          = inputs,
       features.basic  = as.data.frame(features.basic),
       changePoints    = as.data.frame(changePoints),
       summaries       = as.data.frame(summaries),
@@ -321,6 +325,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
       steps           = as.data.frame(steps),
       invalid.ids     = invalid_ids
       )
+  class(out) <- 'modelResults'
   print(names(out))
   return(out)
 }

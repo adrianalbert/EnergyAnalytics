@@ -6,6 +6,7 @@
 # The two main classes are WeatherClass and ResDataClass, whcih provide a simple
 # object interface to the data in the database.
 require(RMySQL)
+library(RColorBrewer)
 
 # utility function that 
 db.getZips = function() {
@@ -210,10 +211,10 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
 
 validateRes = function(r) {
   issues = data.frame(id=r$id)
-  timeDiffs = diff(r$dates)
-  units(timeDiffs) <- "hours"
-  maxtd = max(timeDiffs) / 24
-  span = difftime(tail(r$dates, n=1),r$dates[1],units='days')
+  #timeDiffs = diff(r$dates)
+  #units(timeDiffs) <- "hours"
+  #maxtd = max(timeDiffs) / 24
+  #span = difftime(tail(r$dates, n=1),r$dates[1],units='days')
   zerospct = sum((r$kw == 0)*1,na.rm=TRUE) / length(r$kw)
   kwmean = mean(r$kw,na.rm=TRUE)
   daylen = length(r$days)
@@ -276,9 +277,17 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NA) 
   # r$toutMat (matrix of Tout readings with 24 columns)
   if(type=='summary') {
     if(is.na(main)) { main <- paste(r$id,' (',r$zip,') summary info',sep='') }
-    op <- par( mfrow=c(2,2), oma=c(2,0,3,0),mar=c(2,2,2,2))# Room for the title
+    if(length(colorMap) < 2) { colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100)) } #colorMap = heat.colors(100)
+    op <- par(no.readonly = TRUE)
+    par( mfrow=c(2,2), oma=c(2,0,3,0),mar=c(2,2,2,2))# Room for the title
     #plot(r$kw,xlab='Date',ylab='kWh/h',main='Raw usage')
-    hmap(r$kwMat,yvals=r$days,colorMap=colorMap,log=TRUE,main='Heatmap',mgp=c(1,0,0),tcl=0.5) # axis label on row 1, axis and ticks on 0, with ticks facing in
+    
+    image(t(as.matrix(r$kwMat)),col=colorMap,axes = FALSE,main='kW')
+    axis(1, at = seq(0, 1, by = 1/6),labels=0:6 * 4,mgp=c(1,0,0),tcl=0.5)
+    axis(2, at = seq(1,0, by = -1/15),labels=format(r$days[seq(1/16, 1, by = 1/16) * length(r$days)],'%m.%d'),las=1,mgp=c(1,0,0),tcl=0.5)
+    
+    
+    #hmap(,yvals=r$days,colorMap=colorMap,log=TRUE,main='Heatmap',mgp=c(1,0,0),tcl=0.5) # axis label on row 1, axis and ticks on 0, with ticks facing in
     end = min(length(r$kw),240)
     plot(r$dates[1:end],r$kw[1:end],type='l',xlab='Date',ylab='kWh/h',main='Raw usage zoom',mgp=c(1,0,0),tcl=0.5)
     plot(r$days,rowMeans(r$toutMat),col='grey',axes=F,ylab='',xlab='',,mgp=c(1,0,0),tcl=0.5)
@@ -301,9 +310,11 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NA) 
     legend('right', paste("hr ", 1:24), fill=colors, ncol = 1, cex = 0.8)
   } else if(type=='hourly') {
     if(is.na(main)) { main <- paste(r$id,' (',r$zip,') hourly info',sep='') }
+    op <- par(no.readonly = TRUE)
     grid = cbind(matrix(c(1:24),nrow=4,ncol=6,byrow=TRUE),c(25,25,25,25))
     layout(grid,widths=c(rep(2,6),1))
-    op <- par(oma=c(2,3,3,0),mar=c(1,0,1,0))# Room for the title
+    par(oma=c(2,3,3,0),mar=c(1,0,1,0))# Room for the title
+    
     pallete = rainbow(12) #,start=2/6, end=1)
     colvals = r$dates$mon
     #colvals = r$dates$wday
@@ -346,7 +357,6 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NA) 
     plot(1, type = "n", axes=FALSE, xlab="", ylab="")
     legend('center', month.abb, fill=pallete, ncol = 1, cex = 1)
     #par(xpd=FALSE)
-    
     par(op)
   }
   

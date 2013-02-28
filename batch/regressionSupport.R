@@ -47,8 +47,12 @@ regressor.piecewise = function(regressor,bins) {
 # convienience function putting the bins first for apply style calls...
 piecewise.regressor = function(bins,regressor) return(regressor.piecewise(regressor, bins))
 
-lag   = function(v,n=1) { return(c(rep(NA,n),head(v,-n))) } # prepend NAs and truncate to preserve length
+lag   = function(v,n=1) { 
+  if(n==0) return(v)
+  return(c(rep(NA,n),head(v,-n))) 
+} # prepend NAs and truncate to preserve length
 diff2 = function(v,n=1) { return(c(rep(NA,n),diff(v, n))) } # prepend NAs to preserve length of standard diff
+ma    = function(v,n=5) { filter(v,rep(1/n,n), sides=1)   } # calculate moving averages note adds n-1 NAs to beginning
 
 regressorDF = function(residence,norm=FALSE,folds=1,rm.na=FALSE) {
   WKND       = c('WK','ND')[(residence$dates$wday == 0 | residence$dates$wday == 6) * 1 + 1] # weekend indicator
