@@ -32,7 +32,7 @@ cfg = list()
 cfg$outDir = 'results_basics'
 
 cfg$PLOT_INVALID = FALSE # create png plots for residences that fail validaiton
-cfg$PLOT_VALID   = TRUE  # create png plots for residences that pass validaiton
+cfg$PLOT_VALID   = FALSE  # create png plots for residences that pass validaiton
 
 cfg$RUN_HOURLY_MODELS     = FALSE # run hourly models
 cfg$RUN_AGGREGATED_MODELS = FALSE # run daily and monthly summary data models (moderate time consuming)
@@ -118,7 +118,7 @@ summarizeRun(runResult,listFailures=F)
 
 
 
-plot.modelResults = function(modelResults,vars=NULL) {
+plot.modelResults = function(modelResults,vars=NULL,...) {
   op <- par(no.readonly = TRUE)
   if(is.null(vars)) {
     vars = c('kw.mean','kw.var','min.3%','max.97%','kw.tout.cor','kw.pout.cor','daily.kw.var','daily.kw.min.var','daily.kw.max.var')
@@ -127,7 +127,7 @@ plot.modelResults = function(modelResults,vars=NULL) {
   b = floor(sqrt(length(vars)))
   par(mfrow=c(b,a), oma=c(2,0,3,0),mar=c(2,2,2,2))# Room for the title
   for(var in vars){
-    hist(modelResults$features.basic[,var],breaks=100,main=var,xlab=var,mgp=c(1,0,0),tcl=0.5)
+    hist(modelResults$features.basic[,var],breaks=100,main=var,xlab=var,mgp=c(1,0,0),tcl=0.5,...)
   }
   zip = 'unknown'
   if(length(modelResults$inputs) > 0) {
@@ -139,7 +139,7 @@ plot.modelResults = function(modelResults,vars=NULL) {
 
 
 if(F) {
-  zip = cfg$allZips[1]
+  zip = cfg$allZips[2]
   load(file.path(getwd(),cfg$outDir,paste(zip,'_modelResults.RData',sep='')))
   print(names(modelResults))
   plot(modelResults)
