@@ -16,6 +16,7 @@ source(file.path(getwd(),'batchSupport.R'))      # Object code for getting meter
 source(file.path(getwd(),'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
 source(file.path(getwd(),'basicFeatures.R'))     # typical max, min, mean, range
 source(file.path(getwd(),'regressionSupport.R')) # mostly regressor manipulation
+source(file.path(getwd(),'solaRUtil.R'))         # solar geometry
 source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
 
 library(reshape)
@@ -29,15 +30,15 @@ library(RColorBrewer)
 #library('cvTools') # cross validation tools
 
 cfg = list()
-cfg$outDir = 'results_basics'
+cfg$outDir = 'results_CP_solar'
 
 cfg$PLOT_INVALID = FALSE # create png plots for residences that fail validaiton
 cfg$PLOT_VALID   = FALSE  # create png plots for residences that pass validaiton
 
-cfg$RUN_HOURLY_MODELS     = FALSE # run hourly models
+cfg$RUN_HOURLY_MODELS     = TRUE  # run hourly models
 cfg$RUN_AGGREGATED_MODELS = FALSE # run daily and monthly summary data models (moderate time consuming)
 cfg$RUN_STEP_SELECTION    = FALSE # run nested model selection algorithm (time consuming)
-cfg$RUN_PIECES_24         = FALSE # run piecewise model for every HOD (within hourly)
+cfg$RUN_PIECES_24         = TRUE # run piecewise model for every HOD (within hourly)
 cfg$RUN_CP_24             = FALSE # fit changepoint for every HOD (within hourly)
 
 # generate the string values that will identify the desired subset of a data.frame
@@ -60,14 +61,14 @@ cfg$models.hourly = list(
   #DOW_HOD65    = list(formula="kw ~ tout65 + DOW + HOD",subset=list(all="TRUE",summer=cfg$subset$summer)),
   #HOW65        = list(formula="kw ~ tout65 + HOW",subset=list(all="TRUE",summer=cfg$subset$summer)),
   #wea          = list(formula="kw ~ tout   + pout + rh + HOW + MOY",subset=list(all="TRUE",summer=cfg$subset$summer)), 
-  wea65        = list(formula="kw ~ tout65 + pout + rh + HOW + MOY",subset=list(all="TRUE")),
+  #wea65        = list(formula="kw ~ tout65 + pout + rh + HOW + MOY",subset=list(all="TRUE")),
   #HOW         = "kw ~ tout + HOW",
-  toutTOD_WKND = list(formula="kw ~ 0 + tout65:HODWK + HODWK",subset=list(all="TRUE")),
+  #toutTOD_WKND = list(formula="kw ~ 0 + tout65:HODWK + HODWK",subset=list(all="TRUE")),
   #toutTOD      = list(formula="kw ~ 0 + tout65:HOD + HOD",subset=list(all="TRUE")),
   #toutTOD_d1   = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout_d1 + HOD",subset=list(summer=cfg$subset$summer)),
   #toutTOD_65d1 = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_d1 + HOD",subset=list(summer=cfg$subset$summer)),
   #toutTOD_l1   = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l1 + HOD",subset=list(summer=cfg$subset$summer)),
-  toutTOD_l3   = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l3 + HOD",subset=list(all="TRUE"))
+  #toutTOD_l3   = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l3 + HOD",subset=list(all="TRUE"))
   #toutTOD_min = "kw_min ~ 0 + tout:HOD + HOW" # no intercept
 )
 
@@ -146,19 +147,18 @@ if(F) {
   print(modelResults$summaries[1,]$coefficients)
 
 
-  r = ResDataClass(820735863,94610);  plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24)))  # heat, no cooling
-  r = ResDataClass(553991005,93304);  plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24)))  # very clear cooling 24x7
-  r = ResDataClass(554622151,93304);  plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24)))  # very clear cooling possible timed setback
-  r = ResDataClass(637321210,93304);  plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24)))  # very clear cooling some bad data in july?
-  r = ResDataClass(1064423310,93304); plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24)))  # cooling with high outliers. Unclear setpoint
-  r = ResDataClass(1366549405,93304); plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24)))  # heat and cooling. slight tout slopes, bimodal
-  r = ResDataClass(1064429605,93304); plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24)))  # VERY high change points. Change with HOD
+  r = ResDataClass(820735863,94610);  plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # heat, no cooling
+  r = ResDataClass(553991005,93304);  plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # very clear cooling 24x7
+  r = ResDataClass(554622151,93304);  plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # very clear cooling possible timed setback
+  r = ResDataClass(637321210,93304);  plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # very clear cooling some bad data in july?
+  r = ResDataClass(1064423310,93304); plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # cooling with high outliers. Unclear setpoint
+  r = ResDataClass(1366549405,93304); plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # heat and cooling. slight tout slopes, bimodal
+  r = ResDataClass(1064429605,93304); plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # VERY high change points. Change with HOD
+
+  estimates=hourlyChangePoint(regressorDF(r),as.list(1:24))
+  plot(estimates['cp',],type='l',col='blue')
+  points(colMeans(r$toutMat),type='l',xlab='HOD',ylab='Mean temperature')
   
+  legend(3,75,c('mean Tout','CP fit'),fill=c('black','blue'))
 }
-
-estimates=hourlyChangePoint(regressorDF(r),as.list(1:24))
-plot(estimates['cp',],type='l',col='blue')
-points(colMeans(r$toutMat),type='l',xlab='HOD',ylab='Mean temperature')
-
-legend(3,75,c('mean Tout','CP fit'),fill=c('black','blue'))
 

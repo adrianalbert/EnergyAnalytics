@@ -162,23 +162,29 @@ regressorDFAggregated = function(residence,norm=TRUE,bp=65,rm.na=FALSE) {
   return(list(daily=daily,monthly=monthly))
 }
 
-hourlyChangePoint = function(df,hourBins=list(1:24),trange=c(50:80)) {
+hourlyChangePoint = function(df,hourBins=list(1:24),trange=c(50:80),fast=T,reweight=F) {
   # hourBins should be a list of n numeric arrays such that each member of the list 
   # is 1 or more hours of the day to use with the subset command to get 
   # n change point estimates. So the default list(1:24) corresponds to using
   # all the data. Whereas as.list(1:24) would fit 24 subsets...
   if(class(hourBins) != 'list') hourBins = as.list(hourBins)
-  cps = sapply(hourBins,toutChangePointFast,subset(df),trange)
+  if(fast) {
+    cps = sapply(hourBins,toutChangePointFast,subset(df),trange,reweight)
+  } 
+  else {
+    cps = sapply(hourBins,toutChangePoint,subset(df),trange,reweight)
+  }
   return(cps)
 }
 
 # this runs all the models and chooss the minimum one.
 # likely waste of CPU on models past the min. See faster impl below
-toutChangePoint = function(hrs,df,trange=c(50:80)) {
+toutChangePoint = function(hrs,df,trange=c(50:85),reweight=F) {
   sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='') # pull out hrs subset (#0-23 in the df)
   df = df[sub,]
   df = df[!is.na(df$kw),]
-  steps = sapply(trange,FUN=evalCP,df)  # run all the models in the range
+  steps = sapply(trange,FUN=evalCP,df,reweight)  # run all the models in the range
+  #print(steps['SSR',])
   bestFit = steps[,which.min(steps['SSR',])] # find and return the min SSR in the range
   return(bestFit)
 }
@@ -186,7 +192,7 @@ toutChangePoint = function(hrs,df,trange=c(50:80)) {
 # this takes advantage of the fact that for one change point, 
 # the SSR will be convex so it stops when the change in SSR is positive
 # note that each cp in trange could be a list c(40,50,60,70) or just a number
-toutChangePointFast = function(hrs,df,trange=c(50:85)) {
+toutChangePointFast = function(hrs,df,trange=c(50:85),reweight) {
   sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='')  # define hrs subset (#0-23 in the df)
   df = df[sub,]                                                # pull out the subset from the df
   df = df[!is.na(df$kw),]                                      # no NA's. Breaks the algorithm
@@ -196,7 +202,7 @@ toutChangePointFast = function(hrs,df,trange=c(50:85)) {
   warnMulti = F
   for(cp in trange) {
     if(length(cp)>1) warnMulti = T # there is no guarantee against global minima
-    out = evalCP(cp,df)                                        # run piecewise regression
+    out = evalCP(cp,df,reweight)                               # run piecewise regression
     if(out['SSR'] > prev['SSR']) { # the previous value was the min
       #plot(df$tout,df$kw,main=paste('Hr',paste(hrs,collapse=',')))
       #points(quickEst(cp,prev['(Intercept)'],prev['lower'],prev['upper']),type='l')
@@ -216,23 +222,56 @@ toutChangePointFast = function(hrs,df,trange=c(50:85)) {
   return(prev)
 }
 
-evalCP = function(cp,df) {
+evalCP = function(cp,df,reweight=F) {
   out = list()
   tPieces = regressor.piecewise(df$tout,c(cp))
   middle = c()
   nSegs = dim(tPieces)[2]
   if(nSegs > 2) middle = paste('middle_',1:(nSegs-2),sep='')
   colnames(tPieces) <- c('lower',middle,'upper')
+  # calculate weights such that each partition of Tout data makes the same 
+  # potential contribution to the SSR. So if, for example the data is partitioned
+  # into 1/4 and 3/4 of obs in each, the minority data would be weighted at 3x
+  n = dim(tPieces)[1]
+  m = dim(tPieces)[2]
+  df$w = rep(1,n) # default weights
+  if(reweight) { 
+    # find the index of the last column with a non-zero value
+    # for a piecewise regressor, this happens to be the number of non-zero values per row
+    highestCol = rowSums(tPieces != 0) 
+    colCounts  = table(highestCol)
+    # only alter the weights when all columns are participating
+    if(length(colCounts) == m) { 
+      names(colCounts) <- colnames(tPieces)
+      nobs       = sum(colCounts)
+      ncols      = length(colCounts)
+      colWeights = (nobs/ncols) / colCounts
+      #print(colWeights)
+      #print(cp)
+      #print(colCounts)
+      if(colWeights[1] < 1) { # only re-weight if it improves cooling estimate
+        df$w = colWeights[highestCol]
+      }
+    }
+  }
+  colSums(tPieces != 0)
   df = cbind(df,tPieces) # add the columns from the matrix to the df
   # define regression formula that uses the piecewise pieces
   f_0  = 'kw ~ tout'
   f_cp = paste('kw ~',paste(colnames(tPieces),collapse=" + ",sep=''))
-  fit_0  = lm(f_0, df)
-  fit_cp = lm(f_cp,df)
+  fit_0  = lm(f_0, df,weights=w)
+  fit_cp = lm(f_cp,df,weights=w)
   s_cp = summary(fit_cp)
   s_0  = summary(fit_0)
   coefficients = s_cp$coefficients[,'Estimate'] # regression model coefficients
   pvals        = s_cp$coefficients[,'Pr(>|t|)'] # coefficient pvalues
+  # if one of our partitions has no data, we need to fill in the missing columns 
+  # in the returned data to ensure that sapply comes back as a matrix, not a list
+  if(any(colSums(tPieces != 0)==0)) { 
+    missingCols = setdiff(colnames(tPieces),names(coefficients))
+    coefficients[missingCols] = NA
+    pvals[missingCols]        = NA
+  }
   names(pvals) = paste('pval',names(pvals))
   
   # weights to enforce a bayesian idea that higher temps should matter more

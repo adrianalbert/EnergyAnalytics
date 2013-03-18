@@ -14,7 +14,8 @@ source(file.path(getwd(),'dbUtil.R'))            # generic database support func
 source(file.path(getwd(),'DataClasses.R'))       # Object code for getting meter and weather data 
 source(file.path(getwd(),'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
 source(file.path(getwd(),'basicFeatures.R'))     # typical max, min, mean, range
-source(file.path(getwd(),'regressionSupport.R')) # mostly regressor manipulation
+source(file.path(getwd(),'regressionSupport.R')) # mostly regressor manipulation 
+source(file.path(getwd(),'solaRUtil.R'))         # solar geometry
 source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
 
 library(reshape)
@@ -93,8 +94,9 @@ runModelsByZip = function(cfg) {
 summarizeModel = function(m,df,models,nm,id,zip,subnm=NULL,fold=FALSE,formula='',subset='') {
   #lm(m,subset=m$y > 1)
   s <- as.list(summary(m, correlation=FALSE)) # generic list is more friendly for adding to a data.frame
-  s$hist = hist(s$residuals,breaks=100,plot=F)
   class(s) <- 'list'         # make sure the class is no longer summary.lm
+  s$hist          <- hist(s$residuals,breaks=100,plot=F)
+  s$kurtosis      <- kurtosis(s$residuals)
   s$call          <- c()     # lm model call (depends on variable scope and can be junk)
   s$terms         <- c()     # lm model terms (depends on variable scope and can be junk)
   s$residuals     <- c()     # residuals scaled by weights assigned to the model
@@ -158,7 +160,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
       r <- tryCatch( {
         issues = validateRes(r)
         savePlot = FALSE
-        if(length(issues)>1) # all issues will return with an id set, so > 1 is a problem
+        if(length(issues)>1) # all issues will return with an id, so > 1 indicates a problem
         { 
           invalid_ids <- rbind.fill(invalid_ids,issues)
           print(paste('Bad or insufficient data:',paste(colnames(issues),collapse=', ')))
@@ -185,6 +187,10 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
         # hourly regressions
         if(cfg$RUN_HOURLY_MODELS) {
           df = regressorDF(r,norm=FALSE) # see also regressorDFAggregated
+          #sg = solarGeom(r)
+          #df$solar = sg$zone
+          #df$day   = (sg$zone != 'night') * 1
+          
           models = cfg$models.hourly
           if (FALSE) {
             # add special data to the data frame: piecewise tout data
@@ -196,13 +202,24 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             models$toutPIECES = list(formula=piecesf,subset=list(all="TRUE",summer=cfg$subset$summer))
           }
           if (cfg$RUN_PIECES_24) {
+            lagVal = max(basics[grep('^lag[0-9]+',names(basics))])
+            lagHrs = which.max(basics[grep('^lag[0-9]+',names(basics))]) - 1 # fisrt cl is 0 lag
+            if(lagVal < 0.2) lagHrs = 0
+            print(paste('lag by',lagHrs,lagVal))
             # add special data to the data frame: piecewise tout data
             #toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
-            toutPIECES = regressor.piecewise(r$tout,c(55,65,75))
-            df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
+            toutL = lag(r$tout,lagHrs)
+            toutPIECES = regressor.piecewise(toutL,c(55,65,75))
+            lagDiff = toutL - r$tout
+            df = cbind(df,toutPIECES,lagDiff) # add the columns with names from the matrix to the df
+            
             # define regression formula that uses the piecewise pieces
-            piecesf24 = paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ HOD - 1')
-            models$toutPIECES24 = list(formula=piecesf24,subset=list(all="TRUE"))          
+            piecesf24     = paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ HOD - 1')
+            piecesf24diff = paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ lagDiff + HOD - 1')
+            #piecesf24Z = paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ day:solar + HOD - 1')
+            models$toutPIECES24L   = list(formula=piecesf24,subset=list(all="TRUE"))
+            models$toutPIECES24LD  = list(formula=piecesf24diff,subset=list(all="TRUE"))
+            #models$toutPIECES24Z = list(formula=piecesf24Z,subset=list(all="TRUE"))   
           }
           if(cfg$RUN_CP_24 ) {
             hourlyFits=hourlyChangePoint(df,as.list(1:24),trange=c(50:(max(df$tout,rm.na=T)-5)))
@@ -220,8 +237,10 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
               hourlyCP = cbind(hourlyCP,splitTout)
             }
             df = cbind(df,hourlyCP) # add the columns with names from the matrix to the df
-            hourlyCPf = paste('kw ~',paste(colnames(hourlyCP),collapse=" + ",sep=''),'+ HOD - 1')
+            hourlyCPf  = paste('kw ~',paste(colnames(hourlyCP),collapse=" + ",sep=''),'+ HOD - 1')
+            hourlyCPfZ = paste('kw ~',paste(colnames(hourlyCP),collapse=" + ",sep=''),'+ day:solar + HOD - 1')
             models$hourlyCP = list(formula=hourlyCPf,subset=list(all="TRUE"))
+            models$hourlyCPZ = list(formula=hourlyCPfZ,subset=list(all="TRUE"))
             changePoints = rbind(changePoints,list(id=r$id,changePoints=hourlyFits))
             
           }

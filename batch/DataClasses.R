@@ -8,7 +8,7 @@
 require(RMySQL)
 library(RColorBrewer)
 
-# utility function that 
+# utility function that returns a list of all the zipcodes in the data set
 db.getZips = function() {
   query    <- paste("select distinct zip5 from",conf.weatherTable(),'order by zip5')
   return(run.query(query,conf.weatherDB())[[1]])

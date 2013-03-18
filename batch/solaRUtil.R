@@ -1,4 +1,5 @@
-require('solaR')
+require('solaR')    # this changes the timezone to UTC!!!!
+Sys.setenv(tz='America/Los_Angeles') # change it back
 require('ggplot2')
 require(gridExtra)
 
@@ -27,7 +28,8 @@ solarGeom = function(resData,lat=37.87,azimBreaks=seq(0,360,45),elevBreaks=c(45,
   # calcSol computes the angles which describe the intradaily apparent movement of the Sun from the Earth
   # solObj is an S4 class with lots of solar info
   # recall that 'slots' in S4 objects are accessed via the @ operator
-  solObj = calcSol(lat,sample="hour",BTi=resData$dates,EoT=T,keep.night=T)
+  # suppressWarnings because zoo complains about duplicate dates caused by daylight savings time
+  solObj = suppressWarnings(calcSol(lat,sample="hour",BTi=resData$dates,EoT=T,keep.night=T))
   solarGeom = as.data.frameI(solObj)
   # the solI slot is a zoo object and we want the time stamps
   solarGeom$dates     = time(solObj@solI)
@@ -44,7 +46,7 @@ solarGeom = function(resData,lat=37.87,azimBreaks=seq(0,360,45),elevBreaks=c(45,
   return(solarGeom)
 }
 
-plot.solarGeom = function(solarGeom,azimBreaks=seq(0,360,45),elevBreaks=c(45,0)) {
+plot.solarGeom = function(solarGeom,azimBreaks=seq(0,360,45),elevBreaks=c(45,0),color=NULL) {
   g = ggplot(data.frame(azimuth=c(0,360),elevation=rep(max(elevBreaks),2)),aes(y=elevation,x=azimuth)) + 
               geom_polygon(color="grey",size=1,fill=NA) + 
               coord_polar(start=pi) + 
@@ -66,22 +68,28 @@ plot.solarGeom = function(solarGeom,azimBreaks=seq(0,360,45),elevBreaks=c(45,0))
     }
   }
   cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-  g = g + geom_point(data=solarGeom,aes(x=azimuth,y=elevation,color=zone)) + scale_color_brewer(palette='YlGnBu') #color=hour(dates) )) color=zone))
+
+  if (is.null(color)) {
+    g = g + geom_point(data=solarGeom,aes(x=azimuth,y=elevation)) 
+  }
+  else if (color == 'zone') {
+    g = g + geom_point(data=solarGeom,aes(x=azimuth,y=elevation,color=zone)) +
+            scale_color_brewer(palette='YlGnBu') #color=hour(dates) )) color=zone))
+
+  }
+  else if(color == 'hour') {
+    g = g + geom_point(data=solarGeom,aes(x=azimuth,y=elevation,color=hour(dates))) +
+      scale_colour_gradientn(colours=cbPalette) #color=hour(dates) )) color=zone))
+  }
+  else {
+    g = g + geom_point(data=solarGeom,aes(x=azimuth,y=elevation)) 
+  }
   grid.arrange(g)
   #return(g)
 }
 
 
 # View of whole path, including below horizon 
-# ggplot(solarGeom,aes(x=azimuth,y=elevation)) + 
-#         #geom_point(aes(color=factor(aman))) + 
-#         #scale_colour_manual(values=c('grey','black')) + 
-#         geom_point(aes(color=factor(month))) + 
-#         coord_polar() + 
-#         scale_x_continuous(breaks=c(seq(0,330,by=30)),limits=c(0,360)) + 
-#         scale_y_continuous(breaks=c(seq(-90,90,by=15))) + 
-#         geom_line(data=horizon, colour="gray",size=2) + 
-#         labs(title="Annual solar path for each of 24 hours of the day")
-#          # + theme(panel.grid.minor.y = element_line(colour="white", size=0.5), panel.grid.major.y = element_line(colour="blue", size=0.5))
-
-  
+r = ResDataClass(553991005,93304)
+sg = solarGeom(r)
+plot(sg,color='junk')
