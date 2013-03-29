@@ -2,7 +2,7 @@ require(RMySQL)
 
 # utility functions that centralize config from one database sever to the next
 conf.dbCon = function(db='pge_res') {
-  con = dbConnect(MySQL(), default.file=paste(baseDir,'DB_connection.cfg',sep=''), dbname=db)
+  con = dbConnect(MySQL(), default.file=paste(getwd(),'/','DB_connection.cfg',sep=''), dbname=db)
 }
 
 # utility fn to clear all active variables - 
