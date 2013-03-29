@@ -20,6 +20,11 @@ db.getSPs = function(zip=NA) {
   return(run.query(query,conf.meterDB())[[1]])
 }
 
+db.getZipCounts = function() { 
+  query = 'SELECT zip5, COUNT(DISTINCT sp_id) as count FROM pge_res_final GROUP BY zip5'
+  return(run.query(query,conf.meterDB()))
+}
+
 db.getAllData = function(zip=NULL) {
   query = paste(
     'SELECT 
@@ -116,6 +121,7 @@ WeatherClass = function(zipcode){
     }
     return(a)
   }
+  
   #obj <- list2env(obj)
   class(obj) = "WeatherClass"
   return(obj)
@@ -147,8 +153,12 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
   # flatten into a vector and re-convert into date objects
   dates = as.POSIXlt(as.vector(dateMat),origin='1970-01-01')
   
-  if (is.null(weather)) weather = WeatherClass(zipcode) # todo: pass in the dates to interpolate ,dates)
+  if (is.null(weather)) weather = WeatherClass(zipcode)
   tout = weather$resample(dates,'tout')
+  pout = weather$resample(dates,'pout')
+  rain = weather$resample(dates,'rain')
+  dp   = weather$resample(dates,'dp')
+  rh   = weather$rh(tout,dp)
   
   # TODO: clear out obviously bad readings
   #keepers   = which(kw > 0)
@@ -162,6 +172,10 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
     zipcode = zipcode,
     weather = weather,
     tout = tout,
+    pout = pout,
+    rain = rain,
+    dp   = dp,
+    rh   = rh,
     toutMat = matrix(tout,ncol=24,byrow=TRUE),
     get = function(x) obj[[x]],
     # Not sure why <<- is used here
@@ -202,6 +216,12 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
   obj$matchDates = function(newDates) {
     a = approx(obj$dates, obj$tout, newDates, method="linear" )[[2]]
     return(a)
+  }
+
+  obj$daily = function(var='kw',fun=mean) {
+    numDays = dim(obj$kwMat)[1]
+    daily = sapply(1:numDays, function(x) fun(obj[[var]][(24*(x-1)+1):(24*x)],na.rm=T))
+    return(daily)
   }
   
   #obj <- list2env(obj)
@@ -267,7 +287,15 @@ quickEst = function(cp,const,lower,upper,tlim=c(0,100)) {
   return(cbind(x,y))
 }
 
-plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NA) {
+save.png.plot = function(r,path) {
+  png(path)
+  colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
+  plot(  r, colorMap=colorMap, 
+         main=paste(r$zip, r$id, paste(colnames(issues),collapse=', ')) )
+  dev.off()
+}
+
+plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NULL) {
   # needs a list, called r with:
   # r$id unique identifier (just for the title)
   # r$zip zipcode for the title
@@ -282,7 +310,7 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NA) 
     par( mfrow=c(2,2), oma=c(2,0,3,0),mar=c(2,2,2,2))# Room for the title
     #plot(r$kw,xlab='Date',ylab='kWh/h',main='Raw usage')
     
-    image(t(as.matrix(r$kwMat)),col=colorMap,axes = FALSE,main='kW')
+    image(t(as.matrix(r$kwMat)),col=colorMap,axes=F,main='kW')
     axis(1, at = seq(0, 1, by = 1/6),labels=0:6 * 4,mgp=c(1,0,0),tcl=0.5)
     axis(2, at = seq(1,0, by = -1/15),labels=format(r$days[seq(1/16, 1, by = 1/16) * length(r$days)],'%m.%d'),las=1,mgp=c(1,0,0),tcl=0.5)
     
@@ -290,16 +318,36 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NA) 
     #hmap(,yvals=r$days,colorMap=colorMap,log=TRUE,main='Heatmap',mgp=c(1,0,0),tcl=0.5) # axis label on row 1, axis and ticks on 0, with ticks facing in
     end = min(length(r$kw),240)
     plot(r$dates[1:end],r$kw[1:end],type='l',xlab='Date',ylab='kWh/h',main='Raw usage zoom',mgp=c(1,0,0),tcl=0.5)
-    plot(r$days,rowMeans(r$toutMat),col='grey',axes=F,ylab='',xlab='',,mgp=c(1,0,0),tcl=0.5)
-    axis(4, pretty(c(0, 1.1*rowMeans(r$toutMat)),n=5), col='grey',col.axis='grey',mgp=c(1,0,0),tcl=0.5)
+    toutMeans = rowMeans(r$toutMat)
+    kWh       = rowSums(r$kwMat)
+    plot(r$days,toutMeans,col='grey',axes=F,ylab='',xlab='',,mgp=c(1,0,0),tcl=0.5)
+    axis(4, pretty(c(0, 1.1*toutMeans),n=5), col='grey',col.axis='grey',mgp=c(1,0,0),tcl=0.5)
     mtext("T out (F)", side=4, line=1, cex=0.9, col='grey')
     par(new=T) # plot the next plot call on the same figure as previous
-    plot(r$days,rowSums(r$kwMat),ylab='kWh/day',xlab='Day',main='kWh/day',mgp=c(1,0,0),tcl=0.5)
+    plot(r$days,kWh,ylab='kWh/day',xlab='Day',main='kWh/day',mgp=c(1,0,0),tcl=0.5)
     
-    plot(rowMeans(r$toutMat),rowSums(r$kwMat),main='kWh/day vs mean outside temp (F)',
-         xlab='mean T (degs F)',ylab='kWh/day',mgp=c(1,0,0),tcl=0.5)
-    #par(op) # Leave the last plot
+    xlm = c(min(toutMeans,na.rm=TRUE), max(toutMeans,na.rm=TRUE))
+    ylm = c(min(kWh,  na.rm=TRUE), max(kWh,  na.rm=TRUE))
+    plot(toutMeans,rowSums(r$kwMat),main='kWh/day vs mean outside temp (F)',
+         xlab='mean T (degs F)',ylab='kWh/day',
+         xlim=xlm,ylim=ylm, # use a well defined set of ranges so they can be matched by any estimates below
+         mgp=c(1,0,0),tcl=0.5)
     mtext(main, line=0, font=2, cex=1.2,outer=TRUE)
+    if(length(estimates) > 0) {
+      #print(estimates)
+      par(new=T)
+      fit = estimates
+      color = 'blue'
+      if (fit['AIC_0'] < fit['AIC_cp']) color = 'gray'
+      if (fit['nullModelTest'] > 0.1)   color = 'red'
+      qe = quickEst(fit['cp'],fit['(Intercept)'],fit['lower'],fit['upper'],
+                  c(min(toutMeans,na.rm=T),max(toutMeans,na.rm=T)))
+      #print(qe[,1])
+      plot(qe[,1],qe[,2],
+           type='l',
+           xlim=xlm,ylim=ylm,
+           axes=F,lwd=2,col=color )
+    }
     par(new=F)
     par(op)
     #heatmap(as.matrix(r$kwMat),Rowv=NA,Colv=NA,labRow=NA,labCol=NA)

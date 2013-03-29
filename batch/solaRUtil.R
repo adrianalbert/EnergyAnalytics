@@ -88,8 +88,10 @@ plot.solarGeom = function(solarGeom,azimBreaks=seq(0,360,45),elevBreaks=c(45,0),
   #return(g)
 }
 
-
-# View of whole path, including below horizon 
-r = ResDataClass(553991005,93304)
-sg = solarGeom(r)
-plot(sg,color='junk')
+TEST=F
+if(TEST) {
+  # View of whole path, including below horizon 
+  r = ResDataClass(553991005,93304)
+  sg = solarGeom(r)
+  plot(sg,color='junk')
+}

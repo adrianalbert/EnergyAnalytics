@@ -14,22 +14,25 @@ if(Sys.info()['sysname'] == 'Windows' & Sys.info()['user'] == 'Sam') {
 }
 setwd(conf.basePath)
 source(file.path(getwd(),'resultAnalysis.R'))
+source(file.path(getwd(),'zipMap.R'))
 
-resultsDir = 'results_CP_solar' # real
-
-model  = 'toutTOD_WKND'
+resultsDir = 'results_daily_test' # real
 
 allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
             95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
             95202,93619,93614,93304,93701,95631,95726,95223,95666)
-summary = combineSummaries(allZips)
+summary = combineSummaries(allZips,resultType='summaries')
 
-zips=c('93304','93304_SG')
-zip='93304'
-summary = combineSummaries(zips)
+allZips = c(94923,94503,94574,94559)
+#comb = combineSummaries(allZips,resultType='d_summaries')
+combo = combine(allZips,resultType='features.basic',as.matrix)
+
+zipMeans = combine(allZips,resultType='features.basic',colMeans)
+
+zip='94923'
 #d_summary = modelResults$d_summary #combineSummaries(zips,'d_summaries')
 load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
-summary   = clean(modelResults$summaries)
+summary   = clean(modelResults$d_summaries)
 cp = modelResults$changePoints
 cpgrid = t(apply(cp,1,function(X) X[['changePoints']]['cp',]))
 changes = ksc(cpgrid,8)

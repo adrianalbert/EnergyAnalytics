@@ -5,9 +5,6 @@ require(reshape2)
 require(plyr)
 require(scales) # for muted
 
-resultsDir = 'results_CP_solar' # real
-#resultsDir = 'test_results' # sub -sample for testing
-
 # run 'source' on all includes to load them 
 source(file.path(getwd(),'localConf.R'))         # local computer specific configuration
 source(file.path(getwd(),'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
@@ -152,8 +149,6 @@ Mode <- function(x) {
   ux[which.max(tabulate(match(x, ux)))]
 }
 
-
-
 stderrs = function(a,model.name,subset.name=NA) {
   return(cf(a,model.name,subset.name,col='Std. Error'))
 }
@@ -166,25 +161,36 @@ pvals = function(a,model.name,subset.name=NA) {
   return(cf(a,model.name,subset.name,col='Pr(>|t|)'))
 }
 
-cf = function(a,model.name,subset.name=NA,col='Estimate') {
-  if (is.na(subset.name)) { 
-    keepers = (a$model.name==model.name)
+cf = function(a,model.name=NA,subset.name=NA,col='Estimate') {
+  sn = T
+  mn = T
+  out = list()
+  if (! is.na(model.name)) { 
+    mn = (a$model.name==model.name)
   }
-  else {
-    keepers = (a$model.name==model.name & a$subset.name==subset.name)
+  if (! is.na(subset.name)) { 
+    sn = (a$subset.name==subset.name)
   }
+  keepers = mn & sn
   b = subset(a,keepers)
-  allCols = data.frame(id=NA,t(b[[1,'contribution']])) # df with cols for all model params (including those that were aliased)
-  b$id = as.numeric(b$id)                              # if this is not numeric, the whole rbinded matrix is character and the data frame has factors instead of numeric cols
-  b$idx = 1:length(b$id)                               # setup ply to work on one row at a time
-  c = dlply(b,.(idx),function(x) c(id=x$id,x$coefficients[[1]][,col])) # retrieve the named column from the coefficients matrix
-  c$idx = c() # drop the index column
-  g = as.numeric(lapply(c,length)) # calculate coefficient list lengths...
-  c[g != Mode(g)] = c()            # remove the abnormal lengths caused by missing data
-  h = as.numeric(lapply(c,function(x) any(x[-1] != 0))) # check for blank rows
-  c[!h] = c() #remove rows of all zeros
-  mergedDF = rbind.fill(allCols,data.frame(do.call(rbind,c))) # add missing cols using rbind.fill
-  return(mergedDF[-1,]) # return the coefficient data, without the first extra row added to get the extra cols from rbind.fill
+  b$id = as.numeric(b$id) # if this is not numeric, the whole rbinded matrix is character and the data frame has factors instead of numeric cols
+  b$idx = 1:length(b$id)  # setup ply to work on one row at a time
+  for (model in unique(b$model.name)) {
+    print(model)
+    c = dlply(subset(b,model.name=model),.(idx),function(x) c(id=x$id,model.name=x$model.name,x$coefficients[[1]][,col])) # retrieve the named column from the coefficients matrix
+    out[model] = ldply(c,function(x) { data.frame(t(c(x))) })
+  }
+  return(out)
+  #c = dlply(b,.(idx),function(x) c(id=x$id,model.name=x$model.name,x$coefficients[[1]][,col])) # retrieve the named column from the coefficients matrix
+  #a = ldply(c,function(x) { data.frame(t(c(x))) })
+  #return(a)
+  #c$idx = c() # drop the index column
+  #g = as.numeric(lapply(c,length)) # calculate coefficient list lengths...
+  #c[g != Mode(g)] = c()            # remove the abnormal lengths caused by missing data
+  #h = as.numeric(lapply(c,function(x) any(x[-1] != 0))) # check for blank rows
+  #c[!h] = c() #remove rows of all zeros
+  #mergedDF = do.call(rbind.fill,c) # add missing cols using rbind.fill
+  #return(mergedDF) #[-1,]) # return the coefficient data, without the first extra row added to get the extra cols from rbind.fill
 }
 
 clean = function(a) {
@@ -237,6 +243,38 @@ c_summary = function(cvals,pvals,pmax=0.05,pattern='^HODWKWK') {
   par(mfrow=c(1,1))
 }
 
+combineSummaries = function(ziplist,resultType='summaries') {
+  summaries = c()
+  for (zip in ziplist) { 
+    print(paste('loading data for',zip))
+    load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
+    summaries = rbind(summaries,clean(modelResults[[resultType]]))
+    rm(modelResults)
+  }
+  return(summaries)
+}
+
+combine = function(ziplist,resultType='summaries',fun=function(x) { x }) {
+  result = c()
+  for (zip in ziplist) { 
+    print(paste('loading data for',zip))
+    load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
+    new = fun(modelResults[[resultType]])
+    new = cbind(t(new),zip5=zip)
+    print(new)
+    rownames(new) <- c()
+    result = rbind(result,new)
+    rm(modelResults)
+  }
+  return(result)
+}
+
+
+addZipData = function(summaries) {
+  zipData = db.getZipData()
+  summaries$zip = as.numeric(summaries$zip)
+  return(merge(summaries,zipData,by.x='zip',by.y='zip5'))
+}
 
 quad_chart = function(d,title) {
   
@@ -265,18 +303,3 @@ quad_chart = function(d,title) {
   grid.arrange(g1,g2,g3,g4,nrow=2, as.table=FALSE, main=title)
 }
 
-combineSummaries = function(ziplist,resultType='summaries') {
-  summaries = c()
-  for (zip in ziplist) { 
-    print(paste('loading data for',zip))
-    load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
-    summaries = rbind.fill(summaries,clean(modelResults$summaries))
-  }
-  return(summaries)
-}
-
-addZipData = function(summaries) {
-  zipData = db.getZipData()
-  summaries$zip = as.numeric(summaries$zip)
-  return(merge(summaries,zipData,by.x='zip',by.y='zip5'))
-}

@@ -30,16 +30,15 @@ library(RColorBrewer)
 #library('cvTools') # cross validation tools
 
 cfg = list()
-cfg$outDir = 'results_CP_solar'
+cfg$outDir = 'results_daily_test'
 
-cfg$PLOT_INVALID = FALSE # create png plots for residences that fail validaiton
-cfg$PLOT_VALID   = FALSE  # create png plots for residences that pass validaiton
+cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
+cfg$PLOT_VALID   = F  # create png plots for residences that pass validaiton
 
-cfg$RUN_HOURLY_MODELS     = TRUE  # run hourly models
-cfg$RUN_AGGREGATED_MODELS = FALSE # run daily and monthly summary data models (moderate time consuming)
-cfg$RUN_STEP_SELECTION    = FALSE # run nested model selection algorithm (time consuming)
-cfg$RUN_PIECES_24         = TRUE # run piecewise model for every HOD (within hourly)
-cfg$RUN_CP_24             = FALSE # fit changepoint for every HOD (within hourly)
+cfg$RUN_HOURLY_MODELS  = F  # run hourly models
+cfg$RUN_DAILY_MODELS   = T  # run daily summary data models (moderate time consuming)
+cfg$RUN_MONTHLY_MODELS = F  # run monthly summary data models (moderate time consuming)
+cfg$RUN_STEP_SELECTION = F  # run nested model selection algorithm (time consuming)
 
 # generate the string values that will identify the desired subset of a data.frame
 # using the command subset(df,subset=str,...)
@@ -56,20 +55,24 @@ cfg$subset$summer_day=paste(cfg$subset$summer,'&',cfg$subset$day)
 # to get formula from string, call as.formula(str)
 # to get a string repr of a formula object, call deparse(fmla)
 cfg$models.hourly = list(
-  #MOY         = "kw ~ tout + MOY",             
-  #DOW         = "kw ~ tout + DOW",
-  #DOW_HOD65    = list(formula="kw ~ tout65 + DOW + HOD",subset=list(all="TRUE",summer=cfg$subset$summer)),
-  #HOW65        = list(formula="kw ~ tout65 + HOW",subset=list(all="TRUE",summer=cfg$subset$summer)),
-  #wea          = list(formula="kw ~ tout   + pout + rh + HOW + MOY",subset=list(all="TRUE",summer=cfg$subset$summer)), 
-  #wea65        = list(formula="kw ~ tout65 + pout + rh + HOW + MOY",subset=list(all="TRUE")),
-  #HOW         = "kw ~ tout + HOW",
-  #toutTOD_WKND = list(formula="kw ~ 0 + tout65:HODWK + HODWK",subset=list(all="TRUE")),
-  #toutTOD      = list(formula="kw ~ 0 + tout65:HOD + HOD",subset=list(all="TRUE")),
-  #toutTOD_d1   = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout_d1 + HOD",subset=list(summer=cfg$subset$summer)),
-  #toutTOD_65d1 = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_d1 + HOD",subset=list(summer=cfg$subset$summer)),
-  #toutTOD_l1   = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l1 + HOD",subset=list(summer=cfg$subset$summer)),
-  #toutTOD_l3   = list(formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l3 + HOD",subset=list(all="TRUE"))
-  #toutTOD_min = "kw_min ~ 0 + tout:HOD + HOW" # no intercept
+  #MOY         = ModelDescriptor(name='MOY',"kw ~ tout + MOY",             
+  #DOW         = ModelDescriptor(name='DOW',"kw ~ tout + DOW",
+  #DOW_HOD65    = ModelDescriptor(name='DOW_HOD65',formula="kw ~ tout65 + DOW + HOD",subset=list(all="TRUE",summer=cfg$subset$summer)),
+  #HOW65        = ModelDescriptor(name='HOW65',formula="kw ~ tout65 + HOW",subset=list(all="TRUE",summer=cfg$subset$summer)),
+  lagPieces    = DescriptorGenerator(name='toutPiecesL',genImpl=toutPieces24LagGenerator,subset=list(all="TRUE")),
+  maPieces     = DescriptorGenerator(name='toutPiecesMA',genImpl=toutPieces24MAGenerator,subset=list(all="TRUE")),
+  pieces       = DescriptorGenerator(name='toutPieces',genImpl=toutPieces24Generator,subset=list(all="TRUE")),
+  lag          = DescriptorGenerator(name='lag',genImpl=lagGenerator,subset=list(all="TRUE"))
+  #wea          = ModelDescriptor(name='wea',formula="kw ~ tout   + pout + rh + HOW + MOY",subset=list(all="TRUE",summer=cfg$subset$summer)), 
+  #wea65        = ModelDescriptor(name='wea65',formula="kw ~ tout65 + pout + rh + HOW + MOY",subset=list(all="TRUE")),
+  #HOW          = ModelDescriptor(name='HOW',"kw ~ tout + HOW")
+  #toutTOD_WKND = ModelDescriptor(name='toutTOD_WKND',formula="kw ~ 0 + tout65:HODWK + HODWK",subset=list(all="TRUE"))
+  #toutTOD      = ModelDescriptor(name='toutTOD',formula="kw ~ 0 + tout65:HOD + HOD",subset=list(all="TRUE")),
+  #toutTOD_d1   = ModelDescriptor(name='toutTOD_d1',formula="kw ~ 0 + tout65:HOD + pout + rh + tout_d1 + HOD",subset=list(summer=cfg$subset$summer)),
+  #toutTOD_65d1 = ModelDescriptor(name='toutTOD_65d1',formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_d1 + HOD",subset=list(summer=cfg$subset$summer)),
+  #toutTOD_l1   = ModelDescriptor(name='toutTOD_l1',formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l1 + HOD",subset=list(summer=cfg$subset$summer)),
+  #toutTOD_l3   = ModelDescriptor(name='toutTOD_l3',formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l3 + HOD",subset=list(all="TRUE"))
+  #toutTOD_min = ModelDescriptor(name='toutTOD_min',"kw_min ~ 0 + tout:HOD + HOW" # no intercept
 )
 
 # todo: integration vacation days into regression
@@ -80,9 +83,11 @@ cfg$models.daily = list(
   tout_mean_WKND = "kwh ~ tout.mean + WKND",
   #tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
   tout_max       = "kwh ~ tout.max  + DOW",
+  kitchen        = "kwh ~ tout.max + tout.min + tout.mean + pout.mean + DOW + vac",
   #tout_CDD       = "kwh ~ CDD + HDD + DOW",
   tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND",
-  wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac"
+  wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
+  dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE"))
 )
 
 cfg$models.monthly = list(
@@ -91,8 +96,8 @@ cfg$models.monthly = list(
   #CDD_HDD    = "kwh ~ HDD + CDD"
 )
 
-cfg$triggerZip=93304 #NULL # default to NULL
-cfg$truncateAt=-1 #-1 # default to -1
+cfg$triggerZip=NULL # default to NULL
+cfg$truncateAt=-1 # default to -1
 
 tic('batchRun')
 
@@ -107,17 +112,20 @@ if (length(args) > 0) {
   cfg$allZips  <- db.getZips()
 }
 # bakersfield, oakland
-cfg$allZips = c(94610,93304)
+#cfg$allZips = c(94610,93304)
 
-#cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
-#               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
-#               95202,93619,93614,93304,93701,95631,95726,95223,95666)
+cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
+               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
+               95202,93619,93614,93304,93701,95631,95726,95223,95666)
 
-print('Beginning batch run')
-runResult = runModelsByZip(cfg)
-summarizeRun(runResult,listFailures=F)
-
-
+TEST_SINGLE = F
+if(TEST_SINGLE) {
+  testModelRun(cfg)
+} else {
+  print('Beginning batch run')
+  runResult = runModelsByZip(cfg)
+  summarizeRun(runResult,listFailures=F)
+}
 
 plot.modelResults = function(modelResults,vars=NULL,...) {
   op <- par(no.readonly = TRUE)
@@ -138,15 +146,22 @@ plot.modelResults = function(modelResults,vars=NULL,...) {
   par(op)
 }
 
-
 if(F) {
   zip = cfg$allZips[2]
   load(file.path(getwd(),cfg$outDir,paste(zip,'_modelResults.RData',sep='')))
   print(names(modelResults))
   plot(modelResults)
   print(modelResults$summaries[1,]$coefficients)
-
-
+  plot(modelResults$others$toutPiecesMA[[1,'data']]$maCorrs) # correlations for moving averages
+  plot(modelResults$others$toutPiecesL[[1,'data']]$lagCorrs) # correlations for lags
+  # matrix of values
+  a = t(apply(modelResults$others$toutPiecesMA,1,function(x) c(x[['id']][[1]],x[['data']]$maCorrs)))
+  a = cbind(a[,1],a[,-1]/apply(abs(a[,-1]),1,max)) # divide through by the max corr value
+  colnames(a) <- c('id',paste('maCorr_H',1:(dim(a)[2]-1),sep=''))
+  adf = data.frame(a)
+  am = melt(adf,id.vars=c('id'))
+  ggplot(am,aes(x=variable,y=value)) + geom_line(aes(group=id),alpha=0.1)
+  
   r = ResDataClass(820735863,94610);  plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # heat, no cooling
   r = ResDataClass(553991005,93304);  plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # very clear cooling 24x7
   r = ResDataClass(554622151,93304);  plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # very clear cooling possible timed setback

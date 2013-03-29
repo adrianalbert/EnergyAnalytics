@@ -1,3 +1,377 @@
+
+# Model Descriptor and related classes ------------------------------------
+#
+# Model Descriptors specify all the information required to run one or more 
+# regression (or other) models and implement a 'run' method that runs the 
+# model using data from the ResDataClass instance and returns its resutls
+# in a well specified format, as implemented in summarizeModel.
+ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,fold=F){
+  if (is.null(preRun)){ preRun = function(r,df) { return( c()) } }
+  if (is.null(subset)){ subset     = list(all="TRUE")                }
+  obj = list (
+    name     = name,
+    formula  = formula,
+    subset   = subset,
+    preRun   = preRun,
+    fold     = fold
+  )
+  
+  obj$run = function(resData,df=NULL) {
+    summaries <- c()
+    if(is.null(df)) { df = regressorDF(resData,norm=FALSE) }
+    #print(paste('[ModelDescriptor.run]',obj$name,'(',names(obj$subset),'):',obj$formula))
+    for(snm in names(obj$subset)) {
+      #print(snm)
+      df$sub = eval(parse(text=obj$subset[[snm]]),envir=df)  # load the subset flags into the data.frame
+      lm.result = lm(obj$formula,df,x=F,subset=sub==T) # run the lm on the subset indicated in the data frame
+      summary = 
+        summaries = rbind(summaries, summarizeModel(lm.result,
+                                                    df,
+                                                    modelDescriptor = obj,
+                                                    nm              = obj$name,
+                                                    id              = resData$id,
+                                                    zip             = resData$zip,
+                                                    subnm           = snm,
+                                                    fold            = obj$fold,
+                                                    formula         = obj$formula,
+                                                    subset          = obj$subset[[snm]]) )
+    }
+    return(list(summaries=summaries)) # using list so other functions can return additional data
+  }
+  
+  class(obj) = "ModelDescriptor"
+  return(obj)
+}
+
+# Custom function that runs when print(modelDescriptor) is called.
+print.ModelDescriptor = function(md) {
+  print(paste('ModelDescriptor',md$name))
+  print(paste('  Formula:',md$formula))
+  print(paste('  Subset:',md$subset,collapse=','))
+}
+
+# DescriptorGenerators generate model descriptors and additional regressor columns 
+# for custom model configurations. For example, the hourly change point model
+# returns a separate set of piecewise temerpature regressors for each hour.
+DescriptorGenerator = function(genImpl,name='',formula=NULL,subset=NULL,fold=F){
+  obj = list (
+    name     = name,
+    formula  = formula,
+    subset   = subset,
+    genImpl  = genImpl,
+    fold     = fold
+  )
+  
+  obj$run = function(r,df=NULL) {
+    summaries = c()
+    other     = c()
+    if(is.null(df)) { df = regressorDF(r,norm=FALSE) }
+    updates = obj$genImpl(r,df,name,formula,subset,fold)
+    if(! empty(updates$regressors)) { 
+      df = cbind(df,updates$regressors)
+    }
+    for(modelDescriptor in updates$descriptors) {
+      runOut    = modelDescriptor$run(r,df) # returns a list, with a named entry 'summaries'
+      summaries = rbind(summaries,runOut$summaries)
+    }
+    # the rest....
+    updates['regressors']  <- NULL
+    updates['descriptors'] <- NULL
+    other = rbind(other,data.frame(updates))
+    return(list(summaries=summaries,other=other))
+  }
+  class(obj) = "DescriptorGenerator"
+  return(obj)
+}
+
+# Custom print function that runs when print(descriptorGenerator) is called.
+print.DescriptorGenerator = function(dg) {
+  print(paste('DescriptorGenerator',dg$name))
+  print(paste('  Subset:',dg$subset,collapse=','))
+}
+
+# Custom Model Generators -------------------------------------------------
+#
+# these *Generator functions define custon data frame columns and ModelDescriptors for 
+# special case models.
+# Generators returns a list with members:
+# regressors: a data.frame (or compatible) containing additional required regressor columns
+# descriptors: a list of ModelDescriptor objects that specify a model formula and other 
+#              parameters required to run the custom model assuming data is drawn from
+#              the cbind() of the original data.frame df and the new regressors.
+# other named values: an arbitrary set of additional named fileds containing information 
+#              related to the custom process of outputs of the pre-processing.
+#              For example - the hourly change point model will return the change points
+#                            it is using.
+
+# lagGenerator calculates a single separate temperature coefficient for the range of lags specified.
+# It would need change point detection to fit data reasonably well.
+lagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,hrs=0:18) {
+  lagRegressors = apply(t(hrs),2,function(x) return(lag(df$tout,x))) # construct a regressor matrix with lagged columns
+  colnames(lagRegressors) <- paste('tout_L',hrs,sep='')
+  lagStr = paste('tout_L',hrs,sep='',collapse='+')
+  hourlyLags = paste('kw ~',lagStr,'+ HOD')
+  out = list( 
+              regressors   = lagRegressors,
+              descriptors  = list( hourlyLags=ModelDescriptor( 
+                                     name=paste(namePrefix,'hourlyLags', sep=''), 
+                                     formula=hourlyLags,
+                                     subset=subset,fold=fold)
+              )
+  )
+  return(out)
+}
+
+# geometricLagGenerator finds the best fit for a single parameter 'a' that determines geometric
+# decay for hourly lag terms in the form a^k for the kth lag. This form is consistent
+# with a simple physical model of heat transfer through a wall with resistance and 
+# capacitance.
+geometricLagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,hrs=18) {
+  # grid search for a geometric decay term beest fit such that the coeficient for the kth lag hour is a^k 
+  # this can be implemented as a single moving average outpit with weights a^k.
+  # wma(t) = Sum_{k=0}^hrs [ Tout(t-k) * a^k ]
+  # returns the r.squared value for a mode run with a geometric decay for lagged weights
+  modR2 = function(guess,df,hrs) {
+    weights = guess ** c(1:hrs)
+    weights = weights / sum(weights) # normalize
+    wma = ma(df$tout,hrs,weights)
+    pieces = regressor.piecewise(wma,c(55,65,75))
+    dfwma = cbind(df,wma,pieces)
+    #model = lm('kw ~ wma',dfwma) # very different results based on the model used
+    # it may be that the lagged Tout calc is incompatible with HOD intereactions (one assumes IID, the other does not)
+    model = lm(paste('kw ~',paste(colnames(pieces),collapse=" + ",sep=''),'+ HOD - 1'),dfwma)
+    return(summary(model)$r.squared)
+  }
+  # initialize a search over a = (0,1]
+  step = 0.05
+  guesses = seq(step,1,step) # a coefficients can't be zero
+  
+  fits = apply(t(guesses),2,modR2,df,hrs) # run modR2 for all guess values
+  bestGuess = guesses[which.max(fits)]    # choose the best one
+  #plot(guesses,fits) # see what the fit(a) looks like
+  print(paste('best guess for a:',bestGuess))
+  weights = bestGuess ** c(1:hrs)
+  weights = rep(1,hrs)
+  weights = weights / sum(weights) # normalize
+  wmaRegressor = as.matrix(ma(df$tout,hrs,weights))
+  colnames(wmaRegressor) <- c('ToutWeightedMA')
+  pieces = regressor.piecewise(wmaRegressor,c(55,65,75))
+  out = list(
+              regressors   = cbind(wmaRegressor,pieces),
+              fits         = fits,
+              descriptors  = list( 
+                   simple=ModelDescriptor( name=paste(namePrefix,'Simple', sep=''), 
+                                           formula=paste('kw ~ ToutWeightedMA'),
+                                           subset=subset,fold=fold),
+                   pieces=ModelDescriptor( name=paste(namePrefix,'Pieces24', sep=''), 
+                                           formula=paste('kw ~',paste(colnames(pieces),collapse=" + ",sep=''),'+ HOD - 1'),
+                                           subset=subset,fold=fold)
+              )      
+  )
+  return(out)
+}
+
+# cp24Generator calculates a separate temperature change point for every hour of the day.
+# It also includes terms that calculate sun sky position (aka solar geometry)
+cp24Generator = function(r,df,namePrefix,formula,subset=NULL,fold=F) {
+  #tout65     = pmax(0,tout-65) # TODO: should this be here?
+  hourlyFits=hourlyChangePoint(df,as.list(1:24),trange=c(50:(max(df$tout,rm.na=T)-5)))
+  cps = hourlyFits['cp',]
+  cps[hourlyFits['nullModelTest',] > 0.05] <- NA # if the cp model failed the f-test afgainst the no cp model, don't include it
+  splitToutList = alply(cps,.fun=piecewise.regressor,.margin=1,r$tout) # get a list of hourly piecewise splits for tout
+  # combine the list into a sensible set of regressors
+  hourlyCP = c() # hourly change point pieces
+  for (hr in 1:length(cps)) { # for every hour, get the piecewise regressors, select just the right hours, and combine with cbind
+    splitTout = splitToutList[[hr]]
+    if (dim(splitTout)[2] == 1) colnames(splitTout) <- c(paste('tout_',hr,sep='')) # no split made
+    if (dim(splitTout)[2] == 2) colnames(splitTout) <- paste(c('tout_lower_','tout_upper_'),hr,sep='') # 2 cols: abov eand below cp
+    hrFilter = df$HOD %in% paste('H',sprintf('%02i',(hr-1)),sep='')
+    splitTout[!hrFilter,] <- 0 # zero out values not matching the hour the change point comes from
+    hourlyCP = cbind(hourlyCP,splitTout)
+  }
+  sg = solarGeom(r)
+  newCols = cbind(sg$zone,((sg$zone != 'night') * 1))
+  colnames(newCols) <- c('solarZone','dayTime')
+  hourlyCPf  = paste('kw ~',paste(colnames(hourlyCP),collapse=" + ",sep=''),'+ HOD - 1')
+  hourlyCPfZ = paste('kw ~',paste(colnames(hourlyCP),collapse=" + ",sep=''),'+ dayTime:solarZone + HOD - 1')
+  changePoints = list(id=r$id,changePoints=hourlyFits)
+  out = list( 
+    regressors   = cbind(hourlyCP,newCols), # had to wait to add the newCols until after the formula generation above
+    changePoints = changePoints,
+    descriptors  = list ( hourlyCP  = ModelDescriptor( 
+                            name=paste(namePrefix,'hourlyCP', sep=''), 
+                            formula=hourlyCPf,
+                            subset=subset,fold=fold  ),
+                          hourlyCPZ = ModelDescriptor( 
+                            name=paste(namePrefix,'hourlyCPZ',sep=''),
+                            formula=hourlyCPfZ,
+                            subset=subset,fold=fold )  
+    )
+  )
+  return(out)
+}
+
+# toutPieces24Generator breaks temperature into piecewise segments, broken at 55,65,75F
+# and regresses these with different coefficients for every hour of the day.
+toutPieces24Generator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL,breaks=c(55,65,75)) {
+  toutPIECES = regressor.piecewise(r$tout,breaks)
+  out = list( 
+    regressors   = cbind(toutPIECES),
+    descriptors  = list( 
+      Pieces24=ModelDescriptor( # regression with the bet fit lag
+        name=paste(namePrefix,'24', sep=''), 
+        formula=paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ HOD - 1'), # TODO: maybe HOW?
+        subset=subset,fold=fold)
+    )
+  )
+  return(out)
+}
+
+# toutPieces24LagGenerator finds a single lag k such that it maximizes corr(kw,lag(tout,k))
+# Physical reality suggests that much of the heat energy entering a home comes via lags in
+# the thermal mass of the walls, roof, and ceilings.
+# This T* modified (lagged) temperature is then broken into piecewise segments for every
+# hour of the day.
+toutPieces24LagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL) {
+  # basic lagged correlations are calculated as a part of basicFeatures. Here we pull out the 
+  # single lag with the max correlation with kW demand
+  if(length(basics) == 0) { basics = basicFeatures(r) }
+  lagCorrs = basics[grep('^lag[0-9]+',names(basics))]
+  lagVal   = max(lagCorrs)
+  lagHrs   = which.max(lagCorrs) - 1 # fisrt cl is 0 lag
+  if(lagVal < 0.2) lagHrs = 0
+  print(paste('lag by',lagHrs,lagVal))
+  toutL = lag(r$tout,lagHrs)
+  lagDiff = toutL - r$tout
+  toutPIECESL = regressor.piecewise(toutL,c(55,65,75))
+  
+  # define regression formula that uses the piecewise pieces
+  piecesf24L     = paste('kw ~',paste(colnames(toutPIECESL),':HOD',collapse=" + ",sep=''),'+ HOD - 1')
+  piecesf24Ldiff = paste('kw ~',paste(colnames(toutPIECESL),':HOD',collapse=" + ",sep=''),'+ lagDiff + HOD - 1')
+  out = list( 
+              regressors   = cbind(toutPIECESL,lagDiff),
+              lagCorrs      = lagCorrs,
+              descriptors  = list( 
+                Pieces24L=ModelDescriptor( # regression with the bet fit lag
+                  name=paste(namePrefix,'24L', sep=''), 
+                  formula=piecesf24L,
+                  subset=subset,fold=fold),
+                Pieces24Ldiff=ModelDescriptor( # regression using the diff between the best fit lag and current temp
+                  name=paste(namePrefix,'24Ldiff', sep=''), 
+                  formula=piecesf24Ldiff,
+                  subset=subset,fold=fold)
+                
+              )
+  )
+  return(out)
+}
+
+# toutPieces24MAGenerator finds a single averaging width k such that it maximizes corr(kw,ma(tout,k))
+# where ma calculates a moving average using a window of width k. Physical reality suggests that 
+# much of the heat energy entering a home comes via lags in the thermal mass of the walls, roof, 
+# and ceilings. It is sensible to presume that the thermal storage allows for averaging over some 
+# characteristic time period.
+# This T* modified (averaged) temperature is then broken into piecewise segments for every
+# hour of the day.
+toutPieces24MAGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL) {
+  # basic moving average correlations are calculated as a part of basicFeatures. Here we pull out the 
+  # single averaging window with the max correlation with kW demand
+  if(length(basics) == 0) { basics = basicFeatures(r) }
+  maCorrs = basics[grep('^ma[0-9]+',names(basics))]
+  maVal = max(maCorrs)
+  maHrs = which.max(maCorrs)
+  if(maVal < 0.2) {
+    print('Not much correlation for ma(tout) so now what?')
+    maVal = 0 # if there isn't much correlation
+  }
+  print(paste('moving average width',maHrs,maVal))
+  toutMA = ma(r$tout,maHrs)
+  toutPIECESMA = regressor.piecewise(toutMA,c(55,65,75))
+  # define regression formula that uses the piecewise pieces
+  piecesf24MA  = paste('kw ~',paste(colnames(toutPIECESMA),collapse=" + ",sep=''),'+ HOD - 1')
+  out = list( 
+              regressors   = toutPIECESMA,
+              maCorrs      = maCorrs,
+              descriptors  = list( 
+                Pieces24MA=ModelDescriptor( # regression with the bet fit lag
+                  name=paste(namePrefix,'24MA', sep=''), 
+                  formula=piecesf24MA,
+                  subset=subset,fold=fold)                
+              )
+  )
+  return(out)
+}
+
+# toutDailyCP finds a single change point for a model of daily kWh usage.
+toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL) {
+  changeModel = toutChangePointFast(df=df,trange=c(50:85),reweight=F)
+  pieces = regressor.piecewise(df$tout.mean,changeModel[['cp']]) # get a list of daily piecewise splits for tout.mean
+  if (dim(pieces)[2] == 1) colnames(pieces) <- c('tout.mean') # no split made
+  if (dim(pieces)[2] == 2) colnames(pieces) <- c('tout.mean_lower','tout.mean_upper') # 2 cols: above and below cp
+  # define regression formula that uses the piecewise pieces
+  dailyCPf  = paste('kwh ~',paste(colnames(pieces),collapse=" + ",sep=''),'+ DOW - 1')
+  out = list( 
+    regressors   = pieces,
+    changeModel  = changeModel,
+    descriptors  = list( 
+      DailyCP=ModelDescriptor( # regression with the best fit daily change point
+        name=paste(namePrefix,'DailyCP', sep=''), 
+        formula=dailyCPf,
+        subset=subset,fold=fold)                
+    )
+  )
+  return(out)
+}
+
+# Helper functions --------------------------------------------------------
+
+# summarize regression model for future use
+# designed to be friendly to storing a lot of results in sequence
+# so it separates out the simple scalar metrics from the more complicated
+# coefficients
+summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,fold=FALSE,formula='',subset='') {
+  #lm(m,subset=m$y > 1)
+  basics = list()
+  basics$id          <- id
+  basics$zip         <- zip
+  basics$model.name  <- nm        # name of model run
+  basics$subset.name <- subnm     # name of sample subset criteria (i.e. "summer" or "afternoon" or "weekdays")
+  basics$formula     <- formula   # string of lm model call
+  basics$subset      <- subset    # string of lm subset argument
+  basics$logLik      <- logLik(m) # log liklihood for the model
+  basics$AIC         <- AIC(m)    # Akaike information criterion
+  
+  s <- c(basics,as.list(summary(m, correlation=FALSE))) # generic list is more friendly for adding to a data.frame
+  class(s) <- 'list'         # make sure the class is no longer summary.lm
+  s$hist          <- hist(s$residuals,breaks=100,plot=F)
+  s$kurtosis      <- kurtosis(s$residuals)
+  s$call          <- c()     # lm model call (depends on variable scope and can be junk)
+  s$terms         <- c()     # lm model terms (depends on variable scope and can be junk)
+  s$residuals     <- c()     # residuals scaled by weights assigned to the model
+  s$cov.unscaled  <- c()     # p x p matrix of (unscaled) covariances
+  #s$aliased      <- c()     # named logical vector showing if the original coefficients are aliased
+  s$na.action     <- c()     # get rid of extra meta info from the model
+  #s$sigma                   # the square root of the estimated variance of the random error
+  #s$adj.r.squared           # penalizing for higher p
+  #s$r.squared               # 'fraction of variance explained by the model'
+  #s$fstatistic              # 3-vector with the value of the F-statistic with its numerator and denominator degrees of freedom
+  #s$df                      # degs of freedom, vector (p,n-p,p*), the last being the number of non-aliased coefficients.
+  #s$coefficients            # a p x 4 matrix: cols = coefficient, standard error, t-stat, (two-sided) p-value
+  
+  # net contribution of each coefficient
+  # todo: there are a lot of negative numbers in this, so the contributions aren't directly interpretable
+  if("x" %in% names(m)) {
+    s$contribution <- colSums(t(m$coefficients * t(m$x)))
+  }
+  s$total        <- sum(predict(m))
+  
+  # k-fold prediction error
+  if (fold) {
+    s$fold.rmse <- kFold(df,modelDescriptor,nm,nfolds=5)
+  }
+  return(s)
+}
+
 # returns a matrix of length(sort(unique(membership))) columns, that is all 
 # zeros except for the regressor values that match the membership values 
 # corresponding to the column. This supports regression with separate 
@@ -52,17 +426,27 @@ lag   = function(v,n=1) {
   return(c(rep(NA,n),head(v,-n))) 
 } # prepend NAs and truncate to preserve length
 diff2 = function(v,n=1) { return(c(rep(NA,n),diff(v, n))) } # prepend NAs to preserve length of standard diff
-ma    = function(v,n=5) { filter(v,rep(1/n,n), sides=1)   } # calculate moving averages note adds n-1 NAs to beginning
+# calculate moving averages note adds n-1 NAs to beginning
+# as.numeric is called because filter returns 'ts' objects which apparently don't play well with cbind and data.frames
+ma    = function(v,n=5,weights=NULL) { 
+  if(length(weights) == 0) { weights = rep(1/n,n) } # standard moving window average
+  as.numeric(filter(v, weights, sides=1))
+} 
 
+# pre-compute holiday to save time below - the dates must be a superset of all potential dates.
+# holidaysNYSE is a function from the dateTime package
+hdays      = as.Date(holidayNYSE(2008:2011))
+
+# Given a ResDataClass instance, regressorDF returns a data.frame consisting of a standard set of 
+# regressor columns suitable for passin into a call to lm.
 regressorDF = function(residence,norm=FALSE,folds=1,rm.na=FALSE) {
-  WKND       = c('WK','ND')[(residence$dates$wday == 0 | residence$dates$wday == 6) * 1 + 1] # weekend indicator
+  wday       = residence$dates$wday
+  WKND       = c('WK','ND')[(wday == 0 | wday == 6) * 1 + 1] # weekend indicator
   dateDays   = as.Date(residence$dates)
-  # holidaysNYSE is a function from the dateTime package
-  hdays      = as.Date(holidayNYSE(min(residence$dates$year + 1900):max(residence$dates$year + 1900)))
   vac        = factor(dateDays %in% hdays)
   hStr       = paste('H',sprintf('%02i',residence$dates$hour),sep='')
   hwkndStr   = paste(WKND,hStr,sep='')
-  dStr       = paste('D',residence$dates$wday,sep='')
+  dStr       = paste('D',wday,sep='')
   mStr       = paste('M',residence$dates$mon,sep='')
   howStrs    = paste(dStr,hStr,sep='')
   MOY        = factor(mStr,levels=sort(unique(mStr)))         # month of year
@@ -70,54 +454,86 @@ regressorDF = function(residence,norm=FALSE,folds=1,rm.na=FALSE) {
   HOD        = factor(hStr,levels=sort(unique(hStr)))         # hour of day
   HODWK      = factor(hwkndStr,levels=sort(unique(hwkndStr))) # hour of day for weekdays and weekends
   HOW        = factor(howStrs,levels=sort(unique(howStrs))) # hour of week
-  tout       = residence$w('tout')
-  tout65     = pmax(0,tout-65)
+  tout       = residence$tout 
+  pout       = residence$pout
+  rain       = residence$rain
+  dp         = residence$dp
+  rh         = residence$rh
+  kw         = residence$kw
   
+  tout65     = pmax(0,tout-65) # todo: we know that 65 or any other fixed change point is a bad assumpiton
+  # but it is commonly made. Maybe we should eliminate this, but maybe we 
+  # should keep it to allow for comparisons with other models...
   
-  pout = residence$w('pout')
-  rain = residence$w('rain')
-  dp   = residence$w('dp')
-  rh   = residence$weather$rh(tout,dp)
-  # todo: we need the names of the toutPIECES to build the model
-  # but those names aren't returned form here
-  # add special data to the data frame: piecewise tout data
-  #toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
-  
-  kw = residence$kw
   if(norm) kw = residence$norm(kw)
-  kw_min = kw - quantile(kw,na.rm=TRUE,c(0.02)) # remove the min for regression w/o const term
+  
+  #kw_min = kw - quantile(kw,na.rm=TRUE,c(0.02)) # remove the min for regression w/o const term
   
   df = data.frame(
+    #tout65_l1 = lag(tout65,1),
+    #tout65_l3 = lag(tout65,3),
+    #tout_d1 = diff2(tout,1),
+    #tout65_d1 = diff2(tout,1)*(tout65 > 0),
+    #tout_d3 = diff2(tout,3),
+    #kw_min=kw_min,
     kw=kw,
-    kw_min=kw_min,
     tout=tout,
     tout65=tout65,
-    tout65_l1 = lag(tout65,1),
-    tout65_l3 = lag(tout65,3),
-    tout_d1 = diff2(tout,1),
-    tout65_d1 = diff2(tout,1)*(tout65 > 0),
-    #tout_d3 = diff2(tout,3),
     pout=pout,
     rain=rain,
     rh=rh,
     dates=residence$dates,
     vac=vac,
-    wday=residence$dates$wday,
     MOY,DOW,HOD,HODWK,HOW,WKND   )
   if(rm.na) { df = df[!rowSums(is.na(df)),] }
   #df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
   return(df)
 }
 
-regressorDFAggregated = function(residence,norm=TRUE,bp=65,rm.na=FALSE) {
+rDFA = function(residence,norm=F,bp=65,rm.na=FALSE) {
+  numDays = dim(residence$kwMat)[1]
+  dts  = residence$dates
+  days = dts[(0:(numDays-1)*24)+1]
+  df = data.frame(day = format(days,'%Y-%m-%d'))
+  df$mon   = days$mon
+  df$wday  = days$wday
+  df$DOW   = paste('D',days$wday,sep='')  # Su=0 ... Sa=6
+  df$DOW   = factor(df$DOW, levels=sort(unique(df$DOW)))
+  df$MOY   = format(days,'%y-%m')   # as.POSIXlt(df$dates)$mon
+  df$MOY   = factor(df$MOY, levels=sort(unique(df$MOY)))
+  df$WKND  = (df$wday == 0 | df$wday == 6) * 1 # weekend indicator
+  df$kwh   = residence$daily('kw',sum)
+  df$kw.mean = residence$daily('kw',mean)
+  df$kw.max = residence$daily('kw',max)
+  df$tout.mean = residence$daily('tout',mean)
+  df$tout.max  = residence$daily('tout',max)
+  df$tout.min  = residence$daily('tout',min) 
+  df$CDD = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout  > bp,na.rm=na.rm))
+  df$HDD = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout <= bp,na.rm=na.rm))
+  df$pout.mean = residence$daily('pout',mean)
+  df$pout.max  = residence$daily('pout',max)
+  df$pout.min  = residence$daily('pout',min) 
+  df$rh.mean = residence$daily('rh',mean)
+  df$rh.max  = residence$daily('rh',max)
+  df$rh.min  = residence$daily('rh',min)
+  # add vacation days flags
+  # holidaysNYSE is a function from the dateTime package
+  #hdays      = as.Date(holidayNYSE((days[1]$year+1900):(days[length(days)]$year+1900)))
+  df$vac  = factor(as.Date(days) %in% hdays)
+  return(df)
+}
+# Given a ResDataClass instance, returns a list of data.frames with rows aggregated to 1 per day,
+# typically via averaging. These can be used as input into daily or monthly regression models. 
+regressorDFAggregated = function(residence,norm=F,bp=65,rm.na=FALSE) {
   # uses melt and cast to reshape and aggregate data
   df = residence$df() # kw, tout, dates
   if(norm) df$kw_norm = residence$norm(df$kw)
   df$kw_min = df$kw - quantile(df$kw,na.rm=TRUE,c(0.02)) # remove the min for regression w/o const term
   
-  df$pout  = residence$w('pout')
-  dp       = residence$w('dp')
-  df$rh    = residence$weather$rh(df$tout,dp)
+  df$pout  = residence$pout
+  dp       = residence$dp
+  df$rh    = residence$rh
+  
   df$day   = format(df$dates,'%Y-%m-%d') # melt has a problem with dates
   df$wday  = as.POSIXlt(df$dates)$wday   # raw for subsetting Su=0 ... Sa=6
   df$DOW   = paste('D',df$wday,sep='')  # Su=0 ... Sa=6
@@ -130,10 +546,10 @@ regressorDFAggregated = function(residence,norm=TRUE,bp=65,rm.na=FALSE) {
   # melt and cast to reshape data into monthly and daily time averages
   dfm = melt(df,id.vars=c("day",'DOW','MOY','mon','wday','WKND'),measure.vars=c('kw','tout','pout','rh'),na.rm=TRUE)
   
-  monthly = cast(dfm,MOY + mon ~ variable,fun.aggregate=c(sum,mean,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)),subset= variable %in% c('kw','tout'))
-  colnames(monthly) <- c('MOY','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDD','HDD')
-  monthly <- subset(monthly, select = -c(junk1, junk2, junk3) )
-  
+  #monthly = cast(dfm,MOY + mon ~ variable,fun.aggregate=c(sum,mean,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)),subset= variable %in% c('kw','tout'))
+  #colnames(monthly) <- c('MOY','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDD','HDD')
+  #monthly <- subset(monthly, select = -c(junk1, junk2, junk3) )
+  monthly = c()
   daily = cast(dfm, MOY + day + DOW + mon + wday + WKND ~ variable,fun.aggregate=c(sum,mean,max,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)),subset= variable %in% c('kw','tout','pout','rh'))
   colnames(daily) <- c('MOY','day','DOW','mon','wday','WKND','kwh','kw.mean','kw.max','junk1','junk2','junk3','tout.mean','tout.max','CDD','HDD','junk4','pout.mean','pout.max','junk5','junk6','junk7','rh.mean','rh.max','junk8','junk9')
   daily <- subset(daily, select = grep("^junk", colnames(daily), invert=TRUE) )
@@ -162,6 +578,7 @@ regressorDFAggregated = function(residence,norm=TRUE,bp=65,rm.na=FALSE) {
   return(list(daily=daily,monthly=monthly))
 }
 
+# Change point helper functions -------------------------------------------
 hourlyChangePoint = function(df,hourBins=list(1:24),trange=c(50:80),fast=T,reweight=F) {
   # hourBins should be a list of n numeric arrays such that each member of the list 
   # is 1 or more hours of the day to use with the subset command to get 
@@ -179,10 +596,12 @@ hourlyChangePoint = function(df,hourBins=list(1:24),trange=c(50:80),fast=T,rewei
 
 # this runs all the models and chooss the minimum one.
 # likely waste of CPU on models past the min. See faster impl below
-toutChangePoint = function(hrs,df,trange=c(50:85),reweight=F) {
-  sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='') # pull out hrs subset (#0-23 in the df)
-  df = df[sub,]
-  df = df[!is.na(df$kw),]
+toutChangePoint = function(hrs=NULL,df,trange=c(50:85),reweight=F) {
+  if(! is.null(hrs)) {
+    sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='') # pull out hrs subset (#0-23 in the df)
+    df = df[sub,]
+    df = df[!is.na(df$kw),]
+  }
   steps = sapply(trange,FUN=evalCP,df,reweight)  # run all the models in the range
   #print(steps['SSR',])
   bestFit = steps[,which.min(steps['SSR',])] # find and return the min SSR in the range
@@ -192,11 +611,15 @@ toutChangePoint = function(hrs,df,trange=c(50:85),reweight=F) {
 # this takes advantage of the fact that for one change point, 
 # the SSR will be convex so it stops when the change in SSR is positive
 # note that each cp in trange could be a list c(40,50,60,70) or just a number
-toutChangePointFast = function(hrs,df,trange=c(50:85),reweight) {
-  sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='')  # define hrs subset (#0-23 in the df)
-  df = df[sub,]                                                # pull out the subset from the df
-  df = df[!is.na(df$kw),]                                      # no NA's. Breaks the algorithm
-  rng = floor(quantile(df$tout,c(0.1,0.90)))
+toutChangePointFast = function(hrs=NULL,df,trange=c(50:85),reweight) {
+  toutStr = 'tout'
+  if(! is.null(hrs)) {
+    sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='')  # define hrs subset (#0-23 in the df)
+    df = df[sub,]                                                # pull out the subset from the df
+    df = df[!is.na(df$kw),]                                      # no NA's. Breaks the algorithm
+  }
+  else { toutStr = 'tout.mean' }
+  rng = floor(quantile(df[[toutStr]],c(0.1,0.90)))
   trange = c( rng[1]:rng[2]  )
   prev = c(cp=-1,SSR=Inf)                                      # init the compare options
   warnMulti = F
@@ -224,7 +647,13 @@ toutChangePointFast = function(hrs,df,trange=c(50:85),reweight) {
 
 evalCP = function(cp,df,reweight=F) {
   out = list()
-  tPieces = regressor.piecewise(df$tout,c(cp))
+  lhs = 'kw'
+  toutStr = 'tout'
+  if(! is.null(df$kwh)) { 
+    lhs = 'kwh'
+    toutStr = 'tout.mean'
+  }
+  tPieces = regressor.piecewise(df[[toutStr]],c(cp))
   middle = c()
   nSegs = dim(tPieces)[2]
   if(nSegs > 2) middle = paste('middle_',1:(nSegs-2),sep='')
@@ -257,8 +686,8 @@ evalCP = function(cp,df,reweight=F) {
   colSums(tPieces != 0)
   df = cbind(df,tPieces) # add the columns from the matrix to the df
   # define regression formula that uses the piecewise pieces
-  f_0  = 'kw ~ tout'
-  f_cp = paste('kw ~',paste(colnames(tPieces),collapse=" + ",sep=''))
+  f_0  = paste(lhs,'~',toutStr)
+  f_cp = paste(lhs,'~',paste(colnames(tPieces),collapse=" + ",sep=''))
   fit_0  = lm(f_0, df,weights=w)
   fit_cp = lm(f_cp,df,weights=w)
   s_cp = summary(fit_cp)
@@ -276,9 +705,9 @@ evalCP = function(cp,df,reweight=F) {
   
   # weights to enforce a bayesian idea that higher temps should matter more
   # t > 75 gets a double weighting in the SSR
-  w = (df$tout > 75)*3 + 1 
-  SSR_cp = (w * fit_cp$residuals) %*% (w * fit_cp$residuals)
-  SSR_0  = (w * fit_0$residuals ) %*% (w * fit_0$residuals )
+  #w = (df$tout > 75)*3 + 1 
+  SSR_cp = (df$w * fit_cp$residuals) %*% (df$w * fit_cp$residuals)
+  SSR_0  = (df$w * fit_0$residuals ) %*% (df$w * fit_0$residuals )
   k = 1 # we have one regressor, so k = 1
   n = length(fit_cp$residuals)
   out$SSR = SSR_cp
@@ -295,16 +724,18 @@ evalCP = function(cp,df,reweight=F) {
   return(c(cp=cp,SSR=out$SSR,AIC_cp=out$AIC_cp,AIC_0=out$AIC_0,nullModelTest=nullModelTest,coefficients,pvals))
 }
 
-kFold = function(df,models,nm,nfolds=5) {
+# Model evaluation --------------------------------------------------------
+kFold = function(df,modelDescriptor,nm,nfolds=5) {
   folds <- sample(1:nfolds, dim(df)[1], replace=T)
   residuals = c()
   for (i in 1:nfolds) {
     fld = folds == i
     df$fold = fld
-    subm = lm(models[[nm]], data=df, subset=(!fold),na.action=na.omit)
+    fmla = modelDescriptor$formula
+    subm = lm(fmla, data=df, subset=(!fold),na.action=na.omit)
     yhat = predict(subm,newdata=df[fld,])
     #print(length(yhat))
-    ynm = as.character(models[[nm]])[[2]]
+    ynm = as.character(fmla)[[2]]
     residuals = c(residuals,df[,ynm][fld] - yhat) # accumulate the errors from all predictions
   }
   #plot(residuals)

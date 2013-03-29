@@ -28,6 +28,7 @@ library(RColorBrewer)
 # cv.lm(df=mydata, model, m=5) # 5 fold cross-validation
 #library('cvTools') # cross validation tools
 
+
 runModelsByZip = function(cfg) {
   zipArray <- cfg$allZips
   nZip     <- length(zipArray)
@@ -86,75 +87,51 @@ runModelsByZip = function(cfg) {
 # TODO: aks Ram about his k-fold idea and look at serial folds as well as random
 # TODO: consolidate after each model run, before serializing to disk
 
-
-# summarize regression model for future use
-# designed to be friendly to storing a lot of results in sequence
-# so it separates out the simple scalar metrics from the more complicated
-# coefficients
-summarizeModel = function(m,df,models,nm,id,zip,subnm=NULL,fold=FALSE,formula='',subset='') {
-  #lm(m,subset=m$y > 1)
-  s <- as.list(summary(m, correlation=FALSE)) # generic list is more friendly for adding to a data.frame
-  class(s) <- 'list'         # make sure the class is no longer summary.lm
-  s$hist          <- hist(s$residuals,breaks=100,plot=F)
-  s$kurtosis      <- kurtosis(s$residuals)
-  s$call          <- c()     # lm model call (depends on variable scope and can be junk)
-  s$terms         <- c()     # lm model terms (depends on variable scope and can be junk)
-  s$residuals     <- c()     # residuals scaled by weights assigned to the model
-  s$cov.unscaled  <- c()     # p x p matrix of (unscaled) covariances
-  #s$aliased      <- c()     # named logical vector showing if the original coefficients are aliased
-  s$na.action     <- c()     # get rid of extra meta info from the model
-  #s$sigma                   # the square root of the estimated variance of the random error
-  #s$adj.r.squared           # penalizing for higher p
-  #s$r.squared               # 'fraction of variance explained by the model'
-  #s$fstatistic              # 3-vector with the value of the F-statistic with its numerator and denominator degrees of freedom
-  #s$df                      # degs of freedom, vector (p,n-p,p*), the last being the number of non-aliased coefficients.
-  #s$coefficients            # a p x 4 matrix: cols = coefficient, standard error, t-stat, (two-sided) p-value
-  s$id          <- id
-  s$zip         <- zip
-  s$model.name  <- nm        # name of model run
-  s$subset.name <- subnm     # name of sample subset criteria (i.e. "summer" or "afternoon" or "weekdays")
-  s$formula     <- formula   # string of lm model call
-  s$subset      <- subset    # string of lm subset argument
-  s$logLik      <- logLik(m) # log liklihood for the model
-  s$AIC         <- AIC(m)    # Akaike information criterion
-  
-  # net contribution of each coefficient
-  # todo: there are a lot of negative numbers in this, so the contributions aren't directly interpretable
-  s$contribution <- colSums(t(m$coefficients * t(m$x)))
-  s$total        <- sum(predict(m))
-  
-  # k-fold prediction error
-  if (fold) {
-    s$fold.rmse <- kFold(df,models,nm,nfolds=5)
-  }
-  return(s)
-}
-
 runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
   features.basic  <- c()
   summaries       <- c()
-  changePoints    <- c()
+  others          <- list() # special model specific data not found in the summaries
   d_summaries     <- c()
+  d_others        <- list() # special model specific data not found in the summaries
   m_summaries     <- c()
+  m_others        <- list() # special model specific data not found in the summaries
   steps           <- c()  
   invalid_ids     <- data.frame()
   inputs          <- list(zip=zip,ids=sp_ids,config=cfg)
+  
+  # convert string formulas to ModelDescriptors
+  for(mdName in names(cfg$models.hourly)) {
+    md = cfg$models.hourly[[mdName]]
+    if(class(md) == 'character') {
+      cfg$models.hourly[[mdName]] = ModelDescriptor(formula=md,name=mdName)
+      print('converted string to ModelDescriptor')
+      print(cfg$models.hourly[[mdName]])
+    }
+  }
+  for(mdName in names(cfg$models.daily)) {
+    md = cfg$models.daily[[mdName]]
+    if(class(md) == 'character') {
+      cfg$models.daily[[mdName]] = ModelDescriptor(formula=md,name=mdName)
+      print('converted string to ModelDescriptor')
+      print(cfg$models.daily[[mdName]])
+    }
+  }
   # TODO:
   # find a faster method of cross validation than cvTools or DAAG provide
   splen  <- length(sp_ids)
   i <- 0
   #skip = FALSE
-  for (sp_id in sp_ids) { # i.e. "820735863"
+  for (sp_id in sp_ids) { # i.e. "820735863" or "6502353905"
     i <- i+1
     print(paste('  ',sp_id,' (',i,'/',splen,') in ',zip,sep=''))
-    #if(sp_id == 6502353905) { skip = FALSE }
+    #if(sp_id == 6502353905) { skip = FALSE } # debug shortcut
     #if(skip) { next }
     resData = NULL
     if (!is.null(data)) {  resData = data[data[,'sp_id']== sp_id,] }
     r <- tryCatch(ResDataClass(sp_id,zip=zip,weather=weather,data=resData,db=conf.meterDB()), 
                   error = function(e) {print(e)}, finally={} )
     if ( ! "ResDataClass" %in% class(r) ) { # constructor returns the error class if it has a problem
-      print('    not found (see error)') # ignore residences that produce errors
+      print('    not found (see error)')    # ignore residences that produce errors & continue
     }
     else { # viable residence!
       r <- tryCatch( {
@@ -165,111 +142,33 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
           invalid_ids <- rbind.fill(invalid_ids,issues)
           print(paste('Bad or insufficient data:',paste(colnames(issues),collapse=', ')))
           if(cfg$PLOT_INVALID) {
-            png(file.path(getwd(),cfg$outDir,paste(r$zip,r$id,'invalid.png',sep='_')))
-            colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
-            plot(  r, colorMap=colorMap, 
-                   main=paste(r$zip, r$id, paste(colnames(issues),collapse=', ')) )
-            dev.off()
+            save.png.plot(r,file.path(getwd(),cfg$outDir,paste(r$zip,r$id,'invalid.png',sep='_')))
           }
-          next # no further processing
+          next # no further processing of invalid sp_ids
         }
-        tic('model run')
         
+        tic('model run')
         if(cfg$PLOT_VALID) {
-          png(file.path(getwd(),cfg$outDir,paste(r$zip,'_',r$id,'.png',sep='')))
-          redblue = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
-          plot( r,colorMap=redblue,main=paste(r$zip, r$id) )
-          dev.off()
+          save.png.plot(r,file.path(getwd(),cfg$outDir,paste(r$zip,'_',r$id,'.png',sep='')))
         }
         basics = basicFeatures(r)
         
-        features.basic  <- rbind(features.basic,basics)
+        features.basic  <- rbind(features.basic,basics) # max, min, etc.
         # hourly regressions
         if(cfg$RUN_HOURLY_MODELS) {
           df = regressorDF(r,norm=FALSE) # see also regressorDFAggregated
-          #sg = solarGeom(r)
-          #df$solar = sg$zone
-          #df$day   = (sg$zone != 'night') * 1
-          
-          models = cfg$models.hourly
-          if (FALSE) {
-            # add special data to the data frame: piecewise tout data
-            #toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
-            toutPIECES = regressor.piecewise(r$tout,c(60,75))
-            df = cbind(df,toutPIECES) # add the columns with names from the matrix to the df
-            # define regression formula that uses the piecewise pieces
-            piecesf = paste('kw ~',paste(colnames(toutPIECES), collapse= "+"),'+ HOW')
-            models$toutPIECES = list(formula=piecesf,subset=list(all="TRUE",summer=cfg$subset$summer))
-          }
-          if (cfg$RUN_PIECES_24) {
-            lagVal = max(basics[grep('^lag[0-9]+',names(basics))])
-            lagHrs = which.max(basics[grep('^lag[0-9]+',names(basics))]) - 1 # fisrt cl is 0 lag
-            if(lagVal < 0.2) lagHrs = 0
-            print(paste('lag by',lagHrs,lagVal))
-            # add special data to the data frame: piecewise tout data
-            #toutPIECES = regressor.piecewise(r$tout,c(40,50,60,70,80,90))
-            toutL = lag(r$tout,lagHrs)
-            toutPIECES = regressor.piecewise(toutL,c(55,65,75))
-            lagDiff = toutL - r$tout
-            df = cbind(df,toutPIECES,lagDiff) # add the columns with names from the matrix to the df
-            
-            # define regression formula that uses the piecewise pieces
-            piecesf24     = paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ HOD - 1')
-            piecesf24diff = paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ lagDiff + HOD - 1')
-            #piecesf24Z = paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ day:solar + HOD - 1')
-            models$toutPIECES24L   = list(formula=piecesf24,subset=list(all="TRUE"))
-            models$toutPIECES24LD  = list(formula=piecesf24diff,subset=list(all="TRUE"))
-            #models$toutPIECES24Z = list(formula=piecesf24Z,subset=list(all="TRUE"))   
-          }
-          if(cfg$RUN_CP_24 ) {
-            hourlyFits=hourlyChangePoint(df,as.list(1:24),trange=c(50:(max(df$tout,rm.na=T)-5)))
-            cps = hourlyFits['cp',]
-            cps[hourlyFits['nullModelTest',] > 0.05] <- NA # if the cp model failed the f-test afgainst the no cp model, don't include it
-            splitToutList = alply(cps,.fun=piecewise.regressor,.margin=1,r$tout) # get a list of hourly piecewise splits for tout
-            # combinne the list into a sensible set of regressors
-            hourlyCP = c() # hourly change point pieces
-            for (hr in 1:length(cps)) { # for every hour, get the piecewise regressors, select just the right hours, and combine with cbind
-              splitTout = splitToutList[[hr]]
-              if (dim(splitTout)[2] == 1) colnames(splitTout) <- c(paste('tout_',hr,sep='')) # no split made
-              if (dim(splitTout)[2] == 2) colnames(splitTout) <- paste(c('tout_lower_','tout_upper_'),hr,sep='') # 2 cols: abov eand below cp
-              hrFilter = df$HOD %in% paste('H',sprintf('%02i',(hr-1)),sep='')
-              splitTout[!hrFilter,] <- 0 # zero out values not matching the hour the change point comes from
-              hourlyCP = cbind(hourlyCP,splitTout)
-            }
-            df = cbind(df,hourlyCP) # add the columns with names from the matrix to the df
-            hourlyCPf  = paste('kw ~',paste(colnames(hourlyCP),collapse=" + ",sep=''),'+ HOD - 1')
-            hourlyCPfZ = paste('kw ~',paste(colnames(hourlyCP),collapse=" + ",sep=''),'+ day:solar + HOD - 1')
-            models$hourlyCP = list(formula=hourlyCPf,subset=list(all="TRUE"))
-            models$hourlyCPZ = list(formula=hourlyCPfZ,subset=list(all="TRUE"))
-            changePoints = rbind(changePoints,list(id=r$id,changePoints=hourlyFits))
-            
-          }
           # careful. lapply doesn't pass the right data to re-use the lm model
-          # that's why summarizeModel gets passed everything it needs to repeat the lm
-          # with subsets...
           # see https://stat.ethz.ch/pipermail/r-help/2007-August/138724.html
-          for(nm in names(models)) {
-            fld = FALSE
-            #print(nm) 
-            fmla = models[[nm]]
-            subs = list(all="TRUE") # this will include all obs
-            if (class(fmla) == 'list') { # a list object will contain a formula and list of named subset commands
-              subs = fmla$subset  # list of named subset code snippets
-              fmla = fmla$formula
-            }
-            #if(class(fmla) == 'function') {
-            #  # call the function assuming that it will pass back exactly what we need
-            #}
-            for(snm in names(subs)) {
-              df$sub = eval(parse(text=subs[[snm]]),envir=df) # load the subset flags into the data.frame
-              lm.result = lm(fmla,df, x=TRUE, subset=sub==TRUE) # run the lm on the subset indicated in the data frame
-              summaries = rbind(summaries,
-                                summarizeModel(lm.result,df,models,nm,
-                                               id=sp_id,zip=zip,subnm=snm,fold=fld,
-                                               formula=fmla,subset=subs[[snm]]) )
+          
+          for(mdName in names(cfg$models.hourly)) {
+            #print(mdName)
+            md = cfg$models.hourly[[mdName]]
+            runOut = md$run(r,df)
+            summaries = rbind(summaries,runOut$summaries)
+            if(! empty(runOut$other)) {
+              others[[md$name]] = rbind(others[[md$name]],list(id=r$id,data=runOut$other))
             }
           }
-          
           if(cfg$RUN_STEP_SELECTION) { 
             df = regressorDF(r,norm=FALSE,rm.na=TRUE)
             stepped = step(lm(kw ~ 0,df),direction='forward',k=2,trace=0,
@@ -284,26 +183,24 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             steps = rbind.fill(steps,row)
           }
         }
-
-        if (cfg$RUN_AGGREGATED_MODELS) {
-          dfl = regressorDFAggregated(r,norm=FALSE)
-          
+        if (cfg$RUN_DAILY_MODELS) {
+          #dfl = regressorDFAggregated(r,norm=FALSE)
+          #dfd=dfl$daily
+          dfd = rDFA(r)
           # daily regressions
-          models = cfg$models.daily
-          for(nm in names(models)) {
-            #print(nm)
-            fmla = models[[nm]]
-            lm.result = lm(fmla,dfl$daily, x=TRUE)
-            d_summaries = rbind(d_summaries,
-                                summarizeModel(lm.result,
-                                               dfl$daily,models,nm,
-                                               id=sp_id,zip=zip,subnm="all",
-                                               fold=FALSE,formula=fmla)  )
+          for(mdName in names(cfg$models.daily)) {
+            md = cfg$models.daily[[mdName]]
+            #print(mdName)
+            runOut = md$run(r,dfd)
+            d_summaries = rbind(d_summaries,runOut$summaries)
+            if(! empty(runOut$other)) {
+              d_others[[md$name]] = rbind(d_others[[md$name]],list(id=r$id,data=runOut$other))
+            }
           }
-          #results = lapply(models,FUN=lm,dfl$daily,x=TRUE)
-          #d_summaries = lapply(results,FUN=summarizeModel,dfl$daily,models,nm,id=sp_id,zip=zip,fold=FALSE)
-          
+        }
+        if (cfg$RUN_MONTHLY_MODELS) {
           # monthly regressions
+          dfl = regressorDFAggregated(r,norm=FALSE)
           models = cfg$models.monthly     
           for(nm in names(models)) {
             #print(nm)
@@ -337,9 +234,11 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
   out <- list(
       inputs          = inputs,
       features.basic  = as.data.frame(features.basic),
-      changePoints    = as.data.frame(changePoints),
-      summaries       = as.data.frame(summaries),
+      others          = others,
+      summaries       = as.data.frame(summaries),   # why data.frame?
+      d_others        = d_others,
       d_summaries     = as.data.frame(d_summaries),
+      m_others        = m_others,
       m_summaries     = as.data.frame(m_summaries),
       steps           = as.data.frame(steps),
       invalid.ids     = invalid_ids

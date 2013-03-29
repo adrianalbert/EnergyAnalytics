@@ -34,10 +34,10 @@ basicFeatures = function(r){ # r is an instance of ResDataClass
   daily.kw.max.var   = var(dMax/kw.mean,              use='complete.obs') # normed by mean of kW
   
   lags = 0:24
-  lag.cor = apply(as.matrix(lags),  1,function(x) cor(r$kw,lag(r$tout,x),use='complete.obs'))
-  lag.ma  = apply(as.matrix(lags+1),1,function(x) cor(r$kw,ma(r$tout,x), use='complete.obs'))
+  lag.cor = apply(as.matrix(lags),  1,function(x) cor(r$kw,lag(r$tout,x),use='complete.obs')) 
+  lag.ma  = apply(as.matrix(lags[-1]),1,function(x) cor(r$kw,ma(r$tout,x), use='complete.obs')) # no width 0
   names(lag.cor) <- c(paste('lag',lags,  sep=''))
-  names(lag.ma)  <- c(paste('ma', lags+1,sep=''))
+  names(lag.ma)  <- c(paste('ma', lags[-1],sep=''))
 
   basics = c(id=id,
              nObs=nObs,
