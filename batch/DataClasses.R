@@ -114,9 +114,9 @@ WeatherClass = function(zipcode){
     # but we only need the values
     a = approx(obj$dates, obj$rawData[,name], newDates, method="linear")[[2]]
     #b = a[2]
-    if (all(is.na(a))){ 
-      print(paste(obj$dates[1],obj$dates[-1]))
-      print(paste(newDates[1],newDates[-1]))
+    if (all(is.na(a)) & name == 'tout'){ 
+      print(paste(obj$dates[1],obj$dates[length(obj$dates)]))
+      print(paste(newDates[1], newDates[length(newDates)]))
       stop("No weather data available") 
     }
     return(a)

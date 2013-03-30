@@ -114,6 +114,7 @@ cfg$models.daily = list(
   #tout_CDD       = "kwh ~ CDD + HDD + DOW",
   tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND",
   wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
+  dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
   dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE"))
 )
 
@@ -122,6 +123,6 @@ summaries = runOut$summaries
 others = runOut$others
 d_summaries = runOut$d_summaries
 d_others = runOut$d_others
-rm(runOut)
+#rm(runOut)
 print(others$toutPiecesL[,'data']) # all 'other' data is accessed this way
 r = ResDataClass(553991005,93304);plot(r,estimates= toutChangePoint(df=rDFA(r),trange=c(50:85),reweight=F))

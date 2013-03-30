@@ -7,6 +7,11 @@ if(Sys.info()['sysname'] == 'Windows') {
 } else {
   .libPaths('~/R/library') # use my local R library even from the comand line
 }
+
+library(reshape)
+library(timeDate)
+library(RColorBrewer)
+
 setwd(conf.basePath)
 # run 'source' on all includes to load them 
 source(file.path(getwd(),'localConf.R'))         # Local computer specific configuration, especially db account info 
@@ -19,9 +24,6 @@ source(file.path(getwd(),'regressionSupport.R')) # mostly regressor manipulation
 source(file.path(getwd(),'solaRUtil.R'))         # solar geometry
 source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
 
-library(reshape)
-library(timeDate)
-library(RColorBrewer)
 # run this if you need it, but everything should be installed by a setup script
 # if (!require("RColorBrewer")) { install.packages("RColorBrewer") }
 
@@ -30,7 +32,7 @@ library(RColorBrewer)
 #library('cvTools') # cross validation tools
 
 cfg = list()
-cfg$outDir = 'results_daily_test'
+cfg$outDir = 'results_daily'
 
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
 cfg$PLOT_VALID   = F  # create png plots for residences that pass validaiton
@@ -87,6 +89,7 @@ cfg$models.daily = list(
   #tout_CDD       = "kwh ~ CDD + HDD + DOW",
   tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND",
   wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
+  dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
   dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE"))
 )
 

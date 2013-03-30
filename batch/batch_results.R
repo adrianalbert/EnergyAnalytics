@@ -16,7 +16,10 @@ setwd(conf.basePath)
 source(file.path(getwd(),'resultAnalysis.R'))
 source(file.path(getwd(),'zipMap.R'))
 
-resultsDir = 'results_daily_test' # real
+resultsDir = 'results_daily' # real
+
+if(exists('cfg')) { resultsDir = cfg$outDir }
+
 
 allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
             95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
@@ -25,9 +28,19 @@ summary = combineSummaries(allZips,resultType='summaries')
 
 allZips = c(94923,94503,94574,94559)
 #comb = combineSummaries(allZips,resultType='d_summaries')
-combo = combine(allZips,resultType='features.basic',as.matrix)
+basics   = combine(allZips,resultType='features.basic',as.matrix)
+zipMeans = combine(allZips,resultType='features.basic',function(x) { t(colMeans(x)) } )
 
-zipMeans = combine(allZips,resultType='features.basic',colMeans)
+sclrs    = combine(allZips,resultType='d_summaries',scalars)
+cfs      = combine(allZips,resultType='d_summaries',cf,     model.name='toutDailyCP')
+stde     = combine(allZips,resultType='d_summaries',stderrs,model.name='toutDailyCP')
+pvs      = combine(allZips,resultType='d_summaries',pvals,  model.name='toutDailyCP')
+tvs      = combine(allZips,resultType='d_summaries',tvals,  model.name='toutDailyCP')
+
+hists(sclrs,metric='r.squared')
+sclrsZ = addZipData(sclrs)
+zipHists(sclrsZ,metric='r.squared',model.name='toutDailyCP')
+
 
 zip='94923'
 #d_summary = modelResults$d_summary #combineSummaries(zips,'d_summaries')

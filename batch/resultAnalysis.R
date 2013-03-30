@@ -97,6 +97,21 @@ hists = function(df,metric='sigma',zip='unspecified',norm=c()){
   return(g)
 }
 
+zipHists = function(df,metric='sigma',model.name,norm=c(),zip=NULL){
+  .e <- environment() # capture local environment for use in ggplot
+  filter = df$model.name == model.name 
+  if(! is.null(zip)) { filter = filter & df$zip5==zip }
+  dfsub = delist(subset(df,filter,select=c(metric,'id','zip5','cecclmzn')))
+  colnames(dfsub)[1] <- c('value')
+  dfsub$value = as.numeric(dfsub$value)
+  #dfm = melt(dfsub,id.vars=c('id'),variable.name='model.name')
+  # plot several density plots at once color coded
+  g = ggplot(dfsub, aes(x=value, color=cecclmzn), environment=.e) + geom_density(size=1, alpha=0.2) + 
+    ggtitle(paste(metric,'histograms for',model.name))
+  #png(paste("hist.png",sep=''),height=600,width=800)
+  return(g)
+}
+
 bestFit = function(df,metric='rmse',sort=1,zip='unspecified') {
   inv = -1
   if(metric %in% c('rmse')) inv = 1
@@ -149,37 +164,29 @@ Mode <- function(x) {
   ux[which.max(tabulate(match(x, ux)))]
 }
 
-stderrs = function(a,model.name,subset.name=NA) {
+stderrs = function(a,model.name,subset.name=NULL) {
   return(cf(a,model.name,subset.name,col='Std. Error'))
 }
 
-tvals = function(a,model.name,subset.name=NA) {
+tvals = function(a,model.name,subset.name=NULL) {
   return(cf(a,model.name,subset.name,col='t value'))
 }
 
-pvals = function(a,model.name,subset.name=NA) {
+pvals = function(a,model.name,subset.name=NULL) {
   return(cf(a,model.name,subset.name,col='Pr(>|t|)'))
 }
 
-cf = function(a,model.name=NA,subset.name=NA,col='Estimate') {
+cf = function(a,model.name,subset.name=NULL,col='Estimate') {
   sn = T
   mn = T
-  out = list()
-  if (! is.na(model.name)) { 
-    mn = (a$model.name==model.name)
+  mn = unlist(a[,'model.name'])==model.name
+  if (! is.null(subset.name)) { 
+    sn = unlist(a[,'subset.name'])==subset.name
   }
-  if (! is.na(subset.name)) { 
-    sn = (a$subset.name==subset.name)
-  }
-  keepers = mn & sn
-  b = subset(a,keepers)
+  b = subset(a,mn & sn) # filter to the subset and model requested
   b$id = as.numeric(b$id) # if this is not numeric, the whole rbinded matrix is character and the data frame has factors instead of numeric cols
   b$idx = 1:length(b$id)  # setup ply to work on one row at a time
-  for (model in unique(b$model.name)) {
-    print(model)
-    c = dlply(subset(b,model.name=model),.(idx),function(x) c(id=x$id,model.name=x$model.name,x$coefficients[[1]][,col])) # retrieve the named column from the coefficients matrix
-    out[model] = ldply(c,function(x) { data.frame(t(c(x))) })
-  }
+  out = t(apply(b,1,function(x) c(id=x$id,x['coefficients'][[1]][,col])))
   return(out)
   #c = dlply(b,.(idx),function(x) c(id=x$id,model.name=x$model.name,x$coefficients[[1]][,col])) # retrieve the named column from the coefficients matrix
   #a = ldply(c,function(x) { data.frame(t(c(x))) })
@@ -254,14 +261,17 @@ combineSummaries = function(ziplist,resultType='summaries') {
   return(summaries)
 }
 
-combine = function(ziplist,resultType='summaries',fun=function(x) { x }) {
+combine = function(ziplist,resultType='summaries',fun=function(x) { x },model.name=NULL,subset.name=NULL) {
   result = c()
   for (zip in ziplist) { 
     print(paste('loading data for',zip))
     load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
-    new = fun(modelResults[[resultType]])
-    new = cbind(t(new),zip5=zip)
-    print(new)
+    if(is.null(model.name)) {
+      new = fun(modelResults[[resultType]])
+    } else {
+      new = fun(modelResults[[resultType]],model.name=model.name,subset.name=subset.name)
+    }
+    new = cbind(new,zip5=zip)
     rownames(new) <- c()
     result = rbind(result,new)
     rm(modelResults)
@@ -269,11 +279,11 @@ combine = function(ziplist,resultType='summaries',fun=function(x) { x }) {
   return(result)
 }
 
-
 addZipData = function(summaries) {
   zipData = db.getZipData()
-  summaries$zip = as.numeric(summaries$zip)
-  return(merge(summaries,zipData,by.x='zip',by.y='zip5'))
+  zipCol = grep('^zip',colnames(summaries),value=T)[1]
+  summaries[[zipCol]] = as.numeric(summaries[[zipCol]])
+  return(merge(summaries,zipData,by.x=zipCol,by.y='zip5'))
 }
 
 quad_chart = function(d,title) {

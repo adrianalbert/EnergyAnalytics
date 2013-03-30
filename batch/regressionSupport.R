@@ -302,10 +302,19 @@ toutPieces24MAGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,ba
   return(out)
 }
 
+toutDailyFixedCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL) {
+  return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,fold=fold,basics=basics,forceCP=65))
+}
+  
 # toutDailyCP finds a single change point for a model of daily kWh usage.
-toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL) {
-  changeModel = toutChangePointFast(df=df,trange=c(50:85),reweight=F)
-  pieces = regressor.piecewise(df$tout.mean,changeModel[['cp']]) # get a list of daily piecewise splits for tout.mean
+toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL,forceCP=NULL) {
+  changeModel = NULL
+  if(is.null(forceCP)) {
+    changeModel = toutChangePointFast(df=df,trange=c(50:85),reweight=F)
+    modelCP = changeModel[['cp']]
+  }
+  else { modelCP = forceCP }
+  pieces = regressor.piecewise(df$tout.mean,modelCP) # get a list of daily piecewise splits for tout.mean
   if (dim(pieces)[2] == 1) colnames(pieces) <- c('tout.mean') # no split made
   if (dim(pieces)[2] == 2) colnames(pieces) <- c('tout.mean_lower','tout.mean_upper') # 2 cols: above and below cp
   # define regression formula that uses the piecewise pieces
