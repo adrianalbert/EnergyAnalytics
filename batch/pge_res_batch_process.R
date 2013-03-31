@@ -121,7 +121,7 @@ if (length(args) > 0) {
 #               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
 #               95202,93619,93614,93304,93701,95631,95726,95223,95666)
 
-TEST_SINGLE = T
+TEST_SINGLE = F
 if(TEST_SINGLE) {
   source(file.path(getwd(),'testModelRun.R')) # test harness for regression code
   testModelRun(cfg)
