@@ -7,12 +7,12 @@ if(Sys.info()['sysname'] == 'Windows') {
 } else {
   .libPaths('~/R/library') # use my local R library even from the comand line
 }
+setwd(conf.basePath)
 
 library(reshape)
 library(timeDate)
 library(RColorBrewer)
 
-setwd(conf.basePath)
 # run 'source' on all includes to load them 
 source(file.path(getwd(),'localConf.R'))         # Local computer specific configuration, especially db account info 
 source(file.path(getwd(),'dbUtil.R'))            # generic database support functions for things like connection management
@@ -117,12 +117,13 @@ if (length(args) > 0) {
 # bakersfield, oakland
 #cfg$allZips = c(94610,93304)
 
-cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
-               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
-               95202,93619,93614,93304,93701,95631,95726,95223,95666)
+#cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
+#               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
+#               95202,93619,93614,93304,93701,95631,95726,95223,95666)
 
-TEST_SINGLE = F
+TEST_SINGLE = T
 if(TEST_SINGLE) {
+  source(file.path(getwd(),'testModelRun.R')) # test harness for regression code
   testModelRun(cfg)
 } else {
   print('Beginning batch run')
@@ -172,11 +173,10 @@ if(F) {
   r = ResDataClass(1064423310,93304); plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # cooling with high outliers. Unclear setpoint
   r = ResDataClass(1366549405,93304); plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # heat and cooling. slight tout slopes, bimodal
   r = ResDataClass(1064429605,93304); plot(r,type='hourly',estimates=hourlyChangePoint(regressorDF(r),as.list(1:24),reweight=F))  # VERY high change points. Change with HOD
-
+  
   estimates=hourlyChangePoint(regressorDF(r),as.list(1:24))
   plot(estimates['cp',],type='l',col='blue')
   points(colMeans(r$toutMat),type='l',xlab='HOD',ylab='Mean temperature')
   
   legend(3,75,c('mean Tout','CP fit'),fill=c('black','blue'))
 }
-
