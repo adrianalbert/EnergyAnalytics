@@ -639,7 +639,7 @@ toutChangePointFast = function(hrs=NULL,df,trange=c(50:85),reweight) {
     df = df[!is.na(df$kw),]                                      # no NA's. Breaks the algorithm
   }
   else { toutStr = 'tout.mean' }
-  rng = floor(quantile(df[[toutStr]],c(0.1,0.90)))
+  rng = floor(quantile(df[[toutStr]],c(0.1,0.90),na.rm=T))
   trange = c( rng[1]:rng[2]  )
   prev = c(cp=-1,SSR=Inf)                                      # init the compare options
   warnMulti = F
