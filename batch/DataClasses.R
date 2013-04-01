@@ -37,15 +37,63 @@ db.getAllData = function(zip=NULL) {
 
 # return the available summary information for every zipcode
 # including sp_id count, climate zone, weather station, and income stats
+ZIP_DATA = NULL
 db.getZipData = function(zip=NULL) {
-  where = ''
-  if(!is.null(zip)) { where = paste('where zip5=',zip) }
-  query = paste(
-    'SELECT zip5, COUNT(DISTINCT sp_id), cecclmzn, climate, GCOUNTY, WTHRSTN,
-    median_income, median_income_quantiles
-    FROM', conf.accountTable(), where, 'GROUP BY zip5')
-  print(query)
-  return(run.query(query,conf.meterDB()))
+  if(is.null(ZIP_DATA)) {
+    query = paste(
+      'SELECT zip5, COUNT(DISTINCT sp_id), cecclmzn, climate, GCOUNTY, WTHRSTN,
+      median_income, median_income_quantiles
+      FROM', conf.accountTable(), 'GROUP BY zip5')
+    # has to go into the global env to persist as a 'cache'
+    assign('ZIP_DATA', run.query(query,conf.meterDB()), envir = .GlobalEnv) 
+  }
+  #else { print('Using zip data cache') }
+  if(is.null(zip)) { out = ZIP_DATA                       }
+  else             { out = ZIP_DATA[ZIP_DATA$zip5 == zip,]}
+  return(out)
+}
+
+meanDay = function(df) {
+  means = colMeans(df,na.rm=T) # calculate the means for all columns
+  means['rain'] = 24*means['rain'] # rain should be the total, not mean
+  return(means)
+}
+
+minDay = function(df) {
+  # see: http://stackoverflow.com/questions/13676878/fastest-way-to-get-min-from-every-column-in-a-matrix
+  #mins = do.call(pmin,c(lapply(1:nrow(df), function(i)df[i,]),na.rm=T)) # calculate the minsacross all rows
+  mins = suppressWarnings(apply(df, 2, min, na.rm=T))
+  mins[mins == Inf] = NA
+  return(mins)
+}
+
+maxDay = function(df) {
+  #maxs = do.call(pmax,c(lapply(1:nrow(df), function(i)df[i,]),na.rm=T)) # calculate the maxs across all rows
+  maxs = suppressWarnings(apply(df, 2, max, na.rm=T))
+  maxs[maxs == -Inf] = NA
+  return(maxs)
+}
+
+dailySummary = function(rawData,fn) {
+  days = factor(as.Date(rawData$dates,tz="PST8PDT"))
+  dayMeans = do.call(rbind,by(rawData[-1],days,fn)) # -1 to get rid of the dates
+  dayMeans[is.nan(dayMeans)] = NA
+  dayMeans = data.frame(dayMeans)
+  dayMeans$day = as.Date(rownames(dayMeans))
+  rownames(dayMeans) <- c()
+  return(dayMeans)
+}
+
+dailyMeans = function(rawData) {
+  return(dailySummary(rawData,meanDay))
+}
+
+dailyMins = function(rawData) {
+  return(dailySummary(rawData,minDay))
+}
+
+dailyMaxs = function(rawData) {
+  return(dailySummary(rawData,maxDay))
 }
 
 # class structure based on example from
@@ -78,6 +126,9 @@ WeatherClass = function(zipcode){
     dates   = rawData$dates,
     tout    = rawData$tout,
     rawData = rawData,
+    dayMeans = dailyMeans(rawData),
+    dayMins = dailyMins(rawData),
+    dayMaxs = dailyMaxs(rawData),
     get     = function(x) obj[[x]],
     # Not sure why <<- is used here
     # <<- searches parent environments before assignment
@@ -139,12 +190,19 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
   }
   if(length(data)==0) stop(paste('No data found for sp_id',sp_id))
   
+  days = as.POSIXct(data[,'DATE'],tz="PST8PDT", '%Y-%m-%d')
+  # some days are duplicated in the DB. Remove all but the first one.
+  dup = which(diff(days) == 0)
+  if(any(dup > 0)) {
+    data = data[-dup,] # delete the row
+    days = as.POSIXct(data[,'DATE'],tz="PST8PDT", '%Y-%m-%d')
+  }
   zipcode = data[1,'zip5']
   kwMat = data[,4:27]
   # reshape the kW readings into a vector matching the dates
   kw    = as.vector(t(kwMat))
   
-  days = as.POSIXct(data[,'DATE'],tz="PST8PDT", '%Y-%m-%d')
+  
   # create a row of hourly values for each day
   daySteps = 24
   dtDay = daySteps/24 * 60 * 60 # in seconds

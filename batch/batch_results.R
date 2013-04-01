@@ -20,22 +20,31 @@ resultsDir = 'results_daily' # real
 
 if(exists('cfg')) { resultsDir = cfg$outDir }
 
-
 allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
             95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
             95202,93619,93614,93304,93701,95631,95726,95223,95666)
-summary = combineSummaries(allZips,resultType='summaries')
+#summary = combineSummaries(allZips,resultType='d_summaries') # fails from too much data?!
 
 allZips = c(94923,94503,94574,94559)
 #comb = combineSummaries(allZips,resultType='d_summaries')
-basics   = combine(allZips,resultType='features.basic',as.matrix)
-zipMeans = combine(allZips,resultType='features.basic',function(x) { t(colMeans(x)) } )
+basics     = combine(allZips,resultType='features.basic',as.matrix,appendZipData=T)
+basicMeans = combine(allZips,resultType='features.basic',function(x) { t(colMeans(x)) },appendZipData=T )
+sclrs      = combine(allZips,resultType='d_summaries',scalars,appendZipData=T)
 
-sclrs    = combine(allZips,resultType='d_summaries',scalars)
-cfs      = combine(allZips,resultType='d_summaries',cf,     model.name='toutDailyCP')
-stde     = combine(allZips,resultType='d_summaries',stderrs,model.name='toutDailyCP')
-pvs      = combine(allZips,resultType='d_summaries',pvals,  model.name='toutDailyCP')
-tvs      = combine(allZips,resultType='d_summaries',tvals,  model.name='toutDailyCP')
+cfs  = list()
+stde = list()
+pvs  = list()
+tvs  = list()
+models = unique(sclrs$model.name)
+for(model in models) {
+  cfs[[model]]  = combine(allZips,resultType='d_summaries',cf,     model.name=model,appendZipData=T)
+  stde[[model]] = combine(allZips,resultType='d_summaries',stderrs,model.name=model,appendZipData=T)
+  pvs[[model]]  = combine(allZips,resultType='d_summaries',pvals,  model.name=model,appendZipData=T)
+  tvs[[model]]  = combine(allZips,resultType='d_summaries',tvals,  model.name=model,appendZipData=T)
+}
+
+# find the best r.squared result for each sp_id
+a = do.call(rbind,by(sclrs,sclrs$id,function(df) df[which.max(df$r.squared),]))
 
 hists(sclrs,metric='r.squared')
 sclrsZ = addZipData(sclrs)

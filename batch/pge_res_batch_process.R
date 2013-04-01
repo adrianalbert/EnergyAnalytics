@@ -115,7 +115,7 @@ if (length(args) > 0) {
   cfg$allZips  <- db.getZips()
 }
 # bakersfield, oakland
-#cfg$allZips = c(94610,93304)
+cfg$allZips = c(94610) #,93304)
 
 #cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
 #               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
@@ -127,8 +127,10 @@ if(TEST_SINGLE) {
   testModelRun(cfg)
 } else {
   print('Beginning batch run')
-  runResult = runModelsByZip(cfg)
-  summarizeRun(runResult,listFailures=F)
+  runDetails = runModelsByZip(cfg)
+  runResultFile <- file.path(getwd(),cfg$outDir,paste('runDetails.RData',sep=''))
+  save(runDetails,file=runResultFile)
+  summarizeRun(runDetails,listFailures=F)
 }
 
 plot.modelResults = function(modelResults,vars=NULL,...) {

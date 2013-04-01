@@ -10,23 +10,145 @@ source(file.path(getwd(),'localConf.R'))         # local computer specific confi
 source(file.path(getwd(),'ksc.R'))               # k-Spectral Clustering (via Jungsuk)
 source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
 
+
+# Helper function ---------------------------------------------------------
+
 delist = function(df) {
-  df$idx = 1:dim(df)[1]
-  df2 <- ddply(df,'idx',function(X) apply(X,2,function(y) y[[1]])) # pull every column of every row of data out of its list of length 1
-  df2 <- subset(df2, select = -c(idx) )
+  df2 = df
+  for(col in colnames(df)) {
+    df2[col] = unlist(df[col])
+  }
+  #df$idx = 1:dim(df)[1]
+  #df2 <- ddply(df,'idx',function(X) apply(X,2,function(y) y[[1]])) # pull every column of every row of data out of its list of length 1
+  #df2 <- subset(df2, select = -c(idx) )
   return(df2)
 }
+
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+clean = function(a) {
+  return (subset(a,a$total!=0))
+}
+
+demean = function(data,col_exp) {
+  cols = grep(col_exp,colnames(data),value=TRUE)
+  #row_var = apply(data[,cols],MARGIN=1,FUN=sd,na.rm=TRUE)
+  row_mean = rowMeans(data[,cols],na.rm=TRUE)
+  data[,cols] = (data[,cols] / row_mean)
+  return(data)
+}
+
+# Run data extraction -----------------------------------------------------
 
 scalars = function(a,model.name=NULL,subset.name=NULL) {
   keepers = TRUE
   if(!is.null(model.name)) keepers = keepers & a$model.name==model.name
   if(!is.null(subset.name)) keepers = keepers & a$subset.name==subset.name
   b = subset(a,keepers,select=sapply(a,function(x) (length(x[[1]]))==1 & class(x[[1]]) %in% c('numeric','character'))) # select all columns with entries of length 1 (aka scalars)
-  b$id = as.numeric(b$id) # if this is not numeric, the whole rbinded matrix is character and the data frame has factors instead of numeric cols
-  # for some reason, all the data is stored as single entry list per data.frame cell this call pulls out
-  # the actual valaues in those lists, so that the data.frame columns are the numeric arrays and factors we'd expect
-  return(delist(b)) # when above and this were one line, the cols were factors ?!!
+  return(delist(b))
 }
+
+cf = function(a,model.name,subset.name=NULL,col='Estimate') {
+  sn = T
+  mn = T
+  mn = unlist(a[,'model.name'])==model.name
+  if (! is.null(subset.name)) { 
+    sn = unlist(a[,'subset.name'])==subset.name
+  }
+  b = subset(a,mn & sn) # filter to the subset and model requested
+  out = t(apply(b,1,function(x) c(id=x$id,x['coefficients'][[1]][,col])))
+  return(out)
+}
+
+stderrs = function(a,model.name,subset.name=NULL) {
+  return(cf(a,model.name,subset.name,col='Std. Error'))
+}
+
+tvals = function(a,model.name,subset.name=NULL) {
+  return(cf(a,model.name,subset.name,col='t value'))
+}
+
+pvals = function(a,model.name,subset.name=NULL) {
+  return(cf(a,model.name,subset.name,col='Pr(>|t|)'))
+}
+
+
+# Aggregation function ----------------------------------------------------
+
+combineSummaries = function(ziplist,resultType='summaries') {
+  summaries = c()
+  i = 0
+  n = length(ziplist)
+  for (zip in ziplist) { 
+    i = i+1
+    print(paste('loading data for',zip,'(',i,'/',n,')'))
+    dataFile = file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep=''))
+    if (! file.exists(dataFile)){
+      print(paste('No data file for',zip,'skipping.'))
+      next
+    }
+    load(dataFile)
+    summaries = rbind(summaries,clean(modelResults[[resultType]]))
+    rm(modelResults)
+  }
+  return(summaries)
+}
+
+combine = function(ziplist,resultType='summaries',fun=function(x) { x },model.name=NULL,subset.name=NULL,appendZipData=F) {
+  result = c()
+  i = 0
+  n = length(ziplist)
+  for (zip in ziplist) { 
+    i = i+1
+    print(paste('loading data for',zip,'(',i,'/',n,')'))
+    dataFile = file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep=''))
+    if (! file.exists(dataFile)){
+      print(paste('No data file for',zip,'skipping.'))
+      next
+    }
+    load(dataFile)
+    if(is.null(model.name)) {
+      new = fun(modelResults[[resultType]])
+    } else {
+      new = fun(modelResults[[resultType]],model.name=model.name,subset.name=subset.name)
+    }
+    new = cbind(new,zip5=zip) # ensure the zipcode is there
+    rownames(new) <- c()
+    result = rbind(result,new)
+    rm(modelResults)
+  }
+  if(appendZipData) { result = addZipData(result) }
+  return(result)
+}
+
+addZipData = function(orig) {
+  if(! "data.frame" %in% class(orig)) {  # because the zip data is mixed, the return value
+    orig = data.frame(orig)              # has to be a data frame too
+  }
+  zipData = db.getZipData()
+  zipCol = grep('^zip',colnames(orig),value=T)[1]
+  orig[[zipCol]] = as.numeric(orig[[zipCol]])
+  return(merge(orig,zipData,by.x=zipCol,by.y='zip5'))
+}
+
+rankModel = function(m) {
+  return(t(apply(m[,-1],MARGIN=1,FUN=rank)))
+}
+
+bestFitCount = function(df,metric='rmse',zip='unspecified') {
+  inv = -1
+  if(metric %in% c('rmse')) inv = 1
+  n = dim(df[[metric]])[2]
+  rnk = t(apply(inv*df[[metric]][,-1],MARGIN=1,FUN=rank))
+  counts = apply(rnk<3,MARGIN=2,FUN=sum)
+  barplot(counts,main=paste(metric,'count of 1st or 2nd rank for',zip),
+          xlab="Model")
+}
+
+# Plotting function -------------------------------------------------------
 
 clusterHist = function(kscClusters) {
   df = as.data.frame(list(cluster=kscClusters$mem))
@@ -135,83 +257,6 @@ bestFit = function(df,metric='rmse',sort=1,zip='unspecified') {
   return(p) 
 }
 
-fitScatter = function(df,metric='rmse',zip='unspecified') {
-  inv = -1
-  if(metric %in% c('rmse')) inv = 1
-  n = dim(df[[metric]])[2]
-  rnk = t(apply(inv*df[[metric]][,-1],MARGIN=1,FUN=rank))
-  rnk = rnk[order(rnk[,sort]),]
-  rnkm = melt(rnk)
-}
-
-rankModel = function(m) {
-  return(t(apply(m[,-1],MARGIN=1,FUN=rank)))
-}
-
-bestFitCount = function(df,metric='rmse',zip='unspecified') {
-  inv = -1
-  if(metric %in% c('rmse')) inv = 1
-  n = dim(df[[metric]])[2]
-  rnk = t(apply(inv*df[[metric]][,-1],MARGIN=1,FUN=rank))
-  counts = apply(rnk<3,MARGIN=2,FUN=sum)
-  barplot(counts,main=paste(metric,'count of 1st or 2nd rank for',zip),
-          xlab="Model")
-}
-
-
-Mode <- function(x) {
-  ux <- unique(x)
-  ux[which.max(tabulate(match(x, ux)))]
-}
-
-stderrs = function(a,model.name,subset.name=NULL) {
-  return(cf(a,model.name,subset.name,col='Std. Error'))
-}
-
-tvals = function(a,model.name,subset.name=NULL) {
-  return(cf(a,model.name,subset.name,col='t value'))
-}
-
-pvals = function(a,model.name,subset.name=NULL) {
-  return(cf(a,model.name,subset.name,col='Pr(>|t|)'))
-}
-
-cf = function(a,model.name,subset.name=NULL,col='Estimate') {
-  sn = T
-  mn = T
-  mn = unlist(a[,'model.name'])==model.name
-  if (! is.null(subset.name)) { 
-    sn = unlist(a[,'subset.name'])==subset.name
-  }
-  b = subset(a,mn & sn) # filter to the subset and model requested
-  b$id = as.numeric(b$id) # if this is not numeric, the whole rbinded matrix is character and the data frame has factors instead of numeric cols
-  b$idx = 1:length(b$id)  # setup ply to work on one row at a time
-  out = t(apply(b,1,function(x) c(id=x$id,x['coefficients'][[1]][,col])))
-  return(out)
-  #c = dlply(b,.(idx),function(x) c(id=x$id,model.name=x$model.name,x$coefficients[[1]][,col])) # retrieve the named column from the coefficients matrix
-  #a = ldply(c,function(x) { data.frame(t(c(x))) })
-  #return(a)
-  #c$idx = c() # drop the index column
-  #g = as.numeric(lapply(c,length)) # calculate coefficient list lengths...
-  #c[g != Mode(g)] = c()            # remove the abnormal lengths caused by missing data
-  #h = as.numeric(lapply(c,function(x) any(x[-1] != 0))) # check for blank rows
-  #c[!h] = c() #remove rows of all zeros
-  #mergedDF = do.call(rbind.fill,c) # add missing cols using rbind.fill
-  #return(mergedDF) #[-1,]) # return the coefficient data, without the first extra row added to get the extra cols from rbind.fill
-}
-
-clean = function(a) {
-  return (subset(a,a$total!=0))
-}
-
-demean = function(data,col_exp) {
-  cols = grep(col_exp,colnames(data),value=TRUE)
-  #row_var = apply(data[,cols],MARGIN=1,FUN=sd,na.rm=TRUE)
-  row_mean = rowMeans(data[,cols],na.rm=TRUE)
-  data[,cols] = (data[,cols] / row_mean)
-  return(data)
-}
-
 p_summary = function(pvals,pmax=0.05,pattern='^HODWKWK') {
   n = dim(pvals)[1]
   m = dim(pvals)[2]
@@ -248,42 +293,6 @@ c_summary = function(cvals,pvals,pmax=0.05,pattern='^HODWKWK') {
          xlab='Coefficient',ylab='coef / 24hr mean'  )
   }
   par(mfrow=c(1,1))
-}
-
-combineSummaries = function(ziplist,resultType='summaries') {
-  summaries = c()
-  for (zip in ziplist) { 
-    print(paste('loading data for',zip))
-    load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
-    summaries = rbind(summaries,clean(modelResults[[resultType]]))
-    rm(modelResults)
-  }
-  return(summaries)
-}
-
-combine = function(ziplist,resultType='summaries',fun=function(x) { x },model.name=NULL,subset.name=NULL) {
-  result = c()
-  for (zip in ziplist) { 
-    print(paste('loading data for',zip))
-    load(file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep='')))
-    if(is.null(model.name)) {
-      new = fun(modelResults[[resultType]])
-    } else {
-      new = fun(modelResults[[resultType]],model.name=model.name,subset.name=subset.name)
-    }
-    new = cbind(new,zip5=zip)
-    rownames(new) <- c()
-    result = rbind(result,new)
-    rm(modelResults)
-  }
-  return(result)
-}
-
-addZipData = function(summaries) {
-  zipData = db.getZipData()
-  zipCol = grep('^zip',colnames(summaries),value=T)[1]
-  summaries[[zipCol]] = as.numeric(summaries[[zipCol]])
-  return(merge(summaries,zipData,by.x=zipCol,by.y='zip5'))
 }
 
 quad_chart = function(d,title) {

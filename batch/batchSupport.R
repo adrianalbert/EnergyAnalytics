@@ -41,7 +41,8 @@ runModelsByZip = function(cfg) {
              completedZip = c(),
              attemptedSP  = c(),
              completedSP  = c(),
-             invalid.ids  = c() )
+             invalid.ids  = c(),
+             cfg          = cfg )
   triggered = FALSE
   for (zip in zipArray) { # i.e. 94610
     zipCount <- zipCount + 1

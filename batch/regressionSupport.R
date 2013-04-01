@@ -514,21 +514,32 @@ rDFA = function(residence,norm=F,bp=65,rm.na=FALSE) {
   df$kwh   = residence$daily('kw',sum)
   df$kw.mean = residence$daily('kw',mean)
   df$kw.max = residence$daily('kw',max)
-  df$tout.mean = residence$daily('tout',mean)
-  df$tout.max  = residence$daily('tout',max)
-  df$tout.min  = residence$daily('tout',min) 
   df$CDD = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout  > bp,na.rm=na.rm))
   df$HDD = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout <= bp,na.rm=na.rm))
-  df$pout.mean = residence$daily('pout',mean)
-  df$pout.max  = residence$daily('pout',max)
-  df$pout.min  = residence$daily('pout',min) 
+  w = residence$weather
+  dayMatch = as.Date(w$dayMeans$day) %in% as.Date(df$day)
+  
+  # todo: add NAs for days that are in df$day, but not dayMeans (caused by > 24 hrs of data missing)
+  df$tout.mean = w$dayMeans[dayMatch,'tout']
+  df$tout.min  = w$dayMins[dayMatch,'tout']
+  df$tout.max  = w$dayMaxs[dayMatch,'tout']
+#   df$tout.mean = residence$daily('tout',mean)
+#   df$tout.max  = residence$daily('tout',max)
+#   df$tout.min  = residence$daily('tout',min)
+  df$pout.mean = w$dayMeans[dayMatch,'pout']
+  df$pout.min  = w$dayMins[dayMatch,'pout']
+  df$pout.max  = w$dayMaxs[dayMatch,'pout']
+#   df$pout.mean = residence$daily('pout',mean)
+#   df$pout.max  = residence$daily('pout',max)
+#   df$pout.min  = residence$daily('pout',min)
+#   df$rh.mean = w$rh(df$tout.mean,w$dayMeans[dayMatch,'dp'])
   df$rh.mean = residence$daily('rh',mean)
-  df$rh.max  = residence$daily('rh',max)
-  df$rh.min  = residence$daily('rh',min)
+  #df$rh.max  = residence$daily('rh',max)
+  #df$rh.min  = residence$daily('rh',min)
   # add vacation days flags
   # holidaysNYSE is a function from the dateTime package
   #hdays      = as.Date(holidayNYSE((days[1]$year+1900):(days[length(days)]$year+1900)))
-  df$vac  = factor(as.Date(days) %in% hdays)
+  df$vac  = factor(as.Date(days,,tz="PST8PDT") %in% hdays)
   return(df)
 }
 # Given a ResDataClass instance, returns a list of data.frames with rows aggregated to 1 per day,
@@ -564,9 +575,9 @@ regressorDFAggregated = function(residence,norm=F,bp=65,rm.na=FALSE) {
   daily <- subset(daily, select = grep("^junk", colnames(daily), invert=TRUE) )
   
   # add vacation days flags
-  dateDays   = as.Date(daily$day)
+  dateDays   = as.Date(daily$day,,tz="PST8PDT")
   # holidaysNYSE is a function from the dateTime package
-  hdays      = as.Date(holidayNYSE(min(as.POSIXlt(dateDays)$year+1900):max(as.POSIXlt(dateDays)$year+1900)))
+  hdays      = as.Date(holidayNYSE(min(as.POSIXlt(dateDays)$year+1900):max(as.POSIXlt(dateDays)$year+1900)),,tz="PST8PDT")
   daily$vac  = factor(dateDays %in% hdays)
   
   if(FALSE) {

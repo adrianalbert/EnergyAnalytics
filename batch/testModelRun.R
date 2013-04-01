@@ -31,7 +31,8 @@ library(RColorBrewer)
 
 testModelRun = function(cfg) {
   print(cfg)
-  r = ResDataClass(553991005,93304);
+  #r = ResDataClass(553991005,93304);
+  r = ResDataClass(2547072505,94610);
   df = regressorDF(r)
   summaries   = c()
   d_summaries = c()
