@@ -53,6 +53,10 @@ runModelsByZip = function(cfg) {
     
     print(paste('Running models for ',zip,' (',zipCount,'/',nZip,')', sep=''))
     resultsFile <- file.path(getwd(),cfg$outDir,paste(zip,'_modelResults.RData',sep=''))
+    if(file.exists(resultsFile) & cfg$SKIP_EXISTING_RDATA) {
+      print(paste(resultsFile,'exists. Skipping to next zip.'))
+      next
+    }
     tryCatch( {
       tic('allDataForZip')
       zipData <- db.getAllData(zip)

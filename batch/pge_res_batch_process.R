@@ -34,6 +34,7 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 cfg = list()
 cfg$outDir = 'results_daily'
 
+cfg$SKIP_EXISTING_RDATA = T # don't run models if the RData file for their zip is present
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
 cfg$PLOT_VALID   = F  # create png plots for residences that pass validaiton
 
