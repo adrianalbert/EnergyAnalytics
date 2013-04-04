@@ -687,7 +687,7 @@ evalCP = function(cp,df,reweight=F) {
   if(reweight) { 
     # find the index of the last column with a non-zero value
     # for a piecewise regressor, this happens to be the number of non-zero values per row
-    highestCol = rowSums(tPieces != 0) 
+    highestCol = rowSums(tPieces != 0,na.rm=T) 
     colCounts  = table(highestCol)
     # only alter the weights when all columns are participating
     if(length(colCounts) == m) { 
@@ -716,7 +716,7 @@ evalCP = function(cp,df,reweight=F) {
   pvals        = s_cp$coefficients[,'Pr(>|t|)'] # coefficient pvalues
   # if one of our partitions has no data, we need to fill in the missing columns 
   # in the returned data to ensure that sapply comes back as a matrix, not a list
-  if(any(colSums(tPieces != 0)==0)) { 
+  if(any(colSums(tPieces != 0,na.rm=T)==0)) {  
     missingCols = setdiff(colnames(tPieces),names(coefficients))
     coefficients[missingCols] = NA
     pvals[missingCols]        = NA
