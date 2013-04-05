@@ -98,7 +98,7 @@ dailyMaxs = function(rawData) {
 
 # class structure based on example from
 # http://bryer.org/2012/object-oriented-programming-in-r
-WeatherClass = function(zipcode){
+WeatherClass = function(zipcode,doMeans=T){
   query = paste(
     'SELECT `date`, TemperatureF, Pressure, DewpointF, HourlyPrecip
     FROM',conf.weatherTable(),'where zip5 =',zipcode,'ORDER BY DATE')
@@ -121,14 +121,23 @@ WeatherClass = function(zipcode){
   
   # TODO: do we need to do anything about the NA values?
   
+  dayMeans = c()
+  dayMins = c()
+  dayMaxs = c()
+  if(doMeans) {
+    dayMeans = dailyMeans(rawData)
+    dayMins = dailyMins(rawData)
+    dayMaxs = dailyMaxs(rawData)
+  }
   obj = list (
+    zip     = zipcode,
     days    = days,
     dates   = rawData$dates,
     tout    = rawData$tout,
     rawData = rawData,
-    dayMeans = dailyMeans(rawData),
-    dayMins = dailyMins(rawData),
-    dayMaxs = dailyMaxs(rawData),
+    dayMeans = dayMeans,
+    dayMins = dayMins,
+    dayMaxs = dayMaxs,
     get     = function(x) obj[[x]],
     # Not sure why <<- is used here
     # <<- searches parent environments before assignment

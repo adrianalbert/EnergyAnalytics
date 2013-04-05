@@ -11,6 +11,6 @@ wList = as.list(rep(NA,length(zips)))
 for(zip in zips) {
   i = i+1
   print(paste(zip,'(',i,'/',n,')'))
-  wList[[i]] = weatherFeatures(WeatherClass(zip))
+  wList[[i]] = weatherFeatures(WeatherClass(zip,doMeans=F))
 }
 weatherSummary = do.call(rbind,wList)

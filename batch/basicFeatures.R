@@ -42,8 +42,8 @@ basicFeatures = function(r){ # r is an instance of ResDataClass
   basics = c(id=id,
              nObs=nObs,
              kw.mean=kw.mean,
-             max=max,  # will be named 'max.97%' due to quantile origin
-             min=min,  # will be called 'min.3%' due to quantile origin
+             max=max,  # will be named 'max.97.' due to quantile origin
+             min=min,  # will be called 'min.3.' due to quantile origin
              kw.var=kw.var,
              daily.kw.var=daily.kw.var,
              daily.kw.min.var=daily.kw.min.var,

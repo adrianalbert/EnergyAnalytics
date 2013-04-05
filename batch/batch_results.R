@@ -51,8 +51,14 @@ for(model in models) {
   tvs[[model]]  = combine(allZips,resultType='d_summaries',tvals,  model.name=model,appendZipData=T)
 }
 
+cpData = combine(allZips,resultType='d_others',subResultType='tout',function(x) sapply(x[,'data'],function(y) c(cp=y['cp',])),appendZipData=T)
+
 # find the best r.squared result for each sp_id
-a = do.call(rbind,by(sclrs,sclrs$id,function(df) df[which.max(df$r.squared),]))
+bestModels = do.call(rbind,by(sclrs,sclrs$id,function(df) df[which.max(df$r.squared),]))
+ggplot(aes(x=model.name),data=bestModels) + geom_bar() # counts of best models.
+ggplot(aes(y=sigma,x=r.squared),data=a) + geom_point() + ylim(0,50) # relationship between our two metrics
+
+ab = merge(basics[c('id','kw.var')],bestModels,by.x='id',by.y='id',all=F) # add the model variance so sigma can be normalized
 
 hists(sclrs,metric='r.squared')
 sclrsZ = addZipData(sclrs)
