@@ -4,6 +4,7 @@ require(ggplot2)
 require(gtools)
 require(gridExtra)
 require(reshape2)
+require(hexbin)
 require(plyr)
 require(scales) # for muted
 
@@ -16,6 +17,7 @@ setwd(conf.basePath)
 source(file.path(getwd(),'resultAnalysis.R'))
 source(file.path(getwd(),'dbUtil.R'))
 source(file.path(getwd(),'DataClasses.R'))
+source(file.path(getwd(),'weatherFeatures.R'))
 source(file.path(getwd(),'zipMap.R'))
 
 resultsDir = 'results_daily' # real
@@ -33,37 +35,88 @@ allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
 allZips = c(94923,94503,94574,94559)
 
 allZips = dirZips
-#comb = combineSummaries(allZips,resultType='d_summaries')
-basics     = combine(allZips,resultType='features.basic',as.matrix,appendZipData=T)
-basicMeans = combine(allZips,resultType='features.basic',function(x) { t(colMeans(x)) },appendZipData=T )
-sclrs      = combine(allZips,resultType='d_summaries',scalars,appendZipData=T)
+resultScalarsFile = file.path(getwd(),resultsDir,'resultScalars.RData')
+cpDataFile        = file.path(getwd(),resultsDir,'cpData.RData')
+coeffDataFile     = file.path(getwd(),resultsDir,'coeffData.RData')
 
-cfs  = list()
-stde = list()
-pvs  = list()
-tvs  = list()
-models = unique(sclrs$model.name)
-for(model in models) {
-  print(model)
-  cfs[[model]]  = combine(allZips,resultType='d_summaries',cf,     model.name=model,appendZipData=T)
-  stde[[model]] = combine(allZips,resultType='d_summaries',stderrs,model.name=model,appendZipData=T)
-  pvs[[model]]  = combine(allZips,resultType='d_summaries',pvals,  model.name=model,appendZipData=T)
-  tvs[[model]]  = combine(allZips,resultType='d_summaries',tvals,  model.name=model,appendZipData=T)
+if(file.exists(resultScalarsFile)) {
+  load(resultScalarsFile)
+} else {
+  basics     = combine(allZips,resultType='features.basic',fun=as.matrix,appendZipData=T)
+  basicMeans = combine(allZips,resultType='features.basic',fun=function(x) { t(colMeans(x)) },appendZipData=T )
+  sclrs      = combine(allZips,resultType='d_summaries',fun=scalars,appendZipData=T)
+  save(list=c('basics','basicMeans','sclrs'),file=resultScalarsFile)
 }
+gc()
 
-cpData = combine(allZips,resultType='d_others',subResultType='tout',function(x) sapply(x[,'data'],function(y) c(cp=y['cp',])),appendZipData=T)
+if(file.exists(coeffDataFile)) {
+  load(coeffDataFile)
+} else {
+  cfs  = list()
+  stde = list()
+  pvs  = list()
+  tvs  = list()
+  models = unique(sclrs$model.name)
+  for(model in models) {
+    
+    print(paste(model,'from',paste(models,collapse=',')))
+    cfs[[model]]  = combine(allZips,resultType='d_summaries',fun=cf,     model.name=model,appendZipData=T)
+    stde[[model]] = combine(allZips,resultType='d_summaries',fun=stderrs,model.name=model,appendZipData=T)
+    pvs[[model]]  = combine(allZips,resultType='d_summaries',fun=pvals,  model.name=model,appendZipData=T)
+    tvs[[model]]  = combine(allZips,resultType='d_summaries',fun=tvals,  model.name=model,appendZipData=T)
+  }
+  save(list=c('cfs','stde','pvs','tvs'),file=coeffDataFile)
+}
+gc()
+
+ws = getWeatherSummary()
+if(file.exists(cpDataFile)) {
+  load(cpDataFile)
+} else {
+  cpData = combine(allZips,
+                   resultType='d_others',
+                   subResultType='tout',
+                   fun=function(x) {
+                     cpListMatrix = t(sapply(x[,'data'],
+                     function(y) {
+                       out = data.frame(t(y[rownames(y),])); 
+                       colnames(out) <- rownames(y); 
+                       return(out)
+                     }));
+                     return(delist(data.frame(cpListMatrix)))
+                   },
+                   appendZipData=T)
+  cpData = merge(ws,cpData,by.x='zip5',by.y='zip5')
+  save(list=c('cpData'),file=cpDataFile)
+}
+gc()
+
+ggplot(aes(x=cp,color=climate),data=cpData) + geom_density()
+ggplot(aes(x=cp,color=cecclmzn),data=cpData) + geom_density()
+
+g = ggplot(cpData,aes(x=cp,y=tout))
+g + geom_point(aes(color=cecclmzn))
+g + geom_hex()
+
+g = ggplot(cpData,aes(x=cp,y=cut(tout, breaks=c(seq(40,80,1),Inf))))
+g + stat_bin(aes(fill=..density..), geom="tile", binwidth=3, position="identity")
+g + stat_bin(aes(fill=..count..), geom="tile", binwidth=3, position="identity") + 
+  labs(title='Annual mean temperature vs. change point',
+           x='Change point (F)',
+           y='tout mean (F)')
+
 
 # find the best r.squared result for each sp_id
 bestModels = do.call(rbind,by(sclrs,sclrs$id,function(df) df[which.max(df$r.squared),]))
 ggplot(aes(x=model.name),data=bestModels) + geom_bar() # counts of best models.
-ggplot(aes(y=sigma,x=r.squared),data=a) + geom_point() + ylim(0,50) # relationship between our two metrics
+ggplot(aes(y=sigma,x=r.squared),data=bestModels) + geom_point() + ylim(0,50) # relationship between our two metrics
 
 ab = merge(basics[c('id','kw.var')],bestModels,by.x='id',by.y='id',all=F) # add the model variance so sigma can be normalized
 
 hists(sclrs,metric='r.squared')
-sclrsZ = addZipData(sclrs)
-zipHists(sclrsZ,metric='r.squared',model.name='toutDailyCP')
-
+zipHists(sclrs,metric='r.squared',model.name='toutDailyCP')
+hists(sclrs,metric='sigma',xlim=c(0,20))
+zipHists(sclrs,metric='sigma',model.name='toutDailyCP',xlim=c(0,20))
 
 zip='94923'
 #d_summary = modelResults$d_summary #combineSummaries(zips,'d_summaries')
