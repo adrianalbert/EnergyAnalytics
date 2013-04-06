@@ -29,10 +29,9 @@ library(timeDate)
 library(RColorBrewer)
 
 
-testModelRun = function(cfg) {
+testModelRun = function(cfg,r=NULL) {
   print(cfg)
   #r = ResDataClass(553991005,93304);
-  r = ResDataClass(2547072505,94610);
   df = regressorDF(r)
   summaries   = c()
   d_summaries = c()
@@ -106,24 +105,34 @@ cfg$models.hourly = list(
   #toutTOD_WKND = ModelDescriptor(name='toutTOD_WKND',formula="kw ~ 0 + tout65:HODWK + HODWK",subset=list(all="TRUE"))
 )
 cfg$models.daily = list(
-  #tout           = "kwh ~ tout.mean",
-  DOW            = "kwh ~ DOW",
-  tout_mean      = "kwh ~ tout.mean + DOW",
-  tout_mean_WKND = "kwh ~ tout.mean + WKND",
-  #tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
-  tout_max       = "kwh ~ tout.max  + DOW",
-  #tout_CDD       = "kwh ~ CDD + HDD + DOW",
-  tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND",
-  wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
-  dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
-  dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE"))
+  ##tout           = "kwh ~ tout.mean",
+  #DOW            = "kwh ~ DOW",
+  #tout_mean      = "kwh ~ tout.mean + DOW",
+  #tout_mean_WKND = "kwh ~ tout.mean + WKND",
+  ##tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
+  #tout_max       = "kwh ~ tout.max  + DOW",
+  ##tout_CDD       = "kwh ~ CDD + HDD + DOW",
+  #tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND",
+  #wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
+  #dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
+  #dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE"))
+  dailyFlexCP    = DescriptorGenerator(name='tout',genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"))
 )
-
-runOut = testModelRun(cfg)
+init = F
+if(init) {
+  rNA = ResDataClass(2547072505,94610); # no tout dep
+  rCO = ResDataClass(553991005,93304);  # cooling only
+  #rU = ResDataClass(1882681258,93304); # U shape
+  rU = ResDataClass(6481381805,93304); # U shape
+  #rV = ResDataClass(6481399605,93304); # V shape
+  rV = ResDataClass(6502182810,93304); # V shape
+  # todo: find more without temp dep or heating only...
+}
+runOut = testModelRun(cfg,rU)
 summaries = runOut$summaries
 others = runOut$others
 d_summaries = runOut$d_summaries
 d_others = runOut$d_others
 #rm(runOut)
 print(others$toutPiecesL[,'data']) # all 'other' data is accessed this way
-r = ResDataClass(553991005,93304);plot(r,estimates= toutChangePoint(df=rDFA(r),trange=c(50:85),reweight=F))
+plot(rU,estimates=toutDoubleChangePoint(df=rDFA(rU)))

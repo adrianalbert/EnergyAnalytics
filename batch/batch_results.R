@@ -38,6 +38,7 @@ allZips = dirZips
 resultScalarsFile = file.path(getwd(),resultsDir,'resultScalars.RData')
 cpDataFile        = file.path(getwd(),resultsDir,'cpData.RData')
 coeffDataFile     = file.path(getwd(),resultsDir,'coeffData.RData')
+bestModelDataFile = file.path(getwd(),resultsDir,'bestModelData.RData')
 
 if(file.exists(resultScalarsFile)) {
   load(resultScalarsFile)
@@ -77,19 +78,33 @@ if(file.exists(cpDataFile)) {
                    resultType='d_others',
                    subResultType='tout',
                    fun=function(x) {
-                     cpListMatrix = t(sapply(x[,'data'],
-                     function(y) {
-                       out = data.frame(t(y[rownames(y),])); 
-                       colnames(out) <- rownames(y); 
+                     cpMatrix = t(apply(x, 1, 
+                     function(y) { 
+                       out = c(id=y$id,t(y$data[rownames(y$data),]));                      
+                       names(out) <- c('id',rownames(y$data)); 
                        return(out)
-                     }));
-                     return(delist(data.frame(cpListMatrix)))
+                       }));
+                     #cpListMatrix = t(sapply(x[,'data'],
+                     #function(y) {
+                     #  out = data.frame(t(y[rownames(y),])); 
+                     #  colnames(out) <- rownames(y); 
+                     #  return(out)
+                     #}));
+                     return(data.frame(cpMatrix))
                    },
                    appendZipData=T)
   cpData = merge(ws,cpData,by.x='zip5',by.y='zip5')
   save(list=c('cpData'),file=cpDataFile)
 }
 gc()
+
+# find the best r.squared result for each sp_id
+if(file.exists(bestModelDataFile)) {
+  load(bestModelDataFile)
+} else {
+  bestModels = do.call(rbind,by(sclrs,sclrs$id,function(df) df[which.max(df$r.squared),]))
+  save(list=c('bestModels'),file=bestModelDataFile)
+}
 
 ggplot(aes(x=cp,color=climate),data=cpData) + geom_density()
 ggplot(aes(x=cp,color=cecclmzn),data=cpData) + geom_density()
@@ -105,17 +120,21 @@ g + stat_bin(aes(fill=..count..), geom="tile", binwidth=3, position="identity") 
            x='Change point (F)',
            y='tout mean (F)')
 
-
-# find the best r.squared result for each sp_id
-bestModels = do.call(rbind,by(sclrs,sclrs$id,function(df) df[which.max(df$r.squared),]))
 ggplot(aes(x=model.name),data=bestModels) + geom_bar() # counts of best models.
-ggplot(aes(y=sigma,x=r.squared),data=bestModels) + geom_point() + ylim(0,50) # relationship between our two metrics
 
 ab = merge(basics[c('id','kw.var')],bestModels,by.x='id',by.y='id',all=F) # add the model variance so sigma can be normalized
+ggplot(aes(y=sigma,x=r.squared),data=bestModels) + geom_point() + ylim(0,50) # relationship between our two metrics
 
-hists(sclrs,metric='r.squared')
+ggplot(aes(y=sigma/kw.var^2,x=r.squared),data=ab) + geom_point() + ylim(0,1000) # relationship between our two metrics
+
+bestCP = merge(bestModels,cpData,by.x='id',by.y='id')
+ggplot(bestCP,aes(y=cut(cp,seq(30,90,5)),x=pval.upper)) + geom_point()
+sbcp = subset(bestCP,subset=bestCP$pval.upper < 0.1)
+ggplot(sbcp,aes(x=cp,color=model.name)) + geom_density()
+
+hists(sclrs,metric='r.squared',zip='all data (200k homes)')
 zipHists(sclrs,metric='r.squared',model.name='toutDailyCP')
-hists(sclrs,metric='sigma',xlim=c(0,20))
+hists(sclrs,metric='sigma',xlim=c(0,20),zip='all data (200k homes)')
 zipHists(sclrs,metric='sigma',model.name='toutDailyCP',xlim=c(0,20))
 
 zip='94923'

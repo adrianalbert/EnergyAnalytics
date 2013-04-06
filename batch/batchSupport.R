@@ -199,9 +199,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             md = cfg$models.daily[[mdName]]
             #print(mdName)
             runOut = md$run(r,dfd)
-            tic()
             d_summaries[[i]] = runOut$summaries
-            toc(prefix='rbind d_summaries')
             if(! empty(runOut$other)) {
               d_others[[md$name]] = rbind(d_others[[md$name]],list(id=r$id,data=runOut$other))
             }

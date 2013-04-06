@@ -80,18 +80,20 @@ cfg$models.hourly = list(
 
 # todo: integration vacation days into regression
 cfg$models.daily = list(
-  #tout           = "kwh ~ tout.mean",
-  DOW            = "kwh ~ DOW",
-  tout_mean      = "kwh ~ tout.mean + DOW",
-  tout_mean_WKND = "kwh ~ tout.mean + WKND",
-  #tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
-  tout_max       = "kwh ~ tout.max  + DOW",
-  kitchen        = "kwh ~ tout.max + tout.min + tout.mean + pout.mean + DOW + vac",
-  #tout_CDD       = "kwh ~ CDH + HDH + DOW",
-  tout_CDH_WKND  = "kwh ~ CDH + HDH + WKND",
-  wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
-  dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
-  dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE"))
+#   #tout           = "kwh ~ tout.mean",
+#   DOW            = "kwh ~ DOW",
+#   tout_mean      = "kwh ~ tout.mean + DOW",
+#   tout_mean_WKND = "kwh ~ tout.mean + WKND",
+#   #tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
+#   tout_max       = "kwh ~ tout.max  + DOW",
+#   kitchen        = "kwh ~ tout.max + tout.min + tout.mean + pout.mean + DOW + vac",
+#   #tout_CDD       = "kwh ~ CDH + HDH + DOW",
+#   tout_CDH_WKND  = "kwh ~ CDH + HDH + WKND",
+#   wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
+#   dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
+#   dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE")),
+  dailyFlexCP    = DescriptorGenerator(name='tout',genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"))
+  
 )
 
 cfg$models.monthly = list(
@@ -116,7 +118,7 @@ if (length(args) > 0) {
   cfg$allZips  <- db.getZips()
 }
 # bakersfield, oakland
-cfg$allZips = c(94610) #,93304)
+cfg$allZips = c(93304) #,93304)
 
 #cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
 #               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,

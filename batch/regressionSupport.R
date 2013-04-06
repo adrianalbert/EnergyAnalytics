@@ -310,8 +310,8 @@ toutDailyFixedCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,
 toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL,forceCP=NULL) {
   changeModel = NULL
   if(is.null(forceCP)) {
-    changeModel = toutChangePointFast(df=df,trange=c(50:85),reweight=F)
-    modelCP = changeModel[['cp']]
+    changeModel = toutChangePointFast(df=df,reweight=F)
+    modelCP = changeModel[grep('^cp',names(changeModel))]
   }
   else { modelCP = forceCP }
   pieces = regressor.piecewise(df$tout.mean,modelCP) # get a list of daily piecewise splits for tout.mean
@@ -325,6 +325,39 @@ toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basic
     descriptors  = list( 
       DailyCP=ModelDescriptor( # regression with the best fit daily change point
         name=paste(namePrefix,'DailyCP', sep=''), 
+        formula=dailyCPf,
+        subset=subset,fold=fold)                
+    )
+  )
+  return(out)
+}
+toutDoubleChangePoint = function(df) {
+  changeModels = lapply(41:80,function(coolCP) {
+    trange = lapply((coolCP-1):40,function(x) c(x,coolCP))
+    toutChangePointFast(df=df,trange=trange,reweight=F)
+  })
+  cm = do.call(rbind,changeModels)
+  bestFit = cm[which.min(cm[,'SSR']),]
+}
+
+toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL,forceCP=NULL) {
+  # todo: test 1,2,and 3 segment change point models.
+  #coolCP = 70
+  bestFit = toutDoubleChangePoint(df)
+  cp = bestFit[grep('^cp',names(bestFit))]
+  pieces = regressor.piecewise(df$tout.mean,cp) # get a list of daily piecewise splits for tout.mean
+  middle = c()
+  nSegs = dim(pieces)[2]
+  if(nSegs > 2) middle = paste('tou.mean_middle_',1:(nSegs-2),sep='')
+  colnames(pieces) <- c('tout.mean_lower',middle,'tout.mean_upper')
+  # define regression formula that uses the piecewise pieces
+  dailyCPf  = paste('kwh ~',paste(colnames(pieces),collapse=" + ",sep=''),'+ DOW - 1')
+  out = list( 
+    regressors   = pieces,
+    changeModel  = bestFit,
+    descriptors  = list( 
+      DailyFlexCP=ModelDescriptor( # regression with the best fit daily change point
+        name=paste(namePrefix,'DailyFlexCP', sep=''), 
         formula=dailyCPf,
         subset=subset,fold=fold)                
     )
@@ -599,7 +632,7 @@ regressorDFAggregated = function(residence,norm=F,bp=65,rm.na=FALSE) {
 }
 
 # Change point helper functions -------------------------------------------
-hourlyChangePoint = function(df,hourBins=list(1:24),trange=c(50:80),fast=T,reweight=F) {
+hourlyChangePoint = function(df,hourBins=list(1:24),trange=NULL,fast=T,reweight=F) {
   # hourBins should be a list of n numeric arrays such that each member of the list 
   # is 1 or more hours of the day to use with the subset command to get 
   # n change point estimates. So the default list(1:24) corresponds to using
@@ -616,11 +649,15 @@ hourlyChangePoint = function(df,hourBins=list(1:24),trange=c(50:80),fast=T,rewei
 
 # this runs all the models and chooss the minimum one.
 # likely waste of CPU on models past the min. See faster impl below
-toutChangePoint = function(hrs=NULL,df,trange=c(50:85),reweight=F) {
+toutChangePoint = function(hrs=NULL,df,trange=NULL,reweight=F) {
   if(! is.null(hrs)) {
     sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='') # pull out hrs subset (#0-23 in the df)
     df = df[sub,]
     df = df[!is.na(df$kw),]
+  }
+  if(is.null(trange)) {
+    rng = floor(quantile(df[[toutStr]],c(0.1,0.90),na.rm=T))
+    trange = c( rng[1]:rng[2]  )
   }
   steps = sapply(trange,FUN=evalCP,df,reweight)  # run all the models in the range
   #print(steps['SSR',])
@@ -631,7 +668,7 @@ toutChangePoint = function(hrs=NULL,df,trange=c(50:85),reweight=F) {
 # this takes advantage of the fact that for one change point, 
 # the SSR will be convex so it stops when the change in SSR is positive
 # note that each cp in trange could be a list c(40,50,60,70) or just a number
-toutChangePointFast = function(hrs=NULL,df,trange=c(50:85),reweight) {
+toutChangePointFast = function(hrs=NULL,df,trange=NULL,reweight) {
   toutStr = 'tout'
   if(! is.null(hrs)) {
     sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='')  # define hrs subset (#0-23 in the df)
@@ -639,12 +676,15 @@ toutChangePointFast = function(hrs=NULL,df,trange=c(50:85),reweight) {
     df = df[!is.na(df$kw),]                                      # no NA's. Breaks the algorithm
   }
   else { toutStr = 'tout.mean' }
-  rng = floor(quantile(df[[toutStr]],c(0.1,0.90),na.rm=T))
-  trange = c( rng[1]:rng[2]  )
+  if(is.null(trange)) {
+    rng = floor(quantile(df[[toutStr]],c(0.1,0.90),na.rm=T))
+    trange = c( rng[1]:rng[2]  )
+  }
+  
   prev = c(cp=-1,SSR=Inf)                                      # init the compare options
   warnMulti = F
   for(cp in trange) {
-    if(length(cp)>1) warnMulti = T # there is no guarantee against global minima
+    #if(length(cp)>1) warnMulti = T # there is no guarantee against global minima
     out = evalCP(cp,df,reweight)                               # run piecewise regression
     if(out['SSR'] > prev['SSR']) { # the previous value was the min
       #plot(df$tout,df$kw,main=paste('Hr',paste(hrs,collapse=',')))

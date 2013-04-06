@@ -347,11 +347,16 @@ hmap = function(data,colorMap=NA,yvals=NA,xvals=NA,log=FALSE,...) {
 }
 
 # quickly find the estimates for a simple change point model with one cp
-quickEst = function(cp,const,lower,upper,tlim=c(0,100)) {
+quickEst = function(cp,const,b,tlim=c(0,100)) {
   tlim=c(floor(tlim[1]),ceiling(tlim[2]))
-  x = tlim[1]:tlim[2]
-  y = c(c(const + tlim[1]:cp * lower),c(const + cp * lower + ((cp+1):tlim[2] -cp) * upper))
-  return(cbind(x,y))
+  tRng = tlim[1]:tlim[2]
+  print(cp)
+  print(b)
+  pieces = regressor.piecewise(tRng,cp)
+  X = cbind(1,pieces)
+  y = X %*% c(const,b)
+  #y = c(c(const + tlim[1]:cp * lower),c(const + cp * lower + ((cp+1):tlim[2] -cp) * upper))
+  return(cbind(tRng,y))
 }
 
 save.png.plot = function(r,path) {
@@ -407,7 +412,9 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NULL
       color = 'blue'
       if (fit['AIC_0'] < fit['AIC_cp']) color = 'gray'
       if (fit['nullModelTest'] > 0.1)   color = 'red'
-      qe = quickEst(fit['cp'],fit['(Intercept)'],fit['lower'],fit['upper'],
+      cp = fit[grep('^cp',names(fit))]
+      middle = fit[grep('^middle',names(fit))]
+      qe = quickEst(cp,fit['(Intercept)'],c(fit['lower'],middle,fit['upper']),
                   c(min(toutMeans,na.rm=T),max(toutMeans,na.rm=T)))
       #print(qe[,1])
       plot(qe[,1],qe[,2],
