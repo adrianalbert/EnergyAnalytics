@@ -29,9 +29,14 @@ library(timeDate)
 library(RColorBrewer)
 
 
+<<<<<<< HEAD
 testModelRun = function(cfg,r=NULL) {
   print(cfg)
   #r = ResDataClass(553991005,93304);
+=======
+testModelRun = function(r,cfg) {
+  print(cfg)
+>>>>>>> 83374930a8fa49f5cc1869723823dbcd0d33bb33
   df = regressorDF(r)
   summaries   = c()
   d_summaries = c()
@@ -134,5 +139,6 @@ others = runOut$others
 d_summaries = runOut$d_summaries
 d_others = runOut$d_others
 #rm(runOut)
-print(others$toutPiecesL[,'data']) # all 'other' data is accessed this way
+#print(others$toutPiecesL[,'data']) # all 'other' data is accessed this way
 plot(rU,estimates=toutDoubleChangePoint(df=rDFA(rU)))
+

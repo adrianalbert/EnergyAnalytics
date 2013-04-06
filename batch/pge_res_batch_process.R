@@ -32,9 +32,9 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 #library('cvTools') # cross validation tools
 
 cfg = list()
-cfg$outDir = 'results_daily_test'
+cfg$outDir = 'results_daily'
 
-cfg$SKIP_EXISTING_RDATA = F # don't run models if the RData file for their zip is present
+cfg$SKIP_EXISTING_RDATA = T # don't run models if the RData file for their zip is present
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
 cfg$PLOT_VALID   = F  # create png plots for residences that pass validaiton
 
@@ -118,7 +118,11 @@ if (length(args) > 0) {
   cfg$allZips  <- db.getZips()
 }
 # bakersfield, oakland
+<<<<<<< HEAD
 cfg$allZips = c(93304) #,93304)
+=======
+#cfg$allZips = c(93304)
+>>>>>>> 83374930a8fa49f5cc1869723823dbcd0d33bb33
 
 #cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
 #               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
