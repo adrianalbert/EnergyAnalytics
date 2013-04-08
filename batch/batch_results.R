@@ -20,7 +20,7 @@ source(file.path(getwd(),'DataClasses.R'))
 source(file.path(getwd(),'weatherFeatures.R'))
 source(file.path(getwd(),'zipMap.R'))
 
-resultsDir = 'results_daily' # real
+resultsDir = 'results_daily_flex' # 'results_daily' # real
 
 # get a list of all the data filees in the dir and extract their zips
 dirZips = do.call(rbind,strsplit(list.files(file.path(getwd(),resultsDir),pattern='modelResults.RData'),'_'))[,1]
