@@ -35,7 +35,7 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 cfg = list()
 cfg$outDir = 'results_daily_standard'
 
-cfg$SKIP_EXISTING_RDATA = F # don't run models if the RData file for their zip is present
+cfg$SKIP_EXISTING_RDATA = T # don't run models if the RData file for their zip is present
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
 cfg$PLOT_VALID   = F # create png plots for residences that pass validaiton
 
@@ -110,10 +110,10 @@ cfg$models.daily = list(
   DOW_tout_DL_l1   = "kwh ~ DOW + tout.mean + day.length + tout.mean.65.l1",
   DOW_tout.min_DL  = "kwh ~ DOW + tout.min  + day.length",
   DOW_tout.max_DL  = "kwh ~ DOW + tout.max  + day.length",
-  DOW_DD_DL        = "kwh ~ DOW + CDH + HDH + day.length",
+  DOW_DD_DL        = "kwh ~ DOW + CDH + day.length",
   DOW_tout_DL_vac  = "kwh ~ DOW + tout.mean + day.length + vac",
   DOW_toutCP_DL    = DescriptorGenerator(name='DOW_toutCP_DL',  genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"), terms='+ DOW + day.length'), # 1 CP
-  DOW_toutCP_DL_l1 = DescriptorGenerator(name='DOW_toutCP_DL_l1',  genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"), terms='+ DOW + day.length + tout.mean.65.l1') # 1 CP
+  DOW_toutCP_DL_l1 = DescriptorGenerator(name='DOW_toutCP_DL_l1',  genImpl=toutDailyCPGenerator, subset=list(all="TRUE"), terms='+ DOW + day.length + tout.mean.65.l1') # 1 CP
   
 #   wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
 #   dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),

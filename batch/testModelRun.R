@@ -114,7 +114,7 @@ cfg$models.daily = list(
   DOW_tout_DL     = "kwh ~ DOW + tout.mean + day.length",
   DOW_tout.min_DL = "kwh ~ DOW + tout.min  + day.length",
   DOW_tout.max_DL = "kwh ~ DOW + tout.max  + day.length",
-  DOW_DD_DL       = "kwh ~ DOW + CDH + HDH + day.length",
+  DOW_DD_DL       = "kwh ~ DOW + CDH + day.length",
   DOW_tout_DL_vac = "kwh ~ DOW + tout.mean + day.length + vac",
   DOW_toutCP_DL   = DescriptorGenerator(name='DOW_toutCP_DL',  genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"), terms='+ DOW + day.length') # 1 CP
   #tout_mean_WKND = "kwh ~ tout.mean + WKND + day.length",
