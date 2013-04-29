@@ -20,7 +20,8 @@ source(file.path(getwd(),'DataClasses.R'))
 source(file.path(getwd(),'weatherFeatures.R'))
 source(file.path(getwd(),'zipMap.R'))
 
-resultsDir = 'results_daily_flex' # 'results_daily' # real
+resultsDir = 'results_daily'       # daily models for all homes
+resultsDir = 'results_daily_flex'  # 2 change point models
 
 # get a list of all the data filees in the dir and extract their zips
 dirZips = do.call(rbind,strsplit(list.files(file.path(getwd(),resultsDir),pattern='modelResults.RData'),'_'))[,1]
@@ -47,26 +48,6 @@ if(file.exists(resultScalarsFile)) {
   basicMeans = combine(allZips,resultType='features.basic',fun=function(x) { t(colMeans(x)) },appendZipData=T )
   sclrs      = combine(allZips,resultType='d_summaries',fun=scalars,appendZipData=T)
   save(list=c('basics','basicMeans','sclrs'),file=resultScalarsFile)
-}
-gc()
-
-if(file.exists(coeffDataFile)) {
-  load(coeffDataFile)
-} else {
-  cfs  = list()
-  stde = list()
-  pvs  = list()
-  tvs  = list()
-  models = unique(sclrs$model.name)
-  for(model in models) {
-    
-    print(paste(model,'from',paste(models,collapse=',')))
-    cfs[[model]]  = combine(allZips,resultType='d_summaries',fun=cf,     model.name=model,appendZipData=T)
-    stde[[model]] = combine(allZips,resultType='d_summaries',fun=stderrs,model.name=model,appendZipData=T)
-    pvs[[model]]  = combine(allZips,resultType='d_summaries',fun=pvals,  model.name=model,appendZipData=T)
-    tvs[[model]]  = combine(allZips,resultType='d_summaries',fun=tvals,  model.name=model,appendZipData=T)
-  }
-  save(list=c('cfs','stde','pvs','tvs'),file=coeffDataFile)
 }
 gc()
 
@@ -106,6 +87,106 @@ if(file.exists(bestModelDataFile)) {
   save(list=c('bestModels'),file=bestModelDataFile)
 }
 
+if(file.exists(coeffDataFile)) {
+  load(coeffDataFile)
+} else {
+  results.cfs  = list()
+  results.stde = list()
+  results.pvs  = list()
+  results.tvs  = list()
+  models = unique(sclrs$model.name)
+  for(model in models) {
+    
+    print(paste(model,'from',paste(models,collapse=',')))
+    results.cfs[[model]]  = combine(allZips,resultType='d_summaries',fun=cf,     model.name=model,appendZipData=T)
+    results.stde[[model]] = combine(allZips,resultType='d_summaries',fun=stderrs,model.name=model,appendZipData=T)
+    results.pvs[[model]]  = combine(allZips,resultType='d_summaries',fun=pvals,  model.name=model,appendZipData=T)
+    results.tvs[[model]]  = combine(allZips,resultType='d_summaries',fun=tvals,  model.name=model,appendZipData=T)
+  }
+  save(list=c('results.cfs','results.stde','results.pvs'),file=coeffDataFile)
+  #save(list=c('results.cfs','results.stde','results.pvs','results.tvs'),file=coeffDataFile)
+}
+gc()
+
+calMap(db.getZipCounts(),'count','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues") )
+calMap(db.getZipData(),'cecclmzn','zip5',main='CEC climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
+calMap(db.getZipData(),'climate' ,'zip5',main='PGE climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
+ws = getWeatherSummary()
+ws$rain = ws$rain * 365 * 24
+ws$rain[ws$rain > 120] = NA # there is junk rain data (suprise!!)
+calMap(ws,'tout','zip5',main='Mean annual temperature',colorMap=rev(brewer.pal(9,"RdBu")) )
+calMap(ws,'rain','zip5',main='Total annual rain (inches)',colorMap=brewer.pal(9,"Blues") )
+calMap(ws,'dp','zip5',main='Mean annual dew point (F)',colorMap=brewer.pal(9,"Purples") )
+
+basics$kw.total = basics$kw.mean * 365 * 24
+basicMeans$kw.total = basicMeans$kw.mean * 365 * 24
+
+# maps of various metrics 
+# see zipMap.R for the calMap implementation and other plots
+calMap(basicMeans,'kw.total',main='Mean annual electricity consumption (kWh)',colorMap=brewer.pal(9,"Reds") )
+calMap(basicMeans,'lag0',main='Simple correlation between Tout and kW denamd: corr(Tout,kW)',colorMap=rev(brewer.pal(9,"RdBu")) )
+basicMeansWS = merge(basicMeans,ws,by.x='zip5',by.y='zip5')
+basicMeansWS$rankDiff = rank(basicMeansWS$kw.total) - rank(basicMeansWS$tout)
+calMap(basicMeansWS,'rankDiff',main='Rank difference between kW demand and temperature',colorMap=rev(brewer.pal(9,"RdBu")) )
+ggplot(basicMeansWS,aes(x=tout,y=kw.total)) + geom_point() + labs(title='Annual energy vs. Tout',x='Annual average Tout',y='Annual energy (kWh)') + ylim(0,20000)
+
+# histograms of annual energy demand
+ggplot(basics,aes(x=kw.total,color=cecclmzn)) + geom_density() + xlim(0,40000) + labs(title='Prob. density of annual kWh by climate zone',x='Annual kWh',y='Count')
+
+basics$minLevels = cut(basics$min * 1000,seq(0,1000,100))
+ggplot(basics,aes(x=kw.total,fill=minLevels)) + geom_histogram(binwidth=100) + xlim(0,40000) + labs(title='Count of homes by annual kWh',x='Annual kWh',y='Count')
+ggplot(basics,aes(x=kw.total,color=minLevels)) + geom_density() + xlim(0,40000) + labs(title='Count of homes by annual kWh',x='Annual kWh',y='Count')
+ggplot(basics,aes(x=min,y=kw.total)) + geom_point() + ylim(0,40000) + labs(title='Constant loads vs. total annual energy',x='Average daily min demand (kW)',y='annual energy (kWh)')
+baseFraction = basics$min*365*24 / basics$kw.total
+plot(sort(baseFraction),type='l',ylab='Fraction of energy',main='Fraction of annual kWh from 24x7 loads')
+
+
+basics$maxLevels = cut(basics$max * 1000,seq(0,4000,200))
+ggplot(basics,aes(x=kw.total,fill=maxLevels)) + geom_histogram(binwidth=100) + xlim(0,40000) + labs(title='Count of homes by annual kWh',x='Annual kWh',y='Count')
+ggplot(basics,aes(x=kw.total,color=maxLevels)) + geom_density() + xlim(0,40000) + labs(title='Count of homes by annual kWh',x='Annual kWh',y='Count')
+
+
+# income vs energy use
+ggplot(basicMeans,aes(x=median_income,y=kw.total)) + geom_point(colour="black") + ylim(0,20000) + labs(x='',y='')
+ggplot(basicMeans,aes(x=median_income,y=kw.total,color=cecclmzn)) + geom_point() + ylim(0,20000) + labs(title='Zip code median income vs. mean annual energy (kWh)',y='Annual kWh',x='Median income')
+
+
+MAm = as.matrix(basics[,grep("^ma[0-9]",colnames(basics))])
+basics$maxMA = as.numeric(apply(MAm,1,which.max))
+
+# example daily scatter plot types
+toutScatter = function(r) {
+  dfa = rDFA(r)
+  plot(dfa$tout.mean,dfa$kwh,
+       xlab='mean T (degs F)',ylab='kWh/day',main=paste(r$id,r$weather$zip),xlim=c(40,95),
+       mgp=c(1,0,0),tcl=0.5)
+}
+
+op <- par(no.readonly = TRUE)
+par( mfrow=c(3,3), oma=c(2,0,3,0),mar=c(2,2,2,2))# Room for the title
+toutScatter(ResDataClass(1064429605,93304)) # _/  good fit
+toutScatter(ResDataClass(1418575405,93304)) # \/  good fit
+toutScatter(ResDataClass(6481381805,93304)) # \_/ good fit
+toutScatter(ResDataClass(6502182810,93304)) # \_/ good fit
+toutScatter(ResDataClass(6533703010,93304)) # WTF bad fit
+toutScatter(ResDataClass(3044473610,94704)) # \_  ok fit
+toutScatter(ResDataClass(3074319310,94704)) # \_  ok fit
+toutScatter(ResDataClass(3064027805,94704)) # __  bad fit
+toutScatter(ResDataClass(3074465310,94704)) # __  ok fit
+mtext("Typical daily kWh vs. mean Tout scatters", line=0, font=2, cex=1.2,outer=TRUE)
+par(op)
+
+r = ResDataClass(1064429605,93304);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # _/  good fit
+r = ResDataClass(1418575405,93304);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \/  good fit
+r = ResDataClass(6481381805,93304);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_/ good fit
+r = ResDataClass(6502182810,93304);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_/ good fit
+r = ResDataClass(6533703010,93304);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # WTF bad fit
+r = ResDataClass(3044473610,94704);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_  ok fit
+r = ResDataClass(3074319310,94704);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_  ok fit
+r = ResDataClass(3064027805,94704);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # __  bad fit
+r = ResDataClass(3074465310,94704);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # __  ok fit
+
+
 ggplot(aes(x=cp,color=climate),data=cpData) + geom_density()
 ggplot(aes(x=cp,color=cecclmzn),data=cpData) + geom_density()
 
@@ -119,6 +200,10 @@ g + stat_bin(aes(fill=..count..), geom="tile", binwidth=3, position="identity") 
   labs(title='Annual mean temperature vs. change point',
            x='Change point (F)',
            y='tout mean (F)')
+
+
+g = ggplot(cpData,aes(x=cp,color=cut(tout, breaks=c(seq(55,90,2),Inf)))) + geom_density() + xlim(55,90)
+g
 
 ggplot(aes(x=model.name),data=bestModels) + geom_bar() # counts of best models.
 

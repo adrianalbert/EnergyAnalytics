@@ -315,12 +315,16 @@ validateRes = function(r) {
 
 mapColors = function(data,colorMap=NA,log=FALSE) {
   if(length(colorMap) < 2) { colorMap = heat.colors(100) }
-  mn = min(data,na.rm=TRUE)
-  data_mn = data - mn + 0.001
-  if(log) {
-    data_mn = log(data_mn + 1) # nothing below zero after we take the log
+  if(is.numeric(data)) {
+    mn = min(data,na.rm=TRUE)
+    data_mn = data - mn + 0.001
+    if(log) {
+      data_mn = log(data_mn + 1) # nothing below zero after we take the log
+    }
+    idx = ceiling(data_mn / max(data_mn,na.rm=TRUE) * length(colorMap))
   }
-  idx = ceiling(data_mn / max(data_mn,na.rm=TRUE) * length(colorMap))
+  if(is.character(data)) { data = factor(data) }
+  if(is.factor(data)) { idx = data }
   return(colorMap[idx])
 }
 
@@ -355,6 +359,7 @@ quickEst = function(cp,const,b,tlim=c(0,100)) {
   pieces = regressor.piecewise(tRng,cp)
   X = cbind(1,pieces)
   y = X %*% c(const,b)
+  #print(y)
   #y = c(c(const + tlim[1]:cp * lower),c(const + cp * lower + ((cp+1):tlim[2] -cp) * upper))
   return(cbind(tRng,y))
 }
@@ -427,9 +432,11 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NULL
     #heatmap(as.matrix(r$kwMat),Rowv=NA,Colv=NA,labRow=NA,labCol=NA)
   } else if(type=='temp') {
     if(is.na(main)) { main <- paste(r$id,' (',r$zip,') temperature info',sep='') }
-    colors = rainbow(24)
-    plot(r$tout,r$kw,xlab='Tout',ylab='kW',main=main,type='p',col=mapColors(r$dates$hour,colors)) # rainbow(n, start=2/6, end=1)
-    legend('right', paste("hr ", 1:24), fill=colors, ncol = 1, cex = 0.8)
+    #colors = rainbow(24)
+    colors = colorRampPalette(brewer.pal(11,"PRGn"))(24)
+    colors = colors[(1:length(colors) + 8) %% length(colors)] # shift values backwards by 8 hours (so color discontinuity is in the afternoon)
+    plot(r$tout,r$kw,xlab='Tout',ylab='kW',main=main,type='p',col=mapColors(r$dates$hour,colors),cex=0.8,pch=19) # rainbow(n, start=2/6, end=1)
+    legend('right', paste("hr ", 1:24), fill=colors, ncol = 1, cex = 0.5)
   } else if(type=='hourly') {
     if(is.na(main)) { main <- paste(r$id,' (',r$zip,') hourly info',sep='') }
     op <- par(no.readonly = TRUE)
@@ -452,7 +459,7 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NULL
       sub = r$dates$hour==i
       plot(subset(r$tout,sub),subset(r$kw,sub),
            col=subset(colors,sub),
-           xlim=xlm,ylim=ylm,yaxt=yax,xaxt=xax 
+           xlim=xlm,ylim=ylm,yaxt=yax,xaxt=xax,cex=0.9
            )
       if(length(estimates) > 1) {
         if(length(estimates[,i+1]) > 1) {

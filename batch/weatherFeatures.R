@@ -1,6 +1,10 @@
 weatherFeatures = function(w){ # r is an instance of WeatherClass
+  summerMon = 4:8 # May through Sept - zero based
+  summerSubset = as.POSIXlt(w$rawData$dates)$mon %in% summerMon
   wMeans = colMeans(w$rawData[,-1],na.rm=T)
-  features = c(zip5=w$zip,wMeans)
+  sMeans = colMeans(subset(w$rawData[,-1],subset=summerSubset),na.rm=T)
+  names(sMeans) = paste('s.',names(sMeans),sep='')
+  features = c(zip5=w$zip,wMeans,sMeans)
   return(features)
 }
 
@@ -31,3 +35,5 @@ getWeatherSummary = function(w) {
   }
   return(weatherSummary)
 }
+
+#print(weatherFeatures(WeatherClass(94610)))

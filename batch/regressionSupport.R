@@ -338,6 +338,7 @@ toutDoubleChangePoint = function(df) {
   })
   cm = do.call(rbind,changeModels)
   bestFit = cm[which.min(cm[,'SSR']),]
+  return(bestFit)
 }
 
 toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL,forceCP=NULL) {

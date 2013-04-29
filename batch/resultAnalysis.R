@@ -113,6 +113,7 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
     zip = as.numeric(zip)
     print(paste('loading data for',zip,'(',i,'/',n,')'))
     dataFile = file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep=''))
+    #print(dataFile)
     if (! file.exists(dataFile)){
       print(paste('No data file for',zip,'skipping.'))
       next
