@@ -12,6 +12,7 @@ setwd(conf.basePath)
 library(reshape)
 library(timeDate)
 library(RColorBrewer)
+library(cvTools)
 
 # run 'source' on all includes to load them 
 source(file.path(getwd(),'localConf.R'))         # Local computer specific configuration, especially db account info 
@@ -29,12 +30,12 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 
 #library('DAAG') # Data Analysis and Graphics package has k-fold cross validation
 # cv.lm(df=mydata, model, m=5) # 5 fold cross-validation
-#library('cvTools') # cross validation tools
+
 
 cfg = list()
-cfg$outDir = 'results_daily_flex'
+cfg$outDir = 'results_daily_nestedCPtest'
 
-cfg$SKIP_EXISTING_RDATA = T # don't run models if the RData file for their zip is present
+cfg$SKIP_EXISTING_RDATA = F # don't run models if the RData file for their zip is present
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
 cfg$PLOT_VALID   = F  # create png plots for residences that pass validaiton
 
@@ -58,8 +59,8 @@ cfg$subset$summer_day=paste(cfg$subset$summer,'&',cfg$subset$day)
 # to get formula from string, call as.formula(str)
 # to get a string repr of a formula object, call deparse(fmla)
 cfg$models.hourly = list(
-  #MOY         = ModelDescriptor(name='MOY',"kw ~ tout + MOY",             
-  #DOW         = ModelDescriptor(name='DOW',"kw ~ tout + DOW",
+  #MOY         = ModelDescriptor(name='MOY',"kw ~ tout + MOY"),             
+  #DOW         = ModelDescriptor(name='DOW',"kw ~ tout + DOW"),
   #DOW_HOD65    = ModelDescriptor(name='DOW_HOD65',formula="kw ~ tout65 + DOW + HOD",subset=list(all="TRUE",summer=cfg$subset$summer)),
   #HOW65        = ModelDescriptor(name='HOW65',formula="kw ~ tout65 + HOW",subset=list(all="TRUE",summer=cfg$subset$summer)),
   lagPieces    = DescriptorGenerator(name='toutPiecesL',genImpl=toutPieces24LagGenerator,subset=list(all="TRUE")),
@@ -81,9 +82,9 @@ cfg$models.hourly = list(
 # todo: integration vacation days into regression
 cfg$models.daily = list(
 #   #tout           = "kwh ~ tout.mean",
-#   DOW            = "kwh ~ DOW",
+#   DOW            = ModelDescriptor(name='DOW',formula="kwh ~ DOW",subset=list(all="TRUE")),
 #   tout_mean      = "kwh ~ tout.mean + DOW",
-#   tout_mean_WKND = "kwh ~ tout.mean + WKND",
+#   tout_mean_WKND = "kwh ~ tout.mean + WKND"
 #   #tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
 #   tout_max       = "kwh ~ tout.max  + DOW",
 #   kitchen        = "kwh ~ tout.max + tout.min + tout.mean + pout.mean + DOW + vac",
@@ -92,8 +93,10 @@ cfg$models.daily = list(
 #   wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
 #   dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
 #   dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE")),
-  dailyFlexCP    = DescriptorGenerator(name='tout',genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"))
-  
+  dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=20), # no CP
+  dailyCP        = DescriptorGenerator(name='tout1CP',     genImpl=toutDailyCPGenerator,       subset=list(all="TRUE"),cvReps=20), # 1 CP
+  dailyFlexCP    = DescriptorGenerator(name='tout2CP',     genImpl=toutDailyFlexCPGenerator,   subset=list(all="TRUE"),cvReps=20)  # 2 CPs
+  #dailyFlexCP    = DescriptorGenerator(name='tout',genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"))
 )
 
 cfg$models.monthly = list(

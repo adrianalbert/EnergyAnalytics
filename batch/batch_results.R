@@ -21,7 +21,8 @@ source(file.path(getwd(),'weatherFeatures.R'))
 source(file.path(getwd(),'zipMap.R'))
 
 resultsDir = 'results_daily'       # daily models for all homes
-resultsDir = 'results_daily_flex'  # 2 change point models
+#resultsDir = 'results_daily_flex'  # 2 change point models
+resultsDir = 'results_daily_nestedCPtest'
 
 # get a list of all the data filees in the dir and extract their zips
 dirZips = do.call(rbind,strsplit(list.files(file.path(getwd(),resultsDir),pattern='modelResults.RData'),'_'))[,1]
@@ -202,7 +203,7 @@ g + stat_bin(aes(fill=..count..), geom="tile", binwidth=3, position="identity") 
            y='tout mean (F)')
 
 
-g = ggplot(cpData,aes(x=cp,color=cut(tout, breaks=c(seq(55,90,2),Inf)))) + geom_density() + xlim(55,90)
+g = ggplot(cpData,aes(x=cp,color=cut(s.tout, breaks=c(seq(55,90,2),Inf)))) + geom_density() + xlim(55,90)
 g
 
 ggplot(aes(x=model.name),data=bestModels) + geom_bar() # counts of best models.

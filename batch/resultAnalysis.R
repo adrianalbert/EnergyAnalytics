@@ -160,6 +160,7 @@ addZipData = function(orig) {
   }
   zipData = db.getZipData()
   zipCol = grep('^zip',colnames(orig),value=T)[1]
+  print(zipCol)
   orig[[zipCol]] = as.numeric(orig[[zipCol]])
   return(merge(orig,zipData,by.x=zipCol,by.y='zip5'))
 }

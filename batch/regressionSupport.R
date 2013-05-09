@@ -5,7 +5,7 @@
 # regression (or other) models and implement a 'run' method that runs the 
 # model using data from the ResDataClass instance and returns its resutls
 # in a well specified format, as implemented in summarizeModel.
-ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,fold=F){
+ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,cvReps=0){
   if (is.null(preRun)){ preRun = function(r,df) { return( c()) } }
   if (is.null(subset)){ subset     = list(all="TRUE")                }
   obj = list (
@@ -13,7 +13,7 @@ ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,fold=F){
     formula  = formula,
     subset   = subset,
     preRun   = preRun,
-    fold     = fold
+    cvReps   = cvReps
   )
   
   obj$run = function(resData,df=NULL) {
@@ -21,20 +21,18 @@ ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,fold=F){
     if(is.null(df)) { df = regressorDF(resData,norm=FALSE) }
     #print(paste('[ModelDescriptor.run]',obj$name,'(',names(obj$subset),'):',obj$formula))
     for(snm in names(obj$subset)) {
-      #print(snm)
       df$sub = eval(parse(text=obj$subset[[snm]]),envir=df)  # load the subset flags into the data.frame
       lm.result = lm(obj$formula,df,x=F,subset=sub==T) # run the lm on the subset indicated in the data frame
-      summary = 
-        summaries = rbind(summaries, summarizeModel(lm.result,
-                                                    df,
-                                                    modelDescriptor = obj,
-                                                    nm              = obj$name,
-                                                    id              = resData$id,
-                                                    zip             = resData$zip,
-                                                    subnm           = snm,
-                                                    fold            = obj$fold,
-                                                    formula         = obj$formula,
-                                                    subset          = obj$subset[[snm]]) )
+      summaries = rbind(summaries, summarizeModel(lm.result,
+                                                  df,
+                                                  modelDescriptor = obj,
+                                                  nm              = obj$name,
+                                                  id              = resData$id,
+                                                  zip             = resData$zip,
+                                                  subnm           = snm,
+                                                  cvReps          = obj$cvReps,
+                                                  formula         = obj$formula,
+                                                  subset          = obj$subset[[snm]]) )
     }
     return(list(summaries=summaries)) # using list so other functions can return additional data
   }
@@ -53,20 +51,20 @@ print.ModelDescriptor = function(md) {
 # DescriptorGenerators generate model descriptors and additional regressor columns 
 # for custom model configurations. For example, the hourly change point model
 # returns a separate set of piecewise temerpature regressors for each hour.
-DescriptorGenerator = function(genImpl,name='',formula=NULL,subset=NULL,fold=F){
+DescriptorGenerator = function(genImpl,name='',formula=NULL,subset=NULL,cvReps=0){
   obj = list (
     name     = name,
     formula  = formula,
     subset   = subset,
     genImpl  = genImpl,
-    fold     = fold
+    cvReps   = cvReps
   )
   
   obj$run = function(r,df=NULL) {
     summaries = c()
     other     = c()
     if(is.null(df)) { df = regressorDF(r,norm=FALSE) }
-    updates = obj$genImpl(r,df,name,formula,subset,fold)
+    updates = obj$genImpl(r,df,name,formula,subset,cvReps)
     if(! empty(updates$regressors)) { 
       df = cbind(df,updates$regressors)
     }
@@ -106,7 +104,7 @@ print.DescriptorGenerator = function(dg) {
 
 # lagGenerator calculates a single separate temperature coefficient for the range of lags specified.
 # It would need change point detection to fit data reasonably well.
-lagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,hrs=0:18) {
+lagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,hrs=0:18) {
   lagRegressors = apply(t(hrs),2,function(x) return(lag(df$tout,x))) # construct a regressor matrix with lagged columns
   colnames(lagRegressors) <- paste('tout_L',hrs,sep='')
   lagStr = paste('tout_L',hrs,sep='',collapse='+')
@@ -116,7 +114,7 @@ lagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,hrs=0:18) {
               descriptors  = list( hourlyLags=ModelDescriptor( 
                                      name=paste(namePrefix,'hourlyLags', sep=''), 
                                      formula=hourlyLags,
-                                     subset=subset,fold=fold)
+                                     subset=subset,cvReps=cvReps)
               )
   )
   return(out)
@@ -126,7 +124,7 @@ lagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,hrs=0:18) {
 # decay for hourly lag terms in the form a^k for the kth lag. This form is consistent
 # with a simple physical model of heat transfer through a wall with resistance and 
 # capacitance.
-geometricLagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,hrs=18) {
+geometricLagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,hrs=18) {
   # grid search for a geometric decay term beest fit such that the coeficient for the kth lag hour is a^k 
   # this can be implemented as a single moving average outpit with weights a^k.
   # wma(t) = Sum_{k=0}^hrs [ Tout(t-k) * a^k ]
@@ -162,10 +160,10 @@ geometricLagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,hrs=
               descriptors  = list( 
                    simple=ModelDescriptor( name=paste(namePrefix,'Simple', sep=''), 
                                            formula=paste('kw ~ ToutWeightedMA'),
-                                           subset=subset,fold=fold),
+                                           subset=subset,cvReps=cvReps),
                    pieces=ModelDescriptor( name=paste(namePrefix,'Pieces24', sep=''), 
                                            formula=paste('kw ~',paste(colnames(pieces),collapse=" + ",sep=''),'+ HOD - 1'),
-                                           subset=subset,fold=fold)
+                                           subset=subset,cvReps=cvReps)
               )      
   )
   return(out)
@@ -173,7 +171,7 @@ geometricLagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,hrs=
 
 # cp24Generator calculates a separate temperature change point for every hour of the day.
 # It also includes terms that calculate sun sky position (aka solar geometry)
-cp24Generator = function(r,df,namePrefix,formula,subset=NULL,fold=F) {
+cp24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0) {
   #tout65     = pmax(0,tout-65) # TODO: should this be here?
   hourlyFits=hourlyChangePoint(df,as.list(1:24),trange=c(50:(max(df$tout,rm.na=T)-5)))
   cps = hourlyFits['cp',]
@@ -201,11 +199,11 @@ cp24Generator = function(r,df,namePrefix,formula,subset=NULL,fold=F) {
     descriptors  = list ( hourlyCP  = ModelDescriptor( 
                             name=paste(namePrefix,'hourlyCP', sep=''), 
                             formula=hourlyCPf,
-                            subset=subset,fold=fold  ),
+                            subset=subset,cvReps=cvReps  ),
                           hourlyCPZ = ModelDescriptor( 
                             name=paste(namePrefix,'hourlyCPZ',sep=''),
                             formula=hourlyCPfZ,
-                            subset=subset,fold=fold )  
+                            subset=subset,cvReps=cvReps )  
     )
   )
   return(out)
@@ -213,7 +211,7 @@ cp24Generator = function(r,df,namePrefix,formula,subset=NULL,fold=F) {
 
 # toutPieces24Generator breaks temperature into piecewise segments, broken at 55,65,75F
 # and regresses these with different coefficients for every hour of the day.
-toutPieces24Generator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL,breaks=c(55,65,75)) {
+toutPieces24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL,breaks=c(55,65,75)) {
   toutPIECES = regressor.piecewise(r$tout,breaks)
   out = list( 
     regressors   = cbind(toutPIECES),
@@ -221,7 +219,7 @@ toutPieces24Generator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basi
       Pieces24=ModelDescriptor( # regression with the bet fit lag
         name=paste(namePrefix,'24', sep=''), 
         formula=paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ HOD - 1'), # TODO: maybe HOW?
-        subset=subset,fold=fold)
+        subset=subset,cvReps=cvReps)
     )
   )
   return(out)
@@ -232,7 +230,7 @@ toutPieces24Generator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basi
 # the thermal mass of the walls, roof, and ceilings.
 # This T* modified (lagged) temperature is then broken into piecewise segments for every
 # hour of the day.
-toutPieces24LagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL) {
+toutPieces24LagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL) {
   # basic lagged correlations are calculated as a part of basicFeatures. Here we pull out the 
   # single lag with the max correlation with kW demand
   if(length(basics) == 0) { basics = basicFeatures(r) }
@@ -255,11 +253,11 @@ toutPieces24LagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,b
                 Pieces24L=ModelDescriptor( # regression with the bet fit lag
                   name=paste(namePrefix,'24L', sep=''), 
                   formula=piecesf24L,
-                  subset=subset,fold=fold),
+                  subset=subset,cvReps=cvReps),
                 Pieces24Ldiff=ModelDescriptor( # regression using the diff between the best fit lag and current temp
                   name=paste(namePrefix,'24Ldiff', sep=''), 
                   formula=piecesf24Ldiff,
-                  subset=subset,fold=fold)
+                  subset=subset,cvReps=cvReps)
                 
               )
   )
@@ -273,7 +271,7 @@ toutPieces24LagGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,b
 # characteristic time period.
 # This T* modified (averaged) temperature is then broken into piecewise segments for every
 # hour of the day.
-toutPieces24MAGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL) {
+toutPieces24MAGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL) {
   # basic moving average correlations are calculated as a part of basicFeatures. Here we pull out the 
   # single averaging window with the max correlation with kW demand
   if(length(basics) == 0) { basics = basicFeatures(r) }
@@ -296,18 +294,18 @@ toutPieces24MAGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,ba
                 Pieces24MA=ModelDescriptor( # regression with the bet fit lag
                   name=paste(namePrefix,'24MA', sep=''), 
                   formula=piecesf24MA,
-                  subset=subset,fold=fold)                
+                  subset=subset,cvReps=cvReps)                
               )
   )
   return(out)
 }
 
-toutDailyFixedCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL) {
-  return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,fold=fold,basics=basics,forceCP=65))
+toutDailyFixedCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL) {
+  return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,cvReps=cvReps,basics=basics,forceCP=65))
 }
   
 # toutDailyCP finds a single change point for a model of daily kWh usage.
-toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL,forceCP=NULL) {
+toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL,forceCP=NULL) {
   changeModel = NULL
   if(is.null(forceCP)) {
     changeModel = toutChangePointFast(df=df,reweight=F)
@@ -326,22 +324,25 @@ toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basic
       DailyCP=ModelDescriptor( # regression with the best fit daily change point
         name=paste(namePrefix,'DailyCP', sep=''), 
         formula=dailyCPf,
-        subset=subset,fold=fold)                
+        subset=subset,cvReps=cvReps)                
     )
   )
   return(out)
 }
+
 toutDoubleChangePoint = function(df) {
-  changeModels = lapply(41:80,function(coolCP) {
-    trange = lapply((coolCP-1):40,function(x) c(x,coolCP))
-    toutChangePointFast(df=df,trange=trange,reweight=F)
+  tMin = floor(min(df$tout.mean,na.rm=T)+5)
+  tMax = floor(max(df$tout.mean,na.rm=T)-5)
+  changeModels = lapply(tMin:tMax,function(coolCP) {
+    trange = lapply((coolCP-1):tMin-1,function(x) c(x,coolCP))
+    toutChangePointFast(df=df,trange=trange,reweight=T,warn=F)
   })
   cm = do.call(rbind,changeModels)
   bestFit = cm[which.min(cm[,'SSR']),]
   return(bestFit)
 }
 
-toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,basics=NULL,forceCP=NULL) {
+toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL,forceCP=NULL) {
   # todo: test 1,2,and 3 segment change point models.
   #coolCP = 70
   bestFit = toutDoubleChangePoint(df)
@@ -360,7 +361,7 @@ toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,b
       DailyFlexCP=ModelDescriptor( # regression with the best fit daily change point
         name=paste(namePrefix,'DailyFlexCP', sep=''), 
         formula=dailyCPf,
-        subset=subset,fold=fold)                
+        subset=subset,cvReps=cvReps)                
     )
   )
   return(out)
@@ -372,7 +373,7 @@ toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,fold=F,b
 # designed to be friendly to storing a lot of results in sequence
 # so it separates out the simple scalar metrics from the more complicated
 # coefficients
-summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,fold=FALSE,formula='',subset='') {
+summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=FALSE,cvReps=1,formula='',subset='') {
   #lm(m,subset=m$y > 1)
   basics = list()
   basics$id          <- id
@@ -409,8 +410,9 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,fold=FALSE,f
   s$total        <- sum(predict(m))
   
   # k-fold prediction error
-  if (fold) {
-    s$fold.rmse <- kFold(df,modelDescriptor,nm,nfolds=5)
+  if (cvReps > 0) {
+    #s$fold.rmse <- kFold(df,modelDescriptor,K=5)  # hand rolled cross validation function
+    s$cv.rmse   <- cvFold(df,modelDescriptor,K=5,R=cvReps) # pre-rolld function from cvTools
   }
   return(s)
 }
@@ -482,7 +484,7 @@ hdays      = as.Date(holidayNYSE(2008:2011))
 
 # Given a ResDataClass instance, regressorDF returns a data.frame consisting of a standard set of 
 # regressor columns suitable for passin into a call to lm.
-regressorDF = function(residence,norm=FALSE,folds=1,rm.na=FALSE) {
+regressorDF = function(residence,norm=FALSE,rm.na=FALSE) {
   wday       = residence$dates$wday
   WKND       = c('WK','ND')[(wday == 0 | wday == 6) * 1 + 1] # weekend indicator
   dateDays   = as.Date(residence$dates)
@@ -669,7 +671,7 @@ toutChangePoint = function(hrs=NULL,df,trange=NULL,reweight=F) {
 # this takes advantage of the fact that for one change point, 
 # the SSR will be convex so it stops when the change in SSR is positive
 # note that each cp in trange could be a list c(40,50,60,70) or just a number
-toutChangePointFast = function(hrs=NULL,df,trange=NULL,reweight) {
+toutChangePointFast = function(hrs=NULL,df,trange=NULL,reweight,warn=T) {
   toutStr = 'tout'
   if(! is.null(hrs)) {
     sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='')  # define hrs subset (#0-23 in the df)
@@ -700,9 +702,11 @@ toutChangePointFast = function(hrs=NULL,df,trange=NULL,reweight) {
     prev = out
   }
   # failed search
-  print(paste('Warning. SSR min not found for hr ',paste(hrs,collapse=','),
-                  '. Increase your temperature range? Returning higest value: ',
-                  paste(prev[grep('^cp',names(prev),value=T)],collapse=','),sep=''))
+  if (warn) {
+    print(paste('Warning. SSR min not found for hr ',paste(hrs,collapse=','),
+                    '. Increase your temperature range? Returning higest value: ',
+                    paste(prev[grep('^cp',names(prev),value=T)],collapse=','),sep=''))
+  }
   return(prev)
 }
 
@@ -738,9 +742,8 @@ evalCP = function(cp,df,reweight=F) {
       ncols      = length(colCounts)
       colWeights = (nobs/ncols) / colCounts # spread equal weight across segments
                                             # even if one has fewer obs than the other
-      #print(colWeights)
-      #print(cp)
       #print(colCounts)
+      #print(colWeights)
       if(colWeights[1] < 1) { # only re-weight if it improves cooling estimate
         df$w = colWeights[highestCol]
       }
@@ -790,20 +793,39 @@ evalCP = function(cp,df,reweight=F) {
 }
 
 # Model evaluation --------------------------------------------------------
-kFold = function(df,modelDescriptor,nm,nfolds=5) {
-  folds <- sample(1:nfolds, dim(df)[1], replace=T)
+kFold = function(df,modelDescriptor,K=5) {
+  folds <- sample(1:K, dim(df)[1], replace=T)
   residuals = c()
-  for (i in 1:nfolds) {
+  for (i in 1:K) {
     fld = folds == i
     df$fold = fld
     fmla = modelDescriptor$formula
     subm = lm(fmla, data=df, subset=(!fold),na.action=na.omit)
     yhat = predict(subm,newdata=df[fld,])
     #print(length(yhat))
-    ynm = as.character(fmla)[[2]]
+    ynm = as.character(formula(fmla))[[2]]
     residuals = c(residuals,df[,ynm][fld] - yhat) # accumulate the errors from all predictions
   }
   #plot(residuals)
-  rmnsqerr = sqrt(mean(residuals^2,na.rm=TRUE)) # RMSE
-  return(rmnsqerr)
+  rmspe = sqrt(mean(residuals^2,na.rm=TRUE)) # root mean squared prediciton error RMSE
+  return(rmspe)
 }
+
+cvFold = function(df,modelDescriptor,K=5,R=1) {
+  fmla = formula(modelDescriptor$formula)
+  cvOut = cvFit(lm,formula=fmla,data=df,K=K,R=R,foldType='random',cost=rmspe) #root mean squared prediction error
+  #print(cvOut)
+  #print(names(cvOut))
+  #print(cvOut$reps)
+  return(mean(cvOut$cv))
+}
+
+smartCP = function(r) {
+  df = regressorDF(r)
+  simpleModel = lm('kw ~ tout + HOD -1',df)
+  
+  plot(cumsum(simpleModel$residuals))
+}
+
+#smartCP(rCO)
+

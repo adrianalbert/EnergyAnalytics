@@ -27,16 +27,12 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 library(reshape)
 library(timeDate)
 library(RColorBrewer)
+library('cvTools') # cross validation tools
 
 
-<<<<<<< HEAD
 testModelRun = function(cfg,r=NULL) {
   print(cfg)
   #r = ResDataClass(553991005,93304);
-=======
-testModelRun = function(r,cfg) {
-  print(cfg)
->>>>>>> 83374930a8fa49f5cc1869723823dbcd0d33bb33
   df = regressorDF(r)
   summaries   = c()
   d_summaries = c()
@@ -112,7 +108,6 @@ cfg$models.hourly = list(
 cfg$models.daily = list(
   ##tout           = "kwh ~ tout.mean",
   #DOW            = "kwh ~ DOW",
-  #tout_mean      = "kwh ~ tout.mean + DOW",
   #tout_mean_WKND = "kwh ~ tout.mean + WKND",
   ##tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
   #tout_max       = "kwh ~ tout.max  + DOW",
@@ -120,12 +115,14 @@ cfg$models.daily = list(
   #tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND",
   #wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
   #dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
-  #dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE"))
-  dailyFlexCP    = DescriptorGenerator(name='tout',genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"))
+  dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=50), # no CP
+  dailyCP        = DescriptorGenerator(name='tout',     genImpl=toutDailyCPGenerator,       subset=list(all="TRUE"),cvReps=50), # 1 CP
+  dailyFlexCP    = DescriptorGenerator(name='tout',     genImpl=toutDailyFlexCPGenerator,   subset=list(all="TRUE"),cvReps=50)  # 2 CPs
 )
 init = F
 if(init) {
-  rNA = ResDataClass(2547072505,94610); # no tout dep
+  rNA2 = ResDataClass(2547072505,94610); # no tout dep,but troubling kink in 2 cp model
+  rNA = ResDataClass(2846844910,94610); # no tout dep
   rCO = ResDataClass(553991005,93304);  # cooling only
   #rU = ResDataClass(1882681258,93304); # U shape
   rU = ResDataClass(6481381805,93304); # U shape
@@ -133,12 +130,12 @@ if(init) {
   rV = ResDataClass(6502182810,93304); # V shape
   # todo: find more without temp dep or heating only...
 }
-runOut = testModelRun(cfg,rU)
+runOut = testModelRun(cfg,rNA)
 summaries = runOut$summaries
 others = runOut$others
 d_summaries = runOut$d_summaries
 d_others = runOut$d_others
 #rm(runOut)
 #print(others$toutPiecesL[,'data']) # all 'other' data is accessed this way
-plot(rU,estimates=toutDoubleChangePoint(df=rDFA(rU)))
+plot(rNA,estimates=toutDoubleChangePoint(df=rDFA(rNA)))
 

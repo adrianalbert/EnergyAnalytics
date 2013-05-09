@@ -26,7 +26,6 @@ library(RColorBrewer)
 
 #library('DAAG') # Data Analysis and Graphics package has k-fold cross validation
 # cv.lm(df=mydata, model, m=5) # 5 fold cross-validation
-#library('cvTools') # cross validation tools
 
 
 runModelsByZip = function(cfg) {
@@ -41,7 +40,7 @@ runModelsByZip = function(cfg) {
              completedZip = c(),
              attemptedSP  = c(),
              completedSP  = c(),
-             invalid.ids  = c(),
+             invalid.ids  = data.frame(),
              cfg          = cfg )
   triggered = FALSE
   for (zip in zipArray) { # i.e. 94610
@@ -73,6 +72,7 @@ runModelsByZip = function(cfg) {
       save(modelResults,file=resultsFile)
       res$completedZip <- rbind(res$completedZip,zip)
       res$completedSP  <- c(res$completedSP,modelResults$features.basic$id)
+      print(modelResults$invalid.ids)
       res$invalid.ids  <- rbind.fill(res$invalid.ids,modelResults$invalid.ids)
       rm(modelResults)
       toc('modelsBySP')
@@ -156,7 +156,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
         if(cfg$PLOT_VALID) {
           save.png.plot(r,file.path(getwd(),cfg$outDir,paste(r$zip,'_',r$id,'.png',sep='')))
         }
-        features.basic[[i]]  <- basicFeatures(r) # max, min, etc.
+        features.basic[[length(features.basic)+1]]  <- basicFeatures(r) # max, min, etc.
         # hourly regressions
         if(cfg$RUN_HOURLY_MODELS) {
           df = regressorDF(r,norm=FALSE) # see also regressorDFAggregated
@@ -167,7 +167,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             #print(mdName)
             md = cfg$models.hourly[[mdName]]
             runOut = md$run(r,df)
-            summaries[[i]] = runOut$summaries
+            summaries[[length(summaries)+1]] = runOut$summaries
             if(! empty(runOut$other)) {
               others[[md$name]] = rbind(others[[md$name]],list(id=r$id,data=runOut$other))
             }
@@ -193,9 +193,8 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
           # daily regressions
           for(mdName in names(cfg$models.daily)) {
             md = cfg$models.daily[[mdName]]
-            #print(mdName)
             runOut = md$run(r,dfd)
-            d_summaries[[i]] = runOut$summaries
+            d_summaries[[length(d_summaries)+1]] = runOut$summaries
             if(! empty(runOut$other)) {
               d_others[[md$name]] = rbind(d_others[[md$name]],list(id=r$id,data=runOut$other))
             }
@@ -209,7 +208,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             #print(nm)
             fmla = models[[nm]]
             lm.result = lm(fmla,dfl$monthly, x=TRUE)
-            m_summaries[[i]] = summarizeModel(lm.result,dfl$monthly,models,nm,
+            m_summaries[[length(summaries)+1]] = summarizeModel(lm.result,dfl$monthly,models,nm,
                                                            id=sp_id,zip=zip,subnm="all",
                                                            fold=FALSE,formula=fmla)
           }
@@ -222,6 +221,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
        error = function(e){
          print(e)
          traceback()
+         #stop(e)
        },
        finally={
          # pass
@@ -235,10 +235,16 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
     if (cfg$truncateAt > 0 & i >= cfg$truncateAt) break
   } # sp_id loop
   # strip out NAs from the lists
+  #print(d_summaries[[1]])
+  
   fbArray        <- features.basic[! is.na(features.basic)] 
   summaryArray   <- summaries[! is.na(summaries)]
   d_summaryArray <- d_summaries[! is.na(d_summaries)]
   m_summaryArray <- m_summaries[! is.na(m_summaries)]
+  #print(d_summaryArray[[1]])
+  #print(d_summaryArray[[2]])
+  
+  #print(do.call(rbind,d_summaryArray))
   out <- list(
       inputs          = inputs,
       features.basic  = as.data.frame(do.call(rbind,fbArray)),

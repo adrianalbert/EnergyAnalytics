@@ -38,19 +38,18 @@ run.query = function(query,db) {
     con  <- conf.dbCon(db)
     res  <- dbGetQuery(con, query)
     if(length(res)>0) data  <- res
-    
   },
-           error = function(e) {print(e)},
-           finally = {
-             # close the results set if necessary
-             resultSet <- dbListResults(con)
-             if(length(resultSet)>0) { 
-               dbClearResult(resultSet[[1]])
-               rm(resultSet)
-             }
-             dbDisconnect(con)
-             rm(con)
-           } )
+ error = function(e) {print(e)},
+ finally = {
+   # close the results set if necessary
+   resultSet <- dbListResults(con)
+   if(length(resultSet)>0) { 
+     dbClearResult(resultSet[[1]])
+     rm(resultSet)
+   }
+   dbDisconnect(con)
+   rm(con)
+ } )
   return(data)
 }
 
