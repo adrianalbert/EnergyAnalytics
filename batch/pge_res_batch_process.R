@@ -33,7 +33,7 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 
 
 cfg = list()
-cfg$outDir = 'results_daily_nestedCPtest'
+cfg$outDir = 'results_daily_nestedCP'
 
 cfg$SKIP_EXISTING_RDATA = F # don't run models if the RData file for their zip is present
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
@@ -117,11 +117,11 @@ if (length(args) > 0) {
   cfg$allZips = args
   print(cfg$allZips)
 } else { # no command line args so do a full run
-  print('Initializing batch run with list of all zips')
+  print('Initializing batch run with list of all zips in the database')
   cfg$allZips  <- db.getZips()
 }
 # bakersfield, oakland
-cfg$allZips = c(93304) #,93304)
+#cfg$allZips = c(93304) #,93304)
 
 #cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
 #               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
