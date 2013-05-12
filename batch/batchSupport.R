@@ -122,12 +122,14 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
       print(cfg$models.daily[[mdName]])
     }
   }
+  PRE_VALIDATED = F
   if(!is.null(cfg$INVALID_IDS)) {
     nOrig = length(sp_ids)
     sp_ids = sp_ids[! sp_ids %in% cfg$INVALID_IDS[,'id']]
     print(paste('Validation reduced sp_ids from',nOrig,'to',length(sp_ids)))
+    PRE_VALIDATED = T
   }
-  break
+  
   splen  <- length(sp_ids)
   i <- 0
   #skip = FALSE
@@ -146,15 +148,17 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
     }
     else { # viable residence!
       r <- tryCatch( {
-        issues = validateRes(r)
-        if(length(issues)>1) # all issues will return with an id, so > 1 indicates a problem
-        { 
-          invalid_ids <- rbind.fill(invalid_ids,issues)
-          print(paste('Bad or insufficient data:',paste(colnames(issues),collapse=', ')))
-          if(cfg$PLOT_INVALID) {
-            save.png.plot(r,file.path(getwd(),cfg$outDir,paste(r$zip,r$id,'invalid.png',sep='_')))
+        if(! PRE_VALIDATED) {
+          issues = validateRes(r)
+          if(length(issues)>1) # all issues will return with an id, so > 1 indicates a problem
+          { 
+            invalid_ids <- rbind.fill(invalid_ids,issues)
+            print(paste('Bad or insufficient data:',paste(colnames(issues),collapse=', ')))
+            if(cfg$PLOT_INVALID) {
+              save.png.plot(r,file.path(getwd(),cfg$outDir,paste(r$zip,r$id,'invalid.png',sep='_')))
+            }
+            next # no further processing of invalid sp_ids
           }
-          next # no further processing of invalid sp_ids
         }
         
         tic('model run')

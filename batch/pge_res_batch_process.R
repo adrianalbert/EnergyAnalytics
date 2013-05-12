@@ -51,6 +51,9 @@ if(file.exists(invalidIdsFile)) {
   load(invalidIdsFile)
   cfg$INVALID_IDS = invalids
   rm('invalids')
+  print('Using master list of invalid ids. No further validation will occur.')
+} else {
+  print('No list of invalid sp_ids. They will be checked one at a time.')
 }
 
 # generate the string values that will identify the desired subset of a data.frame
