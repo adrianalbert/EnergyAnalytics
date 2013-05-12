@@ -27,7 +27,10 @@ basicFeatures = function(r){ # r is an instance of ResDataClass
   kw.mean     = mean(r$kw,na.rm=T)
   
   kw.tout.cor        = cor(r$kw,r$tout,               use='complete.obs') # correlation between tout and kw
-  kw.pout.cor        = cor(r$kw,r$w('pout'),          use='complete.obs') # correlation between pressure and kw
+  kw.pout.cor = NA
+  #if(any(! is.na(r$w('pout')))) {
+  #  kw.pout.cor = cor(r$kw,r$w('pout'), use='complete.obs') # correlation between pressure and kw
+  #}
   kw.var             = var(r$kw/kw.mean,              use='complete.obs') # normed by mean of kW
   daily.kw.var       = var(rowMeans(r$kwMat)/kw.mean, use='complete.obs') # normed by mean of kW
   daily.kw.min.var   = var(dMin/kw.mean,              use='complete.obs') # normed by mean of kW

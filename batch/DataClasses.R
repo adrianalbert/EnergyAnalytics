@@ -172,6 +172,9 @@ WeatherClass = function(zipcode,doMeans=T){
   obj$resample = function(newDates,name='tout') {
     # approx returns both the newDates and the interpreted values
     # but we only need the values
+    if(all(is.na(obj$rawData[,name]))) {
+      return( rep(NA,length(newDates)))
+    }
     a = approx(obj$dates, obj$rawData[,name], newDates, method="linear")[[2]]
     #b = a[2]
     if (all(is.na(a)) & name == 'tout'){ 
