@@ -802,8 +802,8 @@ evalCP = function(cp,df,reweight=F) {
   # define regression formula that uses the piecewise pieces
   f_0  = paste(lhs,'~',toutStr)
   f_cp = paste(lhs,'~',paste(colnames(tPieces),collapse=" + ",sep=''))
-  fit_0  = lm(f_0, df,weights=w)
-  fit_cp = lm(f_cp,df,weights=w)
+  fit_0  = lm(f_0, df) #,weights=w)
+  fit_cp = lm(f_cp,df) #,weights=w)
   s_cp = summary(fit_cp)
   s_0  = summary(fit_0)
   coefficients = s_cp$coefficients[,'Estimate'] # regression model coefficients
