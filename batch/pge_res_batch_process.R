@@ -33,9 +33,9 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 
 
 cfg = list()
-cfg$outDir = 'results_daily_nestedCPtest'
+cfg$outDir = 'results_daily_nestedCP'
 
-cfg$SKIP_EXISTING_RDATA = F # don't run models if the RData file for their zip is present
+cfg$SKIP_EXISTING_RDATA = T # don't run models if the RData file for their zip is present
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
 cfg$PLOT_VALID   = F  # create png plots for residences that pass validaiton
 
@@ -106,9 +106,9 @@ cfg$models.daily = list(
 #   wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
 #   dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
 #   dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE")),
-  dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=5), # no CP
-  dailyCP        = DescriptorGenerator(name='tout1CP',     genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"),cvReps=5), # 1 CP
-  dailyFlexCP    = DescriptorGenerator(name='tout2CP',     genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"),cvReps=5)  # 2 CPs
+  dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=8), # no CP
+  dailyCP        = DescriptorGenerator(name='tout1CP',     genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"),cvReps=8), # 1 CP
+  dailyFlexCP    = DescriptorGenerator(name='tout2CP',     genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"),cvReps=8)  # 2 CPs
   #dailyFlexCP    = DescriptorGenerator(name='tout',genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"))
 )
 
