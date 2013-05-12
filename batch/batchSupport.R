@@ -122,14 +122,19 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
       print(cfg$models.daily[[mdName]])
     }
   }
-  # TODO:
-  # find a faster method of cross validation than cvTools or DAAG provide
+  if(!is.null(cfg$INVALID_IDS)) {
+    nOrig = length(sp_ids)
+    sp_ids = sp_ids[! sp_ids %in% cfg$INVALID_IDS[,'id']]
+    print(paste('Validation reduced sp_ids from',nOrig,'to',length(sp_ids)))
+  }
+  break
   splen  <- length(sp_ids)
   i <- 0
   #skip = FALSE
   for (sp_id in sp_ids) { # i.e. "820735863" or "6502353905"
     i <- i+1
     print(paste('  ',sp_id,' (',i,'/',splen,') in ',zip,sep=''))
+    
     #if(sp_id == 6502353905) { skip = FALSE } # debug shortcut
     #if(skip) { next }
     resData = NULL

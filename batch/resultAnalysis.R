@@ -126,9 +126,12 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
     data = modelResults[[resultType]]
     if(! is.null(subResultType)) {
       data = data[[subResultType]]
+      if(is.null(data)) {
+        print(paste('WARNING. No data found under subResultType',subResultType))
+      }
     }
     if(length(data) == 0) {
-      print(paste('no results for',zip))
+      print(paste('no results for',zip,'. Skipping.'))
       next
     }
     #print(class(modelResults[['d_summaries']]))

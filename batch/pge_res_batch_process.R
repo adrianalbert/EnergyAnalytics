@@ -33,7 +33,7 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 
 
 cfg = list()
-cfg$outDir = 'results_daily_nestedCP'
+cfg$outDir = 'results_daily_nestedCPtest'
 
 cfg$SKIP_EXISTING_RDATA = F # don't run models if the RData file for their zip is present
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
@@ -43,6 +43,15 @@ cfg$RUN_HOURLY_MODELS  = F  # run hourly models
 cfg$RUN_DAILY_MODELS   = T  # run daily summary data models (moderate time consuming)
 cfg$RUN_MONTHLY_MODELS = F  # run monthly summary data models (moderate time consuming)
 cfg$RUN_STEP_SELECTION = F  # run nested model selection algorithm (time consuming)
+
+cfg$INVALID_IDS = NULL
+
+invalidIdsFile = file.path(getwd(),'invalidIds.RData')
+if(file.exists(invalidIdsFile)) {
+  load(invalidIdsFile)
+  cfg$INVALID_IDS = invalids
+  rm('invalids')
+}
 
 # generate the string values that will identify the desired subset of a data.frame
 # using the command subset(df,subset=str,...)
@@ -63,10 +72,10 @@ cfg$models.hourly = list(
   #DOW         = ModelDescriptor(name='DOW',"kw ~ tout + DOW"),
   #DOW_HOD65    = ModelDescriptor(name='DOW_HOD65',formula="kw ~ tout65 + DOW + HOD",subset=list(all="TRUE",summer=cfg$subset$summer)),
   #HOW65        = ModelDescriptor(name='HOW65',formula="kw ~ tout65 + HOW",subset=list(all="TRUE",summer=cfg$subset$summer)),
-  lagPieces    = DescriptorGenerator(name='toutPiecesL',genImpl=toutPieces24LagGenerator,subset=list(all="TRUE")),
-  maPieces     = DescriptorGenerator(name='toutPiecesMA',genImpl=toutPieces24MAGenerator,subset=list(all="TRUE")),
-  pieces       = DescriptorGenerator(name='toutPieces',genImpl=toutPieces24Generator,subset=list(all="TRUE")),
-  lag          = DescriptorGenerator(name='lag',genImpl=lagGenerator,subset=list(all="TRUE"))
+  #  lagPieces    = DescriptorGenerator(name='toutPiecesL',genImpl=toutPieces24LagGenerator,subset=list(all="TRUE")),
+  #  maPieces     = DescriptorGenerator(name='toutPiecesMA',genImpl=toutPieces24MAGenerator,subset=list(all="TRUE")),
+  #  pieces       = DescriptorGenerator(name='toutPieces',genImpl=toutPieces24Generator,subset=list(all="TRUE")),
+  #  lag          = DescriptorGenerator(name='lag',genImpl=lagGenerator,subset=list(all="TRUE"))
   #wea          = ModelDescriptor(name='wea',formula="kw ~ tout   + pout + rh + HOW + MOY",subset=list(all="TRUE",summer=cfg$subset$summer)), 
   #wea65        = ModelDescriptor(name='wea65',formula="kw ~ tout65 + pout + rh + HOW + MOY",subset=list(all="TRUE")),
   #HOW          = ModelDescriptor(name='HOW',"kw ~ tout + HOW")
@@ -77,6 +86,7 @@ cfg$models.hourly = list(
   #toutTOD_l1   = ModelDescriptor(name='toutTOD_l1',formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l1 + HOD",subset=list(summer=cfg$subset$summer)),
   #toutTOD_l3   = ModelDescriptor(name='toutTOD_l3',formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l3 + HOD",subset=list(all="TRUE"))
   #toutTOD_min = ModelDescriptor(name='toutTOD_min',"kw_min ~ 0 + tout:HOD + HOW" # no intercept
+  parts       = DescriptorGenerator(name='parts',genImpl=partsGenerator,subset=list(all="TRUE"))
 )
 
 # todo: integration vacation days into regression
@@ -93,9 +103,9 @@ cfg$models.daily = list(
 #   wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
 #   dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
 #   dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE")),
-  dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=20), # no CP
-  dailyCP        = DescriptorGenerator(name='tout1CP',     genImpl=toutDailyCPGenerator,       subset=list(all="TRUE"),cvReps=20), # 1 CP
-  dailyFlexCP    = DescriptorGenerator(name='tout2CP',     genImpl=toutDailyFlexCPGenerator,   subset=list(all="TRUE"),cvReps=20)  # 2 CPs
+  dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=5), # no CP
+  dailyCP        = DescriptorGenerator(name='tout1CP',     genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"),cvReps=5), # 1 CP
+  dailyFlexCP    = DescriptorGenerator(name='tout2CP',     genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"),cvReps=5)  # 2 CPs
   #dailyFlexCP    = DescriptorGenerator(name='tout',genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"))
 )
 

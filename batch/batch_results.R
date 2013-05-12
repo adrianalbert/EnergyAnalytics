@@ -22,7 +22,7 @@ source(file.path(getwd(),'zipMap.R'))
 
 resultsDir = 'results_daily'       # daily models for all homes
 #resultsDir = 'results_daily_flex'  # 2 change point models
-resultsDir = 'results_daily_nestedCPtest'
+#resultsDir = 'results_daily_nestedCP'
 
 # get a list of all the data filees in the dir and extract their zips
 dirZips = do.call(rbind,strsplit(list.files(file.path(getwd(),resultsDir),pattern='modelResults.RData'),'_'))[,1]
@@ -35,12 +35,23 @@ allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
 #summary = combineSummaries(allZips,resultType='d_summaries') # fails from too much data?!
 
 allZips = c(94923,94503,94574,94559)
-
+allZips = c(93304)
 allZips = dirZips
 resultScalarsFile = file.path(getwd(),resultsDir,'resultScalars.RData')
 cpDataFile        = file.path(getwd(),resultsDir,'cpData.RData')
 coeffDataFile     = file.path(getwd(),resultsDir,'coeffData.RData')
 bestModelDataFile = file.path(getwd(),resultsDir,'bestModelData.RData')
+invalidIdsFile    = file.path(getwd(),resultsDir,'invalidIds.RData')
+
+if(file.exists(invalidIdsFile)) {
+  load(invalidIdsFile)
+} else {
+  invalids = combine(allZips, resultType='invalid.ids',
+                    fun=function(x) { return(x) }, appendZipData=F)
+  colnames(invalids) = c('id','zip')
+  save(list=c('invalids'),file=invalidIdsFile)
+}
+gc()
 
 if(file.exists(resultScalarsFile)) {
   load(resultScalarsFile)
@@ -56,27 +67,37 @@ ws = getWeatherSummary()
 if(file.exists(cpDataFile)) {
   load(cpDataFile)
 } else {
-  cpData = combine(allZips,
+  cp1Data = combine(allZips,
                    resultType='d_others',
-                   subResultType='tout',
+                   subResultType='tout1CP',
                    fun=function(x) {
                      cpMatrix = t(apply(x, 1, 
                      function(y) { 
-                       out = c(id=y$id,t(y$data[rownames(y$data),]));                      
-                       names(out) <- c('id',rownames(y$data)); 
+                       out = c(id=y$id,t(y$data[rownames(y$data),]))
+                       names(out) <- c('id',rownames(y$data));
                        return(out)
                        }));
-                     #cpListMatrix = t(sapply(x[,'data'],
-                     #function(y) {
-                     #  out = data.frame(t(y[rownames(y),])); 
-                     #  colnames(out) <- rownames(y); 
-                     #  return(out)
-                     #}));
                      return(data.frame(cpMatrix))
                    },
                    appendZipData=T)
-  cpData = merge(ws,cpData,by.x='zip5',by.y='zip5')
-  save(list=c('cpData'),file=cpDataFile)
+  cp1Data = merge(ws,cp1Data,by.x='zip5',by.y='zip5')
+  cp1Data = merge(basics[,c('id','nObs','kw.mean')],cp1Data,by.x='id',by.y='id')
+  cp2Data = combine(allZips,
+                    resultType='d_others',
+                    subResultType='tout2CP',
+                    fun=function(x) {
+                      cpMatrix = t(apply(x, 1, 
+                       function(y) { 
+                         out = c(id=y$id,t(y$data[rownames(y$data),]))
+                         names(out) <- c('id',rownames(y$data));
+                         return(out)
+                       }));
+                      return(data.frame(cpMatrix))
+                    },
+                    appendZipData=T)
+  cp2Data = merge(ws,cp2Data,by.x='zip5',by.y='zip5')
+  cp2Data = merge(basics[,c('id','nObs','kw.mean')],cp2Data,by.x='id',by.y='id')
+  #save(list=c('cp1Data','cp2Data'),file=cpDataFile)
 }
 gc()
 
@@ -108,6 +129,57 @@ if(file.exists(coeffDataFile)) {
   #save(list=c('results.cfs','results.stde','results.pvs','results.tvs'),file=coeffDataFile)
 }
 gc()
+
+ord = order(cp1Data$lower)
+plot(-1 * cp1Data$lower[ord][cp1Data$lower[ord] < 0],pch=20,main='Magnitude of heating demand (kWh/HDD)',ylab='kWh/HDD',xlab='Count of residences',ylim=c(0,-1*min(cp1Data$lower)))
+grid()
+plot(cumsum(-1 * cp1Data$lower[ord][cp1Data$lower[ord] < 0]),pch=20,main='Magnitude of heating demand (kWh/HDD)',ylab='kWh/HDD',xlab='Count of residences')
+grid()
+
+ord = rev(order(cp1Data$upper))
+plot(cp1Data$upper[ord][cp1Data$upper[ord] > 0],pch=20,main='Magnitude of cooling demand (kWh/CDD)',ylab='kWh/CDD',xlab='Count of residences',ylim=c(0,max(cp1Data$upper)))
+grid()
+
+cooling = cp1Data$upper*max(0,90 - cp1Data$cp)
+ord = rev(order(cooling))
+plot(cumsum( cooling[ord][cooling[ord] > 0] )/1000,type='l',,lty=1,main='Cumlative cooling demand (kWh/day)',ylab='MWh/day',xlab='Count of residences')
+
+ts = c(100,90,80,70,60,50)
+for(i in 1:length(ts)) {
+  t = ts[i]
+  cooling = cp1Data$upper*max(0,t - cp1Data$cp)
+  ord = rev(order(cooling))
+  if(i==1) {
+    plot(cumsum( cooling[ord][cooling[ord] > 0] )/1000,type='l',lty=i,main='Cumlative cooling demand (kWh/day)',ylab='MWh/day',xlab='Count of residences')
+  }
+  else {
+    points(cumsum( cooling[ord][cooling[ord] > 0] )/1000,pch=20,type='l',lty=i)
+  }
+}
+grid()
+# add the legend
+# xapx and yaxp return the lowest and highest tick mark for the plot
+# usr returns the outer dimensions of the current plot as c(xmin, xmax, ymin, ymax)
+legend(par('xaxp')[1],par('usr')[4]*0.95, paste(ts,'F'),lty=1:length(ts), title="Temperature",cex=0.8)
+
+ts = c(30,40,50,60,70)
+for(i in 1:length(ts)) {
+  t = ts[i]
+  heating = cp1Data$lower*min(0,t - cp1Data$cp) # negative values only multiply negative slopes to give kWh
+  ord = rev(order(heating))
+  if(i==1) {
+    plot(cumsum( heating[ord][heating[ord] > 0] )/1000,type='l',lty=i,main='Cumlative heating demand (kWh/day)',ylab='MWh/day',xlab='Count of residences')
+  }
+  else {
+    points(cumsum( heating[ord][heating[ord] > 0] )/1000,pch=20,type='l',lty=i)
+  }
+}
+grid()
+# add the legend
+# xapx and yaxp return the lowest and highest tick mark for the plot
+# usr returns the outer dimensions of the current plot as c(xmin, xmax, ymin, ymax)
+legend(par('xaxp')[1],par('usr')[4]*0.95, paste(ts,'F'),lty=1:length(ts), title="Temperature",cex=0.8)
+
 
 calMap(db.getZipCounts(),'count','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues") )
 calMap(db.getZipData(),'cecclmzn','zip5',main='CEC climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
@@ -188,14 +260,14 @@ r = ResDataClass(3064027805,94704);  plot(r,estimates=toutDoubleChangePoint(rDFA
 r = ResDataClass(3074465310,94704);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # __  ok fit
 
 
-ggplot(aes(x=cp,color=climate),data=cpData) + geom_density()
-ggplot(aes(x=cp,color=cecclmzn),data=cpData) + geom_density()
+ggplot(aes(x=cp,color=climate),data=cp1Data) + geom_density()
+ggplot(aes(x=cp,color=cecclmzn),data=cp1Data) + geom_density()
 
-g = ggplot(cpData,aes(x=cp,y=tout))
+g = ggplot(cp1Data,aes(x=cp,y=tout))
 g + geom_point(aes(color=cecclmzn))
 g + geom_hex()
 
-g = ggplot(cpData,aes(x=cp,y=cut(tout, breaks=c(seq(40,80,1),Inf))))
+g = ggplot(cp1Data,aes(x=cp,y=cut(tout, breaks=c(seq(40,80,1),Inf))))
 g + stat_bin(aes(fill=..density..), geom="tile", binwidth=3, position="identity")
 g + stat_bin(aes(fill=..count..), geom="tile", binwidth=3, position="identity") + 
   labs(title='Annual mean temperature vs. change point',
@@ -203,7 +275,7 @@ g + stat_bin(aes(fill=..count..), geom="tile", binwidth=3, position="identity") 
            y='tout mean (F)')
 
 
-g = ggplot(cpData,aes(x=cp,color=cut(s.tout, breaks=c(seq(55,90,2),Inf)))) + geom_density() + xlim(55,90)
+g = ggplot(cp1Data,aes(x=cp,color=cut(s.tout, breaks=c(seq(55,90,2),Inf)))) + geom_density() + xlim(55,90)
 g
 
 ggplot(aes(x=model.name),data=bestModels) + geom_bar() # counts of best models.
@@ -213,7 +285,7 @@ ggplot(aes(y=sigma,x=r.squared),data=bestModels) + geom_point() + ylim(0,50) # r
 
 ggplot(aes(y=sigma/kw.var^2,x=r.squared),data=ab) + geom_point() + ylim(0,1000) # relationship between our two metrics
 
-bestCP = merge(bestModels,cpData,by.x='id',by.y='id')
+bestCP = merge(bestModels,cp1Data,by.x='id',by.y='id')
 ggplot(bestCP,aes(y=cut(cp,seq(30,90,5)),x=pval.upper)) + geom_point()
 sbcp = subset(bestCP,subset=bestCP$pval.upper < 0.1)
 ggplot(sbcp,aes(x=cp,color=model.name)) + geom_density()
