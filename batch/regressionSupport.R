@@ -120,6 +120,51 @@ lagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,hrs=0:18) {
   return(out)
 }
 
+partsGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,hrs=0:18) {
+  
+  print(names(df))
+  cold = subset(df,subset=tout < 60)
+  
+  print(cfg$outDir)
+  path = file.path(getwd(),cfg$outDir,paste(r$zip,r$id,'parts.png',sep='_'))
+  print(path)
+  #png(path)
+  hist(cold$kw,breaks=30)
+  plot(r$tout,r$kw)
+  points(cold$tout,cold$kw,col='blue')
+  mn = mean(cold$kw,na.rm=T)
+  tRange = floor(min(r$tout,na.rm=T)):floor(max(r$tout,na.rm=T))
+  points(tRange,rep(mn,length(tRange)),col='green',type='l')
+  points(tRange,rep(mn+ 2*dev,length(tRange)),col='gray',type='l')
+  points(tRange,rep(mn- 2*dev,length(tRange)),col='gray',type='l')
+  upper = subset(df,kw > mn+2*dev & tout > 60 )
+  points(upper$tout,upper$kw,col='red')
+  ulm = lm('kw ~ tout',upper)
+  points(upper$tout,ulm$fitted.values,col='black',type='l')
+  
+  
+  # next:
+  # fit upper points.
+  # histogram of upper points; select the middle of the highest peak on the histogram
+  # refit these
+  # intersect lower and upper lines at the CP
+  #dev.off()
+  
+  lagRegressors = apply(t(hrs),2,function(x) return(lag(df$tout,x))) # construct a regressor matrix with lagged columns
+  colnames(lagRegressors) <- paste('tout_L',hrs,sep='')
+  lagStr = paste('tout_L',hrs,sep='',collapse='+')
+  hourlyLags = paste('kw ~',lagStr,'+ HOD')
+  out = list() 
+  #  regressors   = lagRegressors,
+  #  descriptors  = list( hourlyLags=ModelDescriptor( 
+  #    name=paste(namePrefix,'hourlyLags', sep=''), 
+  #    formula=hourlyLags,
+  #    subset=subset,cvReps=cvReps)
+  #  )
+  #)
+  return(out)
+}
+
 # geometricLagGenerator finds the best fit for a single parameter 'a' that determines geometric
 # decay for hourly lag terms in the form a^k for the kth lag. This form is consistent
 # with a simple physical model of heat transfer through a wall with resistance and 
@@ -328,18 +373,6 @@ toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,bas
     )
   )
   return(out)
-}
-
-toutDoubleChangePoint = function(df) {
-  tMin = floor(min(df$tout.mean,na.rm=T)+5)
-  tMax = floor(max(df$tout.mean,na.rm=T)-5)
-  changeModels = lapply(tMin:tMax,function(coolCP) {
-    trange = lapply((coolCP-1):tMin-1,function(x) c(x,coolCP))
-    toutChangePointFast(df=df,trange=trange,reweight=T,warn=F)
-  })
-  cm = do.call(rbind,changeModels)
-  bestFit = cm[which.min(cm[,'SSR']),]
-  return(bestFit)
 }
 
 toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL,forceCP=NULL) {
@@ -653,11 +686,13 @@ hourlyChangePoint = function(df,hourBins=list(1:24),trange=NULL,fast=T,reweight=
 # this runs all the models and chooss the minimum one.
 # likely waste of CPU on models past the min. See faster impl below
 toutChangePoint = function(hrs=NULL,df,trange=NULL,reweight=F) {
+  toutStr = 'tout'
   if(! is.null(hrs)) {
     sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='') # pull out hrs subset (#0-23 in the df)
     df = df[sub,]
     df = df[!is.na(df$kw),]
   }
+  else { toutStr = 'tout.mean' }
   if(is.null(trange)) {
     rng = floor(quantile(df[[toutStr]],c(0.1,0.90),na.rm=T))
     trange = c( rng[1]:rng[2]  )
@@ -671,7 +706,7 @@ toutChangePoint = function(hrs=NULL,df,trange=NULL,reweight=F) {
 # this takes advantage of the fact that for one change point, 
 # the SSR will be convex so it stops when the change in SSR is positive
 # note that each cp in trange could be a list c(40,50,60,70) or just a number
-toutChangePointFast = function(hrs=NULL,df,trange=NULL,reweight,warn=T) {
+toutChangePointFast = function(hrs=NULL,df,trange=NULL,reweight=F,warn=T) {
   toutStr = 'tout'
   if(! is.null(hrs)) {
     sub = df$HOD %in% paste('H',sprintf('%02i',(hrs-1)),sep='')  # define hrs subset (#0-23 in the df)
@@ -710,6 +745,19 @@ toutChangePointFast = function(hrs=NULL,df,trange=NULL,reweight,warn=T) {
   return(prev)
 }
 
+
+toutDoubleChangePoint = function(df) {
+  tMin = floor(min(df$tout.mean,na.rm=T)+5)
+  tMax = floor(max(df$tout.mean,na.rm=T)-5)
+  changeModels = lapply(tMin:tMax,function(coolCP) {
+    trange = lapply((coolCP-1):tMin-1,function(x) c(x,coolCP))
+    toutChangePointFast(df=df,trange=trange,reweight=F,warn=F)
+  })
+  cm = do.call(rbind,changeModels)
+  bestFit = cm[which.min(cm[,'SSR']),]
+  return(bestFit)
+}
+
 evalCP = function(cp,df,reweight=F) {
   out = list()
   lhs = 'kw'
@@ -742,7 +790,7 @@ evalCP = function(cp,df,reweight=F) {
       ncols      = length(colCounts)
       colWeights = (nobs/ncols) / colCounts # spread equal weight across segments
                                             # even if one has fewer obs than the other
-      #print(colCounts)
+      #print(paste(sum(colWeights[highestCol]),nobs))
       #print(colWeights)
       if(colWeights[1] < 1) { # only re-weight if it improves cooling estimate
         df$w = colWeights[highestCol]
