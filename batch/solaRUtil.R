@@ -1,8 +1,5 @@
 require('solaR')    # this changes the timezone to UTC!!!!
 Sys.setenv(tz='America/Los_Angeles') # change it back
-require('ggplot2')
-require(gridExtra)
-
 
 ZIP_LOCATION <- read.csv("Erle_zipcodes.csv", header=TRUE)
 
@@ -68,6 +65,8 @@ solarGeom = function(dates,zip=NULL,lat=NULL,azimBreaks=seq(0,360,45),elevBreaks
 }
 
 plot.solarGeom = function(solarGeom,azimBreaks=seq(0,360,45),elevBreaks=c(45,0),color=NULL) {
+  require('ggplot2')
+  require(gridExtra)
   g = ggplot(data.frame(azimuth=c(0,360),elevation=rep(max(elevBreaks),2)),aes(y=elevation,x=azimuth)) + 
               geom_polygon(color="grey",size=1,fill=NA) + 
               coord_polar(start=pi) + 
