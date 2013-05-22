@@ -132,7 +132,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
   
   splen  <- length(sp_ids)
   i <- 0
-  skip = TRUE
+  skip = FALSE
   for (sp_id in sp_ids) { # i.e. "820735863" or "6502353905"
     i <- i+1
     print(paste('  ',sp_id,' (',i,'/',splen,') in ',zip,sep=''))
@@ -165,7 +165,9 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
         if(cfg$PLOT_VALID) {
           save.png.plot(r,file.path(getwd(),cfg$outDir,paste(r$zip,'_',r$id,'.png',sep='')))
         }
-        features.basic[[length(features.basic)+1]]  <- basicFeatures(r) # max, min, etc.
+        if(cfg$RUN_FEATURES) {
+          features.basic[[length(features.basic)+1]]  <- basicFeatures(r) # max, min, etc.
+        }
         # hourly regressions
         if(cfg$RUN_HOURLY_MODELS) {
           df = regressorDF(r,norm=FALSE) # see also regressorDFAggregated
