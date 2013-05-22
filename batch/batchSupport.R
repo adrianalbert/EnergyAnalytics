@@ -58,14 +58,14 @@ runModelsByZip = function(cfg) {
     }
     tryCatch( {
       tic('allDataForZip')
-      zipData <- db.getAllData(zip,useCache=cfg$CACHE_ENERGY_DATA)
+      zipData <- db.getAllData(zip,useCache=cfg$CACHE_QUERY_DATA)
       toc('allDataForZip')
-      sp_ids <- db.getSPs(zip)
+      sp_ids <- db.getSPs(zip,useCache=cfg$CACHE_QUERY_DATA)
       sp_ids <- unique(zipData[,'sp_id']) # db.getSPs(zip)
       res$attemptedSP = c(res$attemptedSP,sp_ids)
       # we know that all sp's in the same zipcode share the same weather
       # so we speed execution by looking it up once and passing it in
-      weather <- WeatherClass(zip)
+      weather <- WeatherClass(zip,useCache=cfg$CACHE_QUERY_DATA)
       tic('modelsBySP')
       modelResults <- runModelsBySP(sp_ids,cfg,zip=zip,data=zipData,weather=weather)
       rm(zipData,weather,sp_ids)

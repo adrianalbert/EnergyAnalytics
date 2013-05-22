@@ -191,8 +191,6 @@ ggplot(results.cfs$tout_mean_WKND,aes(x=day.length*1000)) +
     scale_x_continuous(limits=c(-4000,3000),breaks=seq(-4000,3000,by = 500))
 
 
-
-
 calMap(db.getZipCounts(),'count','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues") )
 calMap(db.getZipData(),'cecclmzn','zip5',main='CEC climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
 calMap(db.getZipData(),'climate' ,'zip5',main='PGE climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )

@@ -39,7 +39,7 @@ cfg$SKIP_EXISTING_RDATA = F # don't run models if the RData file for their zip i
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
 cfg$PLOT_VALID   = F  # create png plots for residences that pass validaiton
 
-cfg$CACHE_ENERGY_DATA   = T  # use file cache to store energy data
+cfg$CACHE_QUERY_DATA   = F  # use file cache to store energy data and other query results
 
 
 cfg$RUN_HOURLY_MODELS  = F  # run hourly models
@@ -136,7 +136,7 @@ if (length(args) > 0) {
   print(cfg$allZips)
 } else { # no command line args so do a full run
   print('Initializing batch run with list of all zips in the database')
-  cfg$allZips  <- db.getZips()
+  cfg$allZips  <- db.getZips(useCache=cfg$CACHE_QUERY_DATA)
 }
 # bakersfield, oakland
 #$allZips = c(93304) #,93304)

@@ -11,19 +11,23 @@ library(RColorBrewer)
 source(file.path(getwd(),'solaRUtil.R'))
 
 # utility function that returns a list of all the zipcodes in the data set
-db.getZips = function() {
+db.getZips = function(useCache=F,forceRefresh=F) {
   query    <- paste("select distinct zip5 from",conf.weatherTable(),'order by zip5')
-  return(run.query(query,conf.weatherDB(),cacheFile='zipList.RData')[[1]])
+  cacheFile = NULL
+  if(useCache) { cacheFile='zipList.RData' }
+  return(run.query(query,conf.weatherDB(),cacheFile=cacheFile,forceRefresh=forceRefresh)[[1]])
 }
 
-db.getSPs = function(zip=NA) {
+db.getSPs = function(zip=NA,useCache=F,forceRefresh=F) {
   cacheFile = NULL
   if(is.na(zip)) { query <- paste("select distinct sp_id from",conf.meterTable()) }
   else {
-    cacheFile = paste('spids_',zip,'.RData',sep='') # only cache sp list for individual zips
+    if(useCache) {
+      cacheFile = paste('spids_',zip,'.RData',sep='') # only cache sp list for individual zips
+    }
     query  <- paste("select distinct sp_id from",conf.meterTable(zip),"where zip5=",zip) 
   }
-  return(run.query(query,conf.meterDB(),cacheFile=cacheFile)[[1]])
+  return(run.query(query,conf.meterDB(),cacheFile=cacheFile,forceRefresh=forceRefresh)[[1]])
 }
 
 db.getZipCounts = function() { 
@@ -31,7 +35,7 @@ db.getZipCounts = function() {
   return(run.query(query,conf.meterDB()))
 }
 
-db.getAllData = function(zip=NULL,useCache=F) {
+db.getAllData = function(zip=NULL,useCache=F,forceRefresh=F) {
   cacheFile = NULL
   if(useCache) { cacheFile=paste('meterData_',zip,'.RData',sep='') }
   query = paste(
@@ -40,21 +44,23 @@ db.getAllData = function(zip=NULL,useCache=F) {
          hkw1, hkw2, hkw3, hkw4, hkw5, hkw6, hkw7, hkw8, hkw9, hkw10,hkw11,hkw12,
          hkw13,hkw14,hkw15,hkw16,hkw17,hkw18,hkw19,hkw20,hkw21,hkw22,hkw23,hkw24 
          FROM',conf.meterTable(zip),'ORDER BY sp_id, DATE')
-  zipData = run.query(query,conf.meterDB(),cacheFile=cacheFile)
+  zipData = run.query(query,conf.meterDB(),cacheFile=cacheFile,forceRefresh=forceRefresh)
   return(zipData)
 }
 
 # return the available summary information for every zipcode
 # including sp_id count, climate zone, weather station, and income stats
 ZIP_DATA = NULL
-db.getZipData = function(zip=NULL) {
+db.getZipData = function(zip=NULL,useCache=F) {
   if(is.null(ZIP_DATA)) {
     query = paste(
       'SELECT zip5, COUNT(DISTINCT sp_id), cecclmzn, climate, GCOUNTY, WTHRSTN,
       median_income, median_income_quantiles
       FROM', conf.accountTable(), 'GROUP BY zip5')
     # has to go into the global env to persist as a 'cache'
-    assign('ZIP_DATA', run.query(query,conf.meterDB(),cacheFile='zipData.RData'), envir = .GlobalEnv) 
+    cacheFile=NULL
+    if(useCache) { cacheFile='zipData.RData' }
+    assign('ZIP_DATA', run.query(query,conf.meterDB(),cacheFile=cacheFile), envir = .GlobalEnv) 
   }
   #else { print('Using zip data cache') }
   if(is.null(zip)) { out = ZIP_DATA                       }
@@ -115,11 +121,15 @@ dailySums = function(rawData) {
 
 # class structure based on example from
 # http://bryer.org/2012/object-oriented-programming-in-r
-WeatherClass = function(zipcode,doMeans=T){
+WeatherClass = function(zipcode,doMeans=T,useCache=F){
   query = paste(
     'SELECT `date`, TemperatureF, Pressure, DewpointF, HourlyPrecip
     FROM',conf.weatherTable(),'where zip5 =',zipcode,'ORDER BY DATE')
-  raw = run.query(query,conf.weatherDB(),cacheFile=paste('weather_',zipcode,'.RData',sep=''))
+  cacheFile=NULL
+  if(useCache) {
+    cacheFile=paste('weather_',zipcode,'.RData',sep='')
+  }
+  raw = run.query(query,conf.weatherDB(),cacheFile=cacheFile)
   if(length(raw)==0) stop(paste('No data found for zipcode',zipcode))
   
    
@@ -133,7 +143,7 @@ WeatherClass = function(zipcode,doMeans=T){
   
   days = unique(as.Date(rawData$dates))
   
-  #sg = solarGeom(rawData$dates,zip=zipcode)
+  sg = solarGeom(rawData$dates,zip=zipcode)
   
   # FYI, spring forward causes NA dates to find these:
   # which(is.na(dates))
@@ -148,15 +158,15 @@ WeatherClass = function(zipcode,doMeans=T){
     dayMeans  = dailyMeans(rawData)
     dayMins   = dailyMins(rawData)
     dayMaxs   = dailyMaxs(rawData)
-    #dayLengths = dailySums(sg[,c('dates','daylight')])
+    dayLengths = dailySums(sg[,c('dates','daylight')])
   }
   obj = list (
     zip      = zipcode,
     days     = days,
     dates    = rawData$dates,
     tout     = rawData$tout,
-    #sg       = sg,
-    #daylight = sg$daylight,
+    sg       = sg,
+    daylight = sg$daylight,
     rawData  = rawData,
     dayMeans = dayMeans,
     dayMins  = dayMins,
