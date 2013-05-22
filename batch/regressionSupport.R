@@ -232,7 +232,7 @@ cp24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0) {
     splitTout[!hrFilter,] <- 0 # zero out values not matching the hour the change point comes from
     hourlyCP = cbind(hourlyCP,splitTout)
   }
-  sg = solarGeom(r)
+  sg = solarGeom(r$dates,r$zip)
   newCols = cbind(sg$zone,((sg$zone != 'night') * 1))
   colnames(newCols) <- c('solarZone','dayTime')
   hourlyCPf  = paste('kw ~',paste(colnames(hourlyCP),collapse=" + ",sep=''),'+ HOD - 1')
@@ -361,7 +361,7 @@ toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,bas
   if (dim(pieces)[2] == 1) colnames(pieces) <- c('tout.mean') # no split made
   if (dim(pieces)[2] == 2) colnames(pieces) <- c('tout.mean_lower','tout.mean_upper') # 2 cols: above and below cp
   # define regression formula that uses the piecewise pieces
-  dailyCPf  = paste('kwh ~',paste(colnames(pieces),collapse=" + ",sep=''),'+ DOW - 1')
+  dailyCPf  = paste('kwh ~',paste(colnames(pieces),collapse=" + ",sep=''),'+ day.length + DOW - 1')
   out = list( 
     regressors   = pieces,
     changeModel  = changeModel,
@@ -586,12 +586,15 @@ rDFA = function(residence,norm=F,bp=65,rm.na=FALSE) {
   df$CDH = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout  > bp,na.rm=na.rm))
   df$HDH = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout <= bp,na.rm=na.rm))
   w = residence$weather
+  # todo: this can cause errors when there is insufficient weather data. See for example ResDataClass(6705412110,93307)
   dayMatch = as.Date(w$dayMeans$day) %in% as.Date(df$day)
   
   # todo: add NAs for days that are in df$day, but not dayMeans (caused by > 24 hrs of data missing)
-  df$tout.mean = w$dayMeans[dayMatch,'tout']
-  df$tout.min  = w$dayMins[dayMatch,'tout']
-  df$tout.max  = w$dayMaxs[dayMatch,'tout']
+  df$tout.mean  = w$dayMeans[dayMatch,'tout']
+  df$tout.min   = w$dayMins[dayMatch,'tout']
+  df$tout.max   = w$dayMaxs[dayMatch,'tout']
+  dl            = w$dayLengths[dayMatch,'dayMeans']
+  df$day.length = dl - min(dl)
 #   df$tout.mean = residence$daily('tout',mean)
 #   df$tout.max  = residence$daily('tout',max)
 #   df$tout.min  = residence$daily('tout',min)

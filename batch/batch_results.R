@@ -22,7 +22,8 @@ source(file.path(getwd(),'zipMap.R'))
 
 resultsDir = 'results_daily'       # daily models for all homes
 #resultsDir = 'results_daily_flex'  # 2 change point models
-#resultsDir = 'results_daily_nestedCP'
+resultsDir = 'results_daily_nestedCP'
+resultsDir = 'results_daily_DLtest'
 
 # get a list of all the data filees in the dir and extract their zips
 dirZips = do.call(rbind,strsplit(list.files(file.path(getwd(),resultsDir),pattern='modelResults.RData'),'_'))[,1]
@@ -47,7 +48,7 @@ if(file.exists(invalidIdsFile)) {
   load(invalidIdsFile)
 } else {
   invalids = combine(allZips, resultType='invalid.ids',
-                    fun=function(x) { return(x) }, appendZipData=F)
+                    fun=function(x) { return(x$id) }, appendZipData=F)
   colnames(invalids) = c('id','zip')
   save(list=c('invalids'),file=invalidIdsFile)
 }
@@ -140,20 +141,21 @@ ord = rev(order(cp1Data$upper))
 plot(cp1Data$upper[ord][cp1Data$upper[ord] > 0],pch=20,main='Magnitude of cooling demand (kWh/CDD)',ylab='kWh/CDD',xlab='Count of residences',ylim=c(0,max(cp1Data$upper)))
 grid()
 
-cooling = cp1Data$upper*max(0,90 - cp1Data$cp)
+cooling = cp1Data$upper*pmax(0,90 - cp1Data$cp)
 ord = rev(order(cooling))
 plot(cumsum( cooling[ord][cooling[ord] > 0] )/1000,type='l',,lty=1,main='Cumlative cooling demand (kWh/day)',ylab='MWh/day',xlab='Count of residences')
 
 ts = c(100,90,80,70,60,50)
 for(i in 1:length(ts)) {
   t = ts[i]
-  cooling = cp1Data$upper*max(0,t - cp1Data$cp)
+  cooling = cp1Data$upper*pmax(0,t - cp1Data$cp)
   ord = rev(order(cooling))
+  cum = cumsum( cooling[ord][cp1Data$upper[ord] > 0] )/1000
   if(i==1) {
-    plot(cumsum( cooling[ord][cooling[ord] > 0] )/1000,type='l',lty=i,main='Cumlative cooling demand (kWh/day)',ylab='MWh/day',xlab='Count of residences')
+    plot(cum,type='l',lty=i,main='Cumlative cooling demand (kWh/day)',ylab='MWh/day',xlab='Count of residences')
   }
   else {
-    points(cumsum( cooling[ord][cooling[ord] > 0] )/1000,pch=20,type='l',lty=i)
+    points(cum,pch=20,type='l',lty=i)
   }
 }
 grid()
@@ -165,7 +167,7 @@ legend(par('xaxp')[1],par('usr')[4]*0.95, paste(ts,'F'),lty=1:length(ts), title=
 ts = c(30,40,50,60,70)
 for(i in 1:length(ts)) {
   t = ts[i]
-  heating = cp1Data$lower*min(0,t - cp1Data$cp) # negative values only multiply negative slopes to give kWh
+  heating = cp1Data$lower*pmin(0,t - cp1Data$cp) # negative values only multiply negative slopes to give kWh
   ord = rev(order(heating))
   if(i==1) {
     plot(cumsum( heating[ord][heating[ord] > 0] )/1000,type='l',lty=i,main='Cumlative heating demand (kWh/day)',ylab='MWh/day',xlab='Count of residences')
@@ -179,6 +181,16 @@ grid()
 # xapx and yaxp return the lowest and highest tick mark for the plot
 # usr returns the outer dimensions of the current plot as c(xmin, xmax, ymin, ymax)
 legend(par('xaxp')[1],par('usr')[4]*0.95, paste(ts,'F'),lty=1:length(ts), title="Temperature",cex=0.8)
+
+
+# for daylight duration model, plot the impacts of a marginal hour of daylight
+ggplot(results.cfs$tout_mean_WKND,aes(x=day.length*1000)) + 
+    geom_histogram(binwidth=100) + 
+    labs(title='Impact of hours of daylight on power consumption',
+         x='delta W during daylight', y='density') + 
+    scale_x_continuous(limits=c(-4000,3000),breaks=seq(-4000,3000,by = 500))
+
+
 
 
 calMap(db.getZipCounts(),'count','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues") )
@@ -228,24 +240,24 @@ MAm = as.matrix(basics[,grep("^ma[0-9]",colnames(basics))])
 basics$maxMA = as.numeric(apply(MAm,1,which.max))
 
 # example daily scatter plot types
-toutScatter = function(r) {
+toutScatter = function(r,main='') {
   dfa = rDFA(r)
   plot(dfa$tout.mean,dfa$kwh,
-       xlab='mean T (degs F)',ylab='kWh/day',main=paste(r$id,r$weather$zip),xlim=c(40,95),
+       xlab='mean T (degs F)',ylab='kWh/day',main=main,xlim=c(40,95),
        mgp=c(1,0,0),tcl=0.5)
 }
 
 op <- par(no.readonly = TRUE)
 par( mfrow=c(3,3), oma=c(2,0,3,0),mar=c(2,2,2,2))# Room for the title
-toutScatter(ResDataClass(1064429605,93304)) # _/  good fit
-toutScatter(ResDataClass(1418575405,93304)) # \/  good fit
-toutScatter(ResDataClass(6481381805,93304)) # \_/ good fit
-toutScatter(ResDataClass(6502182810,93304)) # \_/ good fit
-toutScatter(ResDataClass(6533703010,93304)) # WTF bad fit
-toutScatter(ResDataClass(3044473610,94704)) # \_  ok fit
-toutScatter(ResDataClass(3074319310,94704)) # \_  ok fit
-toutScatter(ResDataClass(3064027805,94704)) # __  bad fit
-toutScatter(ResDataClass(3074465310,94704)) # __  ok fit
+toutScatter(ResDataClass(1064429605,93304),'1') # _/  good fit
+toutScatter(ResDataClass(1418575405,93304),'2') # \/  good fit
+toutScatter(ResDataClass(6481381805,93304),'3') # \_/ good fit
+toutScatter(ResDataClass(6502182810,93304),'4') # \_/ good fit
+toutScatter(ResDataClass(6533703010,93304),'5') # WTF bad fit
+toutScatter(ResDataClass(3044473610,94704),'6') # \_  ok fit
+toutScatter(ResDataClass(3074319310,94704),'7') # \_  ok fit
+toutScatter(ResDataClass(3064027805,94704),'8') # __  bad fit
+toutScatter(ResDataClass(3074465310,94704),'9') # __  ok fit
 mtext("Typical daily kWh vs. mean Tout scatters", line=0, font=2, cex=1.2,outer=TRUE)
 par(op)
 

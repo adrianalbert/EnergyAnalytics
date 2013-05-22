@@ -33,11 +33,14 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 
 
 cfg = list()
-cfg$outDir = 'results_daily_nestedCP'
+cfg$outDir = 'results_daily_DLtest'
 
-cfg$SKIP_EXISTING_RDATA = T # don't run models if the RData file for their zip is present
+cfg$SKIP_EXISTING_RDATA = F # don't run models if the RData file for their zip is present
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
 cfg$PLOT_VALID   = F  # create png plots for residences that pass validaiton
+
+cfg$CACHE_ENERGY_DATA   = T  # use file cache to store energy data
+
 
 cfg$RUN_HOURLY_MODELS  = F  # run hourly models
 cfg$RUN_DAILY_MODELS   = T  # run daily summary data models (moderate time consuming)
@@ -89,7 +92,7 @@ cfg$models.hourly = list(
   #toutTOD_l1   = ModelDescriptor(name='toutTOD_l1',formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l1 + HOD",subset=list(summer=cfg$subset$summer)),
   #toutTOD_l3   = ModelDescriptor(name='toutTOD_l3',formula="kw ~ 0 + tout65:HOD + pout + rh + tout65_l3 + HOD",subset=list(all="TRUE"))
   #toutTOD_min = ModelDescriptor(name='toutTOD_min',"kw_min ~ 0 + tout:HOD + HOW" # no intercept
-  parts       = DescriptorGenerator(name='parts',genImpl=partsGenerator,subset=list(all="TRUE"))
+  #parts       = DescriptorGenerator(name='parts',genImpl=partsGenerator,subset=list(all="TRUE"))
 )
 
 # todo: integration vacation days into regression
@@ -106,9 +109,11 @@ cfg$models.daily = list(
 #   wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
 #   dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
 #   dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE")),
-  dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=8), # no CP
-  dailyCP        = DescriptorGenerator(name='tout1CP',     genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"),cvReps=8), # 1 CP
-  dailyFlexCP    = DescriptorGenerator(name='tout2CP',     genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"),cvReps=8)  # 2 CPs
+#  tout_mean_WKND = "kwh ~ tout.mean + WKND + day.length",
+#  tout_DL        = "kwh ~ day.length"
+  #dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=8), # no CP
+  #dailyCP        = DescriptorGenerator(name='tout1CP',     genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"),cvReps=8), # 1 CP
+  #dailyFlexCP    = DescriptorGenerator(name='tout2CP',     genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"),cvReps=8)  # 2 CPs
   #dailyFlexCP    = DescriptorGenerator(name='tout',genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"))
 )
 
@@ -134,7 +139,7 @@ if (length(args) > 0) {
   cfg$allZips  <- db.getZips()
 }
 # bakersfield, oakland
-#cfg$allZips = c(93304) #,93304)
+#$allZips = c(93304) #,93304)
 
 #cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
 #               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,

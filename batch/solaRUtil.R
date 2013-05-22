@@ -3,6 +3,9 @@ Sys.setenv(tz='America/Los_Angeles') # change it back
 require('ggplot2')
 require(gridExtra)
 
+
+ZIP_LOCATION <- read.csv("Erle_zipcodes.csv", header=TRUE)
+
 # zone elevation and azimuth breaks.
 # elevation greater than the max here are assugned to the overheat zone z0
 # elevation < 0 are assigned to the night zone
@@ -23,27 +26,45 @@ nameZone = function(azim,elev,azimBreaks,elevBreaks) {
   return('?')
 }
 
-solarGeom = function(resData,lat=37.87,azimBreaks=seq(0,360,45),elevBreaks=c(45,0)) {
+solarGeom = function(dates,zip=NULL,lat=NULL,azimBreaks=seq(0,360,45),elevBreaks=c(45,0)) {
+  blanks = is.na(dates)        # dates have na's for daylight savings spring forward day
+  dates[blanks] <- dates[1]    # they must be overridden as real dates for calcSol to work
+  if(is.null(lat)) {
+    lat=37.87
+    zip = as.integer(zip)
+    print( paste('Deriving lat data from',zip) )
+    zipRow = ZIP_LOCATION[ZIP_LOCATION$zip == zip,]
+    if(dim(zipRow)[1]==0) { 
+      print( paste("Couldn't find zip information. Using lat",lat) )
+    } else {
+      lat = zipRow[1,'latitude']
+    }
+    
+  }
+  print(paste('Latitude:',lat))
+  
   # Berkeley 37.8717 N, 122.2728 W
   # calcSol computes the angles which describe the intradaily apparent movement of the Sun from the Earth
   # solObj is an S4 class with lots of solar info
   # recall that 'slots' in S4 objects are accessed via the @ operator
   # suppressWarnings because zoo complains about duplicate dates caused by daylight savings time
-  solObj = suppressWarnings(calcSol(lat,sample="hour",BTi=resData$dates,EoT=T,keep.night=T))
-  solarGeom = as.data.frameI(solObj)
+  solObj = suppressWarnings(calcSol(lat,sample="hour",BTi=dates,EoT=T,keep.night=T))
+  sg = as.data.frameI(solObj)
   # the solI slot is a zoo object and we want the time stamps
-  solarGeom$dates     = time(solObj@solI)
-  solarGeom$elevation = solarGeom$AlS * 180/pi   # convery from radians
-  solarGeom$azimuth   = solarGeom$AzS * 180/pi   # convery from radians
-  solarGeom$azimuth   = solarGeom$azimuth %% 360 # no negative or > 360 degrees
+  sg$dates     = time(solObj@solI)
+  sg$elevation = sg$AlS      * 180/pi   # convert from radians
+  sg$azimuth   = sg$AzS      * 180/pi   # convert from radians
+  sg$azimuth   = sg$azimuth %% 360      # no negative or > 360 degrees
   
   # get named zones based on breaks into a factor
-  solarGeom$zone      = factor(apply(as.matrix(solarGeom[,c('azimuth','elevation')]),1,
+  sg$zone      = factor(apply(as.matrix(sg[,c('azimuth','elevation')]),1,
                                    function(X) nameZone(X[1],X[2],azimBreaks,elevBreaks)))
-  #solarGeom$AlS is the solar elevation
-  #solarGeom$AzS is the solar asimuth
-  class(solarGeom) <- c('solarGeom',class(solarGeom))
-  return(solarGeom)
+  sg$daylight = sg$elevation > 0
+  #sg$AlS is the solar elevation
+  #sg$AzS is the solar asimuth
+  class(sg) <- c('solarGeom',class(sg))
+  sg[blanks,] <- NA # put the blanks back in for the overridden values
+  return(sg)
 }
 
 plot.solarGeom = function(solarGeom,azimBreaks=seq(0,360,45),elevBreaks=c(45,0),color=NULL) {
@@ -92,6 +113,6 @@ TEST=F
 if(TEST) {
   # View of whole path, including below horizon 
   r = ResDataClass(553991005,93304)
-  sg = solarGeom(r)
+  sg = r$weather$sg
   plot(sg,color='junk')
 }

@@ -104,12 +104,13 @@ cfg$models.hourly = list(
   #wea65        = ModelDescriptor(name='wea65',formula="kw ~ tout65 + pout + rh + HOW + MOY",subset=list(all="TRUE")),
   #HOW          = "kw ~ tout + HOW"
   #toutTOD_WKND = ModelDescriptor(name='toutTOD_WKND',formula="kw ~ 0 + tout65:HODWK + HODWK",subset=list(all="TRUE"))
-  parts       = DescriptorGenerator(name='parts',genImpl=partsGenerator,subset=list(all="TRUE"))
+  #parts       = DescriptorGenerator(name='parts',genImpl=partsGenerator,subset=list(all="TRUE"))
 )
 cfg$models.daily = list(
   ##tout           = "kwh ~ tout.mean",
   #DOW            = "kwh ~ DOW",
-  #tout_mean_WKND = "kwh ~ tout.mean + WKND",
+  tout_mean_WKND = "kwh ~ tout.mean + WKND + day.length",
+  tout_DL        = "kwh ~ day.length"
   ##tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
   #tout_max       = "kwh ~ tout.max  + DOW",
   ##tout_CDD       = "kwh ~ CDD + HDD + DOW",
@@ -117,7 +118,7 @@ cfg$models.daily = list(
   #wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
   #dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
   #  dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=50), # no CP
-  #  dailyCP        = DescriptorGenerator(name='tout',     genImpl=toutDailyCPGenerator,       subset=list(all="TRUE"),cvReps=50), # 1 CP
+  #  dailyCP        = DescriptorGenerator(name='tout',     genImpl=toutDailyCPGenerator,       subset=list(all="TRUE"),cvReps=4) # 1 CP
   #  dailyFlexCP    = DescriptorGenerator(name='tout',     genImpl=toutDailyFlexCPGenerator,   subset=list(all="TRUE"),cvReps=50)  # 2 CPs
 )
 init = F

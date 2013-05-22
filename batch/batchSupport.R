@@ -58,7 +58,7 @@ runModelsByZip = function(cfg) {
     }
     tryCatch( {
       tic('allDataForZip')
-      zipData <- db.getAllData(zip)
+      zipData <- db.getAllData(zip,useCache=cfg$CACHE_ENERGY_DATA)
       toc('allDataForZip')
       sp_ids <- db.getSPs(zip)
       sp_ids <- unique(zipData[,'sp_id']) # db.getSPs(zip)
@@ -132,13 +132,13 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
   
   splen  <- length(sp_ids)
   i <- 0
-  #skip = FALSE
+  skip = TRUE
   for (sp_id in sp_ids) { # i.e. "820735863" or "6502353905"
     i <- i+1
     print(paste('  ',sp_id,' (',i,'/',splen,') in ',zip,sep=''))
     
     #if(sp_id == 6502353905) { skip = FALSE } # debug shortcut
-    #if(skip) { next }
+    if(skip) { next }
     resData = NULL
     if (!is.null(data)) {  resData = data[data[,'sp_id']== sp_id,] }
     r <- tryCatch(ResDataClass(sp_id,zip=zip,weather=weather,data=resData,db=conf.meterDB()), 
