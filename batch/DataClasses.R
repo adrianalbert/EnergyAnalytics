@@ -60,7 +60,7 @@ db.getZipData = function(zip=NULL,useCache=F) {
     # has to go into the global env to persist as a 'cache'
     cacheFile=NULL
     if(useCache) { cacheFile='zipData.RData' }
-    assign('ZIP_DATA', run.query(query,conf.meterDB(),cacheFile=cacheFile), envir = .GlobalEnv) 
+    assign('ZIP_DATA', run.query(query,conf.resDB(),cacheFile=cacheFile), envir = .GlobalEnv) 
   }
   #else { print('Using zip data cache') }
   if(is.null(zip)) { out = ZIP_DATA                       }
@@ -143,7 +143,12 @@ WeatherClass = function(zipcode,doMeans=T,useCache=F){
   
   days = unique(as.Date(rawData$dates))
   
-  sg = solarGeom(rawData$dates,zip=zipcode)
+  DO_SG = F
+  sg = list()
+  if(DO_SG) {
+    sg = solarGeom(rawData$dates,zip=zipcode)
+  }
+  
   
   # FYI, spring forward causes NA dates to find these:
   # which(is.na(dates))
@@ -158,7 +163,9 @@ WeatherClass = function(zipcode,doMeans=T,useCache=F){
     dayMeans  = dailyMeans(rawData)
     dayMins   = dailyMins(rawData)
     dayMaxs   = dailyMaxs(rawData)
-    dayLengths = dailySums(sg[,c('dates','daylight')])
+    if(DO_SG) {
+      dayLengths = dailySums(sg[,c('dates','daylight')])
+    }
   }
   obj = list (
     zip      = zipcode,
@@ -401,15 +408,19 @@ quickEst = function(cp,const,b,tlim=c(0,100)) {
   return(cbind(tRng,y))
 }
 
-save.png.plot = function(r,path) {
-  png(path)
-  colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
-  plot(  r, colorMap=colorMap, 
-         main=paste(r$zip, r$id, paste(colnames(issues),collapse=', ')) )
-  dev.off()
+save.png.plot = function(r,path,issues=NULL) {
+  tryCatch( {
+    png(path)
+    colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
+    issueTxt = ''
+    if(length(issues)>1) { issueTxt = paste(colnames(issues)[-1],collapse=', ') }
+    plot( r, colorMap=colorMap, main=paste(r$zip, r$id),issueTxt=issueTxt )
+  }, 
+  error = function(e) { print(e) },
+  finally = { dev.off() } )
 }
 
-plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NULL) {
+plot.ResDataClass = function(r,colorMap=NA,main=NULL,issueTxt='',type='summary',estimates=NULL) {
   # needs a list, called r with:
   # r$id unique identifier (just for the title)
   # r$zip zipcode for the title
@@ -418,16 +429,21 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NULL
   # r$kwMat (matrix of kw readings with 24 columns)
   # r$toutMat (matrix of Tout readings with 24 columns)
   if(type=='summary') {
-    if(is.na(main)) { main <- paste(r$id,' (',r$zip,') summary info',sep='') }
+    if(is.null(main)) { main <- paste(r$id,' (',r$zip,') summary info',sep='') }
     if(length(colorMap) < 2) { colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100)) } #colorMap = heat.colors(100)
     op <- par(no.readonly = TRUE)
-    par( mfrow=c(2,2), oma=c(2,0,3,0),mar=c(2,2,2,2))# Room for the title
+    par( mfrow=c(2,2), oma=c(2,2,3,0),mar=c(2,2,2,2))# Room for the title
     #plot(r$kw,xlab='Date',ylab='kWh/h',main='Raw usage')
     
-    image(t(as.matrix(r$kwMat)),col=colorMap,axes=F,main='kW')
+    # image is messed up. we need to reverse the rows, convert to a matrix and transpose the data
+    # to get the right orientation!
+    image(t(as.matrix(r$kwMat[rev(1:dim(r$kwMat)[1]),])),col=colorMap,axes=F,main='kW')
     axis(1, at = seq(0, 1, by = 1/6),labels=0:6 * 4,mgp=c(1,0,0),tcl=0.5)
-    axis(2, at = seq(1,0, by = -1/15),labels=format(r$days[seq(1/16, 1, by = 1/16) * length(r$days)],'%m.%d'),las=1,mgp=c(1,0,0),tcl=0.5)
-    
+    if(length(r$days) > 16) {
+      axis(2, at = seq(1,0, by = -1/15),labels=format(r$days[seq(1/16, 1, by = 1/16) * length(r$days)],'%m/%d/%y'),las=1,mgp=c(1,0,0),tcl=0.5)
+    } else {
+      axis(2, at = seq(1,0, by = -1/(length(r$days)-1)),labels=format(r$days,'%m/%d/%y'),las=1,mgp=c(1,0,0),tcl=0.5)
+    }
     
     #hmap(,yvals=r$days,colorMap=colorMap,log=TRUE,main='Heatmap',mgp=c(1,0,0),tcl=0.5) # axis label on row 1, axis and ticks on 0, with ticks facing in
     end = min(length(r$kw),240)
@@ -446,7 +462,12 @@ plot.ResDataClass = function(r,colorMap=NA,main=NA,type='summary',estimates=NULL
          xlab='mean T (degs F)',ylab='kWh/day',
          xlim=xlm,ylim=ylm, # use a well defined set of ranges so they can be matched by any estimates below
          mgp=c(1,0,0),tcl=0.5)
-    mtext(main, line=0, font=2, cex=1.2,outer=TRUE)
+    txtCol = 'black'
+    if(nchar(issueTxt) > 0) { 
+      main = paste(main,issueTxt)             
+      txtCol = 'red'
+    }
+    mtext(paste(main,issueTxt), line=0, font=2, col=txtCol, cex=1.2, outer=TRUE)
     if(length(estimates) > 0) {
       #print(estimates)
       par(new=T)
