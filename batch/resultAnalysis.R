@@ -151,6 +151,10 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
     #rList[[length(rList)+1]] = new
     rm(modelResults)
   }
+  #print(rList[[38]])
+  #print(colnames(rList[[38]]))
+  #print(do.call(rbind,lapply(rList,function(x) c(length(colnames(x)),unique(x['zip5'])))))
+  #print(do.call(rbind,lapply(rList,function(x) c(names(x),unique(x['zip5'])))))
   
   result = do.call(rbind,rList[!is.na(rList)]) # here we bind the results together
   if(appendZipData) { result = addZipData(result) }
@@ -161,7 +165,7 @@ addZipData = function(orig) {
   if(! "data.frame" %in% class(orig)) {  # because the zip data is mixed, the return value
     orig = data.frame(orig)              # has to be a data frame too
   }
-  zipData = db.getZipData()
+  zipData = db.getZipData(useCache=T)
   zipCol = grep('^zip',colnames(orig),value=T)[1]
   print(zipCol)
   orig[[zipCol]] = as.numeric(orig[[zipCol]])

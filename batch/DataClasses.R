@@ -121,7 +121,7 @@ dailySums = function(rawData) {
 
 # class structure based on example from
 # http://bryer.org/2012/object-oriented-programming-in-r
-WeatherClass = function(zipcode,doMeans=T,useCache=F){
+WeatherClass = function(zipcode,doMeans=T,useCache=F,doSG=F){
   query = paste(
     'SELECT `date`, TemperatureF, Pressure, DewpointF, HourlyPrecip
     FROM',conf.weatherTable(),'where zip5 =',zipcode,'ORDER BY DATE')
@@ -143,9 +143,8 @@ WeatherClass = function(zipcode,doMeans=T,useCache=F){
   
   days = unique(as.Date(rawData$dates))
   
-  DO_SG = F
   sg = list()
-  if(DO_SG) {
+  if(doSG) {
     sg = solarGeom(rawData$dates,zip=zipcode)
   }
   
@@ -163,7 +162,7 @@ WeatherClass = function(zipcode,doMeans=T,useCache=F){
     dayMeans  = dailyMeans(rawData)
     dayMins   = dailyMins(rawData)
     dayMaxs   = dailyMaxs(rawData)
-    if(DO_SG) {
+    if(doSG) {
       dayLengths = dailySums(sg[,c('dates','daylight')])
     }
   }
@@ -420,7 +419,7 @@ save.png.plot = function(r,path,issues=NULL) {
   finally = { dev.off() } )
 }
 
-plot.ResDataClass = function(r,colorMap=NA,main=NULL,issueTxt='',type='summary',estimates=NULL) {
+plot.ResDataClass = function(r,colorMap=NA,main=NULL,issueTxt='',type='summary',colorBy='hours',estimates=NULL,extraPoints=NULL) {
   # needs a list, called r with:
   # r$id unique identifier (just for the title)
   # r$zip zipcode for the title
@@ -489,20 +488,27 @@ plot.ResDataClass = function(r,colorMap=NA,main=NULL,issueTxt='',type='summary',
     par(op)
     #heatmap(as.matrix(r$kwMat),Rowv=NA,Colv=NA,labRow=NA,labCol=NA)
   } else if(type=='temp') {
-    if(is.na(main)) { main <- paste(r$id,' (',r$zip,') temperature info',sep='') }
+    if(is.null(main)) { main <- paste(r$id,' (',r$zip,') temperature info',sep='') }
     #colors = rainbow(24)
-    colors = colorRampPalette(brewer.pal(11,"PRGn"))(24)
+    colorBy = r$dates$hour
+    legendLabs = paste("hr ", 1:24)
+    colors = colorRampPalette(brewer.pal(11,"PRGn"))(length(unique(colorBy)))
     colors = colors[(1:length(colors) + 8) %% length(colors)] # shift values backwards by 8 hours (so color discontinuity is in the afternoon)
-    plot(r$tout,r$kw,xlab='Tout',ylab='kW',main=main,type='p',col=mapColors(r$dates$hour,colors),cex=0.8,pch=19) # rainbow(n, start=2/6, end=1)
-    legend('right', paste("hr ", 1:24), fill=colors, ncol = 1, cex = 0.5)
+    plot(r$tout,r$kw,xlab='Tout',ylab='kW',main=main,type='p',col=mapColors(colorBy,colors),cex=0.8,pch=19) # rainbow(n, start=2/6, end=1)
+    legend('right', legendLabs, fill=colors, ncol = 1, cex = 0.5)
+    if(!is.null(extraPoints)) {
+      color = 'blue'
+      points(extraPoints$x,extraPoints$y,col=color )
+           #lwd=2 )
+    }
   } else if(type=='hourly') {
-    if(is.na(main)) { main <- paste(r$id,' (',r$zip,') hourly info',sep='') }
+    if(is.null(main)) { main <- paste(r$id,' (',r$zip,') hourly info',sep='') }
     op <- par(no.readonly = TRUE)
     grid = cbind(matrix(c(1:24),nrow=4,ncol=6,byrow=TRUE),c(25,25,25,25))
-    layout(grid,widths=c(rep(2,6),1))
+    layout(grid,widths=c(rep(2,6),3))
     par(oma=c(2,3,3,0),mar=c(1,0,1,0))# Room for the title
     
-    pallete = rainbow(12) #,start=2/6, end=1)
+    pallete = colorRampPalette(brewer.pal(11,"Spectral"))(12) #rainbow(12) #,start=2/6, end=1)
     colvals = r$dates$mon
     #colvals = r$dates$wday
     #colvals = r$dates$wday == 0 | r$dates$wday == 6 # 0 = Sun, 6 = Sat
@@ -517,7 +523,9 @@ plot.ResDataClass = function(r,colorMap=NA,main=NULL,issueTxt='',type='summary',
       sub = r$dates$hour==i
       plot(subset(r$tout,sub),subset(r$kw,sub),
            col=subset(colors,sub),
-           xlim=xlm,ylim=ylm,yaxt=yax,xaxt=xax,cex=0.9
+           #col='black',
+           pch=subset(colvals,sub),
+           xlim=xlm,ylim=ylm,yaxt=yax,xaxt=xax,cex=1.0
            )
       if(length(estimates) > 1) {
         if(length(estimates[,i+1]) > 1) {
@@ -542,7 +550,7 @@ plot.ResDataClass = function(r,colorMap=NA,main=NULL,issueTxt='',type='summary',
     #par(xpd=TRUE)
     #plot.new()
     plot(1, type = "n", axes=FALSE, xlab="", ylab="")
-    legend('center', month.abb, fill=pallete, ncol = 1, cex = 1)
+    legend('center', month.abb, col=pallete, pch=1:24, ncol = 1, cex = 1.3)
     #par(xpd=FALSE)
     par(op)
   }

@@ -107,16 +107,30 @@ cfg$models.hourly = list(
   #parts       = DescriptorGenerator(name='parts',genImpl=partsGenerator,subset=list(all="TRUE"))
 )
 cfg$models.daily = list(
-  ##tout           = "kwh ~ tout.mean",
-  #DOW            = "kwh ~ DOW",
-  tout_mean_WKND = "kwh ~ tout.mean + WKND + day.length",
-  tout_DL        = "kwh ~ day.length"
+  tout            = "kwh ~ tout.mean",
+  WKND            = "kwh ~ WKND",
+  DOW             = "kwh ~ DOW",
+  DOW_tout        = "kwh ~ DOW + tout.mean",
+  DOW_tout_DL     = "kwh ~ DOW + tout.mean + day.length",
+  DOW_tout.min_DL = "kwh ~ DOW + tout.min  + day.length",
+  DOW_tout.max_DL = "kwh ~ DOW + tout.max  + day.length",
+  DOW_DD_DL       = "kwh ~ DOW + CDH + HDH + day.length",
+  DOW_tout_DL_vac = "kwh ~ DOW + tout.mean + day.length + vac",
+  DOW_toutCP_DL   = DescriptorGenerator(name='DOW_toutCP_DL',  genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"), terms='+ DOW + day.length') # 1 CP
+  #tout_mean_WKND = "kwh ~ tout.mean + WKND + day.length",
+  #tout_DL        = "kwh ~ day.length"
   ##tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
   #tout_max       = "kwh ~ tout.max  + DOW",
   ##tout_CDD       = "kwh ~ CDD + HDD + DOW",
   #tout_CDD_WKND  = "kwh ~ CDD + HDD + WKND",
   #wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
   #dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
+  
+  #dailyWKND      = ModelDescriptor(    name='dailyWKDN',formula="kwh ~ WKND - 1",subset=list(all="TRUE"),cvReps=8), # no CP
+  #dailyDOW       = ModelDescriptor(    name='dailyDOW', formula="kwh ~ DOW - 1",subset=list(all="TRUE"),cvReps=8), # no CP
+  #dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=8), # no CP
+  #dailyDL        = ModelDescriptor(    name='dailyDL',  formula="kwh ~ tout.mean + DOW + day.length",subset=list(all="TRUE"),cvReps=4, step=T) # no CP
+  
   #  dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=50), # no CP
   #  dailyCP        = DescriptorGenerator(name='tout',     genImpl=toutDailyCPGenerator,       subset=list(all="TRUE"),cvReps=4) # 1 CP
   #  dailyFlexCP    = DescriptorGenerator(name='tout',     genImpl=toutDailyFlexCPGenerator,   subset=list(all="TRUE"),cvReps=50)  # 2 CPs
@@ -132,7 +146,7 @@ if(init) {
   rV = ResDataClass(6502182810,93304); # V shape
   # todo: find more without temp dep or heating only...
 }
-r = rCO
+r = rV
 runOut = testModelRun(cfg,r)
 summaries = runOut$summaries
 others = runOut$others

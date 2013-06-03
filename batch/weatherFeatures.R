@@ -1,27 +1,30 @@
 weatherFeatures = function(w){ # r is an instance of WeatherClass
   summerMon = 4:8 # May through Sept - zero based
   summerSubset = as.POSIXlt(w$rawData$dates)$mon %in% summerMon
-  wMeans = colMeans(w$rawData[,-1],na.rm=T)
-  sMeans = colMeans(subset(w$rawData[,-1],subset=summerSubset),na.rm=T)
-  names(sMeans) = paste('s.',names(sMeans),sep='')
-  features = c(zip5=w$zip,wMeans,sMeans)
+  
+  yMeans = colMeans(w$rawData[,-1],na.rm=T) # annual means
+  sMeans = colMeans(subset(w$rawData[,-1],subset =  summerSubset),na.rm=T) # just summer
+  wMeans = colMeans(subset(w$rawData[,-1],subset = !summerSubset),na.rm=T) # just winter
+  names(sMeans) = paste('summer.',names(sMeans),sep='')
+  names(wMeans) = paste('winter.',names(wMeans),sep='')
+  features = c(zip5=w$zip,yMeans,wMeans,sMeans)
   return(features)
 }
 
-getWeatherSummary = function(w) {
+getWeatherSummary = function() {
   summaryFile = paste(getwd(),'/weatherSummary.RData',sep='')
   if(file.exists(summaryFile)) {
     load(summaryFile)
   }
   else {
-    zips = db.getZips()
+    zips = db.getZips(useCache=T)
     i = 0
     n = length(zips)
     wList = as.list(rep(NA,length(zips)))
     for(zip in zips) {
       i = i+1
       print(paste(zip,'(',i,'/',n,')'))
-      wList[[i]] = weatherFeatures(WeatherClass(zip,doMeans=F))
+      wList[[i]] = weatherFeatures(WeatherClass(zip,doMeans=F,useCache=T))
     }
     weatherSummary = data.frame(do.call(rbind,wList))
     colnames(weatherSummary)[1] <- c('zip5')
@@ -36,4 +39,4 @@ getWeatherSummary = function(w) {
   return(weatherSummary)
 }
 
-#print(weatherFeatures(WeatherClass(94610)))
+print(weatherFeatures(WeatherClass(94610,useCache=T)))

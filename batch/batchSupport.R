@@ -65,7 +65,7 @@ runModelsByZip = function(cfg) {
       res$attemptedSP = c(res$attemptedSP,sp_ids)
       # we know that all sp's in the same zipcode share the same weather
       # so we speed execution by looking it up once and passing it in
-      weather <- WeatherClass(zip,useCache=cfg$CACHE_QUERY_DATA)
+      weather <- WeatherClass(zip,useCache=cfg$CACHE_QUERY_DATA,doSG=T)
       tic('modelsBySP')
       modelResults <- runModelsBySP(sp_ids,cfg,zip=zip,data=zipData,weather=weather)
       rm(zipData,weather,sp_ids)
@@ -132,13 +132,13 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
   
   splen  <- length(sp_ids)
   i <- 0
-  skip = FALSE
+  #skip = FALSE
   for (sp_id in sp_ids) { # i.e. "820735863" or "6502353905"
     i <- i+1
     print(paste('  ',sp_id,' (',i,'/',splen,') in ',zip,sep=''))
     
     #if(sp_id == 6502353905) { skip = FALSE } # debug shortcut
-    if(skip) { next }
+    #if(skip) { next }
     resData = NULL
     if (!is.null(data)) {  resData = data[data[,'sp_id']== sp_id,] }
     r <- tryCatch(ResDataClass(sp_id,zip=zip,weather=weather,data=resData,db=conf.meterDB()), 
@@ -155,7 +155,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
             invalid_ids <- rbind.fill(invalid_ids,issues)
             print(paste('Bad or insufficient data:',paste(colnames(issues),collapse=', ')))
             if(cfg$PLOT_INVALID) {
-              save.png.plot(r,file.path(getwd(),cfg$outDir,paste(r$zip,r$id,'invalid.png',sep='_')))
+              save.png.plot(r,file.path(getwd(),cfg$outDir,paste(r$zip,r$id,'invalid.png',sep='_')),issues)
             }
             next # no further processing of invalid sp_ids
           }
@@ -231,7 +231,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
       }, 
        error = function(e){
          print(e)
-         traceback()
+         #traceback()
          #stop(e)
        },
        finally={

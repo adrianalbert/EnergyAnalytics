@@ -33,11 +33,11 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 
 
 cfg = list()
-cfg$outDir = 'results_daily_DLtest'
+cfg$outDir = 'results_daily_standard'
 
-cfg$SKIP_EXISTING_RDATA = T # don't run models if the RData file for their zip is present
+cfg$SKIP_EXISTING_RDATA = F # don't run models if the RData file for their zip is present
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
-cfg$PLOT_VALID   = F  # create png plots for residences that pass validaiton
+cfg$PLOT_VALID   = F # create png plots for residences that pass validaiton
 
 cfg$CACHE_QUERY_DATA   = T  # use file cache to store energy data and other query results
 
@@ -59,6 +59,8 @@ if(file.exists(invalidIdsFile)) {
 } else {
   print('No list of invalid sp_ids. They will be checked one at a time.')
 }
+
+#cfg$INVALID_IDS = NULL
 
 # generate the string values that will identify the desired subset of a data.frame
 # using the command subset(df,subset=str,...)
@@ -100,22 +102,27 @@ cfg$models.hourly = list(
 cfg$models.daily = list(
 #   #tout           = "kwh ~ tout.mean",
 #   DOW            = ModelDescriptor(name='DOW',formula="kwh ~ DOW",subset=list(all="TRUE")),
-#   tout_mean      = "kwh ~ tout.mean + DOW",
-#   tout_mean_WKND = "kwh ~ tout.mean + WKND"
-#   #tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
-#   tout_max       = "kwh ~ tout.max  + DOW",
-#   kitchen        = "kwh ~ tout.max + tout.min + tout.mean + pout.mean + DOW + vac",
-#   #tout_CDD       = "kwh ~ CDH + HDH + DOW",
-#   tout_CDH_WKND  = "kwh ~ CDH + HDH + WKND",
+  tout            = "kwh ~ tout.mean",
+  WKND            = "kwh ~ WKND",
+  DOW             = "kwh ~ DOW",
+  DOW_tout        = "kwh ~ DOW + tout.mean",
+  DOW_tout_DL     = "kwh ~ DOW + tout.mean + day.length",
+  DOW_tout.min_DL = "kwh ~ DOW + tout.min  + day.length",
+  DOW_tout.max_DL = "kwh ~ DOW + tout.max  + day.length",
+  DOW_DD_DL       = "kwh ~ DOW + CDH + HDH + day.length",
+  DOW_tout_DL_vac = "kwh ~ DOW + tout.mean + day.length + vac",
+  DOW_toutCP_DL   = DescriptorGenerator(name='DOW_toutCP_DL',  genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"), terms='+ DOW + day.length') # 1 CP
 #   wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
 #   dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
 #   dailyCP        = DescriptorGenerator(name='tout',genImpl=toutDailyCPGenerator,subset=list(all="TRUE")),
-  tout_mean_WKND = "kwh ~ tout.mean + WKND + day.length"
-#  tout_DL        = "kwh ~ day.length"
+#  tout_mean_WKND = "kwh ~ tout.mean + WKND + day.length -1"
+  #tout_DL        = "kwh ~ day.length"
+  #dailyWKND      = ModelDescriptor(    name='dailyWKDN',formula="kwh ~ WKND - 1",subset=list(all="TRUE"),cvReps=8), # no CP
+  #dailyDOW       = ModelDescriptor(    name='dailyDOW', formula="kwh ~ DOW - 1",subset=list(all="TRUE"),cvReps=8), # no CP
   #dailyTout      = ModelDescriptor(    name='dailyTout',formula="kwh ~ tout.mean + DOW - 1",subset=list(all="TRUE"),cvReps=8), # no CP
-  #dailyCP        = DescriptorGenerator(name='tout1CP',     genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"),cvReps=8), # 1 CP
-  #dailyFlexCP    = DescriptorGenerator(name='tout2CP',     genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"),cvReps=8)  # 2 CPs
-  #dailyFlexCP    = DescriptorGenerator(name='tout',genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"))
+  #dailyDL        = ModelDescriptor(    name='dailyDL',  formula="kwh ~ tout.mean + DOW + day.length -1",subset=list(all="TRUE"),cvReps=8), # no CP
+  #dailyCP        = DescriptorGenerator(name='tout1CP',  genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"),cvReps=8), # 1 CP
+  #dailyFlexCP    = DescriptorGenerator(name='tout2CP',  genImpl=toutDailyFlexCPGenerator,subset=list(all="TRUE"),cvReps=8)  # 2 CPs
 )
 
 cfg$models.monthly = list(
@@ -140,7 +147,7 @@ if (length(args) > 0) {
   cfg$allZips  <- db.getZips(useCache=cfg$CACHE_QUERY_DATA)
 }
 # bakersfield, oakland
-#$allZips = c(93304) #,93304)
+cfg$allZips = c(93304,94610)
 
 #cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
 #               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,

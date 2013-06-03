@@ -5,7 +5,7 @@
 # regression (or other) models and implement a 'run' method that runs the 
 # model using data from the ResDataClass instance and returns its resutls
 # in a well specified format, as implemented in summarizeModel.
-ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,cvReps=0){
+ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,cvReps=0,step=F){
   if (is.null(preRun)){ preRun = function(r,df) { return( c()) } }
   if (is.null(subset)){ subset     = list(all="TRUE")                }
   obj = list (
@@ -23,6 +23,17 @@ ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,cvReps=0){
     for(snm in names(obj$subset)) {
       df$sub = eval(parse(text=obj$subset[[snm]]),envir=df)  # load the subset flags into the data.frame
       lm.result = lm(obj$formula,df,x=F,subset=sub==T) # run the lm on the subset indicated in the data frame
+      if(step) {
+        lmr = lm('kwh ~ 1',df,subset=sub==T)
+        parts = strsplit(obj$formula,'~')[[1]]
+        #steps = step(lm(paste(parts[1],'~1'),df,subset=sub==T),scope=paste('~',parts[2]),direction='forward',trace=1)
+        steps = step(lmr,scope=list(lower='kwh ~ 1',upper=paste('kwh ~ ',parts[2])),direction='forward',trace=1)
+        
+        #print(summary(steps))
+        print(anova(steps))
+        print(names(anova(steps)))
+        print(class(anova(steps)))
+      }
       summaries = rbind(summaries, summarizeModel(lm.result,
                                                   df,
                                                   modelDescriptor = obj,
@@ -51,11 +62,12 @@ print.ModelDescriptor = function(md) {
 # DescriptorGenerators generate model descriptors and additional regressor columns 
 # for custom model configurations. For example, the hourly change point model
 # returns a separate set of piecewise temerpature regressors for each hour.
-DescriptorGenerator = function(genImpl,name='',formula=NULL,subset=NULL,cvReps=0){
+DescriptorGenerator = function(genImpl,name='',formula=NULL,subset=NULL,cvReps=0,terms=NULL){
   obj = list (
     name     = name,
     formula  = formula,
     subset   = subset,
+    terms    = terms,
     genImpl  = genImpl,
     cvReps   = cvReps
   )
@@ -64,7 +76,7 @@ DescriptorGenerator = function(genImpl,name='',formula=NULL,subset=NULL,cvReps=0
     summaries = c()
     other     = c()
     if(is.null(df)) { df = regressorDF(r,norm=FALSE) }
-    updates = obj$genImpl(r,df,name,formula,subset,cvReps)
+    updates = obj$genImpl(r,df,name,formula,subset=subset,cvReps=cvReps,terms=terms)
     if(! empty(updates$regressors)) { 
       df = cbind(df,updates$regressors)
     }
@@ -104,7 +116,7 @@ print.DescriptorGenerator = function(dg) {
 
 # lagGenerator calculates a single separate temperature coefficient for the range of lags specified.
 # It would need change point detection to fit data reasonably well.
-lagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,hrs=0:18) {
+lagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,hrs=0:18) {
   lagRegressors = apply(t(hrs),2,function(x) return(lag(df$tout,x))) # construct a regressor matrix with lagged columns
   colnames(lagRegressors) <- paste('tout_L',hrs,sep='')
   lagStr = paste('tout_L',hrs,sep='',collapse='+')
@@ -120,7 +132,7 @@ lagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,hrs=0:18) {
   return(out)
 }
 
-partsGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,hrs=0:18) {
+partsGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,hrs=0:18) {
   
   print(names(df))
   cold = subset(df,subset=tout < 60)
@@ -169,7 +181,7 @@ partsGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,hrs=0:18)
 # decay for hourly lag terms in the form a^k for the kth lag. This form is consistent
 # with a simple physical model of heat transfer through a wall with resistance and 
 # capacitance.
-geometricLagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,hrs=18) {
+geometricLagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,hrs=18) {
   # grid search for a geometric decay term beest fit such that the coeficient for the kth lag hour is a^k 
   # this can be implemented as a single moving average outpit with weights a^k.
   # wma(t) = Sum_{k=0}^hrs [ Tout(t-k) * a^k ]
@@ -216,7 +228,7 @@ geometricLagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,hr
 
 # cp24Generator calculates a separate temperature change point for every hour of the day.
 # It also includes terms that calculate sun sky position (aka solar geometry)
-cp24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0) {
+cp24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL) {
   #tout65     = pmax(0,tout-65) # TODO: should this be here?
   hourlyFits=hourlyChangePoint(df,as.list(1:24),trange=c(50:(max(df$tout,rm.na=T)-5)))
   cps = hourlyFits['cp',]
@@ -256,7 +268,7 @@ cp24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0) {
 
 # toutPieces24Generator breaks temperature into piecewise segments, broken at 55,65,75F
 # and regresses these with different coefficients for every hour of the day.
-toutPieces24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL,breaks=c(55,65,75)) {
+toutPieces24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL,breaks=c(55,65,75)) {
   toutPIECES = regressor.piecewise(r$tout,breaks)
   out = list( 
     regressors   = cbind(toutPIECES),
@@ -275,7 +287,7 @@ toutPieces24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,ba
 # the thermal mass of the walls, roof, and ceilings.
 # This T* modified (lagged) temperature is then broken into piecewise segments for every
 # hour of the day.
-toutPieces24LagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL) {
+toutPieces24LagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL) {
   # basic lagged correlations are calculated as a part of basicFeatures. Here we pull out the 
   # single lag with the max correlation with kW demand
   if(length(basics) == 0) { basics = basicFeatures(r) }
@@ -316,7 +328,7 @@ toutPieces24LagGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0
 # characteristic time period.
 # This T* modified (averaged) temperature is then broken into piecewise segments for every
 # hour of the day.
-toutPieces24MAGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL) {
+toutPieces24MAGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL) {
   # basic moving average correlations are calculated as a part of basicFeatures. Here we pull out the 
   # single averaging window with the max correlation with kW demand
   if(length(basics) == 0) { basics = basicFeatures(r) }
@@ -345,12 +357,13 @@ toutPieces24MAGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,
   return(out)
 }
 
-toutDailyFixedCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL) {
+toutDailyFixedCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL) {
   return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,cvReps=cvReps,basics=basics,forceCP=65))
 }
   
 # toutDailyCP finds a single change point for a model of daily kWh usage.
-toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL,forceCP=NULL) {
+toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms='+ DOW - 1',basics=NULL,forceCP=NULL) {
+  if(is.null(terms)) { terms = ''}
   changeModel = NULL
   if(is.null(forceCP)) {
     changeModel = toutChangePointFast(df=df,reweight=F)
@@ -361,7 +374,7 @@ toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,bas
   if (dim(pieces)[2] == 1) colnames(pieces) <- c('tout.mean') # no split made
   if (dim(pieces)[2] == 2) colnames(pieces) <- c('tout.mean_lower','tout.mean_upper') # 2 cols: above and below cp
   # define regression formula that uses the piecewise pieces
-  dailyCPf  = paste('kwh ~',paste(colnames(pieces),collapse=" + ",sep=''),'+ day.length + DOW - 1')
+  dailyCPf  = paste('kwh ~',paste(colnames(pieces),collapse=" + ",sep=''),terms)
   out = list( 
     regressors   = pieces,
     changeModel  = changeModel,
@@ -375,7 +388,7 @@ toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,bas
   return(out)
 }
 
-toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,basics=NULL,forceCP=NULL) {
+toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL,forceCP=NULL) {
   # todo: test 1,2,and 3 segment change point models.
   #coolCP = 70
   bestFit = toutDoubleChangePoint(df)
@@ -594,7 +607,8 @@ rDFA = function(residence,norm=F,bp=65,rm.na=FALSE) {
   df$tout.min   = w$dayMins[dayMatch,'tout']
   df$tout.max   = w$dayMaxs[dayMatch,'tout']
   dl            = w$dayLengths[dayMatch,'dayMeans']
-  df$day.length = dl - min(dl)
+  df$day.length = NULL # day lenght is optional because it takes a long time to compute
+  if(length(dl) > 0) { df$day.length = dl - min(dl) }
 #   df$tout.mean = residence$daily('tout',mean)
 #   df$tout.max  = residence$daily('tout',max)
 #   df$tout.min  = residence$daily('tout',min)
@@ -638,10 +652,10 @@ regressorDFAggregated = function(residence,norm=F,bp=65,rm.na=FALSE) {
   # melt and cast to reshape data into monthly and daily time averages
   dfm = melt(df,id.vars=c("day",'DOW','MOY','mon','wday','WKND'),measure.vars=c('kw','tout','pout','rh'),na.rm=TRUE)
   
-  #monthly = cast(dfm,MOY + mon ~ variable,fun.aggregate=c(sum,mean,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)),subset= variable %in% c('kw','tout'))
-  #colnames(monthly) <- c('MOY','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDH','HDH')
-  #monthly <- subset(monthly, select = -c(junk1, junk2, junk3) )
-  monthly = c()
+  monthly = cast(dfm,MOY + mon ~ variable,fun.aggregate=c(sum,mean,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)),subset= variable %in% c('kw','tout'))
+  colnames(monthly) <- c('MOY','mon','kwh','kw.mean','junk1','junk2','junk3','tout.mean','CDH','HDH')
+  monthly <- subset(monthly, select = -c(junk1, junk2, junk3) )
+  #monthly = c()
   daily = cast(dfm, MOY + day + DOW + mon + wday + WKND ~ variable,fun.aggregate=c(sum,mean,max,function(ar1,bp=65) sum(ar1 > bp),function(ar2,bp=65) sum(ar2 < bp)),subset= variable %in% c('kw','tout','pout','rh'))
   colnames(daily) <- c('MOY','day','DOW','mon','wday','WKND','kwh','kw.mean','kw.max','junk1','junk2','junk3','tout.mean','tout.max','CDH','HDD','junk4','pout.mean','pout.max','junk5','junk6','junk7','rh.mean','rh.max','junk8','junk9')
   daily <- subset(daily, select = grep("^junk", colnames(daily), invert=TRUE) )
