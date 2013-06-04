@@ -23,7 +23,7 @@ source(file.path(getwd(),'zipMap.R'))
 resultsDir = 'results_daily'       # daily models for all homes
 #resultsDir = 'results_daily_flex'  # 2 change point models
 resultsDir = 'results_daily_standard'
-#resultsDir = 'results_daily_nestedCP'
+resultsDir = 'results_daily_nestedCP'
 dirZips = do.call(rbind,strsplit(list.files(file.path(getwd(),resultsDir),pattern='modelResults.RData'),'_'))[,1]
 allZips = dirZips
 
@@ -211,7 +211,9 @@ ggplot(sclrs,aes(x=cv.rmse,color=model.name)) + geom_density() + xlim(0,20) + la
 
 # rmse normed by mean kw for model runs
 sclrsPlus = merge(sclrs,basics[c('id','kw.var','kw.mean')],by.x='id', by.y='id')
-ggplot(sclrsPlus,aes(x=cv.rmse/(kw.mean*24),color=model.name)) + geom_density() + xlim(0,1) + labs(title='Cross validated RMSE for model runs by model type',x='RMSE/mean (cross validated)')
+ggplot(sclrsPlus,aes(x=cv.rmse/(kw.mean*24),color=model.name)) + 
+  geom_density() + xlim(0,1) + 
+  labs(title='Cross validated CV for model runs by model type',x='RMSE/mean (cross validated)')
 
 
 ggplot(cp2Data,aes(x=cp2-cp1)) + geom_histogram(binwidth=1) + xlim(0,30) + labs(title='Distance between CPs', x='Degs F', y='count')
@@ -220,13 +222,23 @@ sclrs2 = subset(sclrs,model.name=='tout2CPDailyFlexCP') # 2 change points
 sclrs1 = subset(sclrs,model.name=='tout1CPDailyCP')     # 1 change point
 sclrs0 = subset(sclrs,model.name=='dailyTout')          # no change point 
 
+trueCP1 = cp1Data$upper > 0 & cp1Data$lower <= 0 & cp1Data$pval.upper < 0.01
+trueCP2 = cp2Data$upper > 0 & cp2Data$lower <= 0 & cp2Data$pval.upper < 0.01 & cp2Data$middle_1 > -0.6 & cp2Data$middle_1 < 0.6
+
+trueCP1Data = cp1Data[trueCP1,]
+trueCP2Data = cp2Data[trueCP2,]
 # histograms of cp1 and cp2 overlaid together
-ggplot(cp2Data,aes(x=cp1)) + 
+ggplot(trueCP2Data,aes(x=cp1)) + 
   geom_histogram(binwidth=1,fill='#0000ff',alpha=0.5) + 
   geom_histogram(aes(x=cp2),binwidth=1,fill='#ff0000',alpha=0.5) +
   labs(title='Histogram of upper and lower change point',
        x='change points (lower and upper)')
 
+ggplot(cp2Data,aes(x=cp1)) + 
+  geom_histogram(binwidth=1,fill='#0000ff',alpha=0.5) + 
+  geom_histogram(aes(x=cp2),binwidth=1,fill='#ff0000',alpha=0.5) +
+  labs(title='Histogram of upper and lower change point',
+       x='change points (lower and upper)')
 
 # filter by "realistic" gap between CPs and "realistic" lower bound ot upper CP
 cpCool = subset(cp2Data,subset=cp2-cp1 > 5 & cp2 > 60 & cp1 < 70)
@@ -366,12 +378,13 @@ ggplot(aes(x=cp,color=climate),data=cp1Data) + geom_density()
 ggplot(aes(x=cp,color=cecclmzn),data=cp1Data) + geom_density() +
   labs(title='Change point distribution by Climate',x='change point')
 
+g = ggplot(trueCP1Data,aes(x=cp,y=tout))
 g = ggplot(cp1Data,aes(x=cp,y=tout))
 g + geom_point(aes(color=cecclmzn))
 g + geom_hex()
 g + stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) + 
   ylim(50,70) + 
-  scale_fill_gradient(limits=c(1e-5,0.015)) + 
+  scale_fill_gradient(limits=c(1e-5,0.02)) + 
   labs(title='Density of change point vs annual average Tout',y='tout',x='change point')
 
 g + stat_density2d(aes(fill = ..level..), geom="polygon",contour=T) +
@@ -387,13 +400,13 @@ g + stat_bin(aes(fill=..count..), geom="tile", binwidth=3, position="identity") 
            y='tout mean (F)')
 
 # box plot for change points as a function of summer mean temp
-g = ggplot(cp1Data,aes(y=cp,x=cut(summer.tout, breaks=c(seq(40,80,3),Inf))))
+g = ggplot(trueCP1Data,aes(y=cp,x=cut(summer.tout, breaks=c(seq(40,80,3),Inf))))
 g + geom_boxplot() + ylim(10,90) +
   labs(title='Change points as a function of mean summer temperatures',
        x='Summer temperature bin (deg F)',y='Change Point') +
   coord_flip() 
 
-g = ggplot(cp2Data,aes(y=cp2,x=cut(summer.tout, breaks=c(seq(40,80,3),Inf))))
+g = ggplot(trueCP2Data,aes(y=cp2,x=cut(summer.tout, breaks=c(seq(40,80,3),Inf))))
 g + geom_boxplot() + ylim(10,90) +
   labs(title='Upper change points as a function of mean summer temperatures',
        x='Summer temperature bin (deg F)',y='Change Point') +

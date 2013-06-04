@@ -1,4 +1,5 @@
-
+library(sandwich) # Contains the NeweyWest funvction for calculating a modified vcov
+library(lmtest)   # provides coeftest, which can perform the z/t/p tests using NW
 # Model Descriptor and related classes ------------------------------------
 #
 # Model Descriptors specify all the information required to run one or more 
@@ -419,7 +420,7 @@ toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0
 # designed to be friendly to storing a lot of results in sequence
 # so it separates out the simple scalar metrics from the more complicated
 # coefficients
-summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=FALSE,cvReps=1,formula='',subset='') {
+summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=1,doNewey=T,formula='',subset='') {
   #lm(m,subset=m$y > 1)
   basics = list()
   basics$id          <- id
@@ -431,6 +432,9 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=FALSE,cvR
   basics$logLik      <- logLik(m) # log liklihood for the model
   basics$AIC         <- AIC(m)    # Akaike information criterion
   
+  if(doNewey) {
+    basics$NWcoefficients <- unclass(coeftest(m,vcov.=NeweyWest))
+  }
   s <- c(basics,as.list(summary(m, correlation=FALSE))) # generic list is more friendly for adding to a data.frame
   class(s) <- 'list'         # make sure the class is no longer summary.lm
   s$hist          <- hist(s$residuals,breaks=100,plot=F)
@@ -607,7 +611,7 @@ rDFA = function(residence,norm=F,bp=65,rm.na=FALSE) {
   df$tout.min   = w$dayMins[dayMatch,'tout']
   df$tout.max   = w$dayMaxs[dayMatch,'tout']
   dl            = w$dayLengths[dayMatch,'dayMeans']
-  df$day.length = NULL # day lenght is optional because it takes a long time to compute
+  df$day.length = NULL # day length is optional because it takes a long time to compute
   if(length(dl) > 0) { df$day.length = dl - min(dl) }
 #   df$tout.mean = residence$daily('tout',mean)
 #   df$tout.max  = residence$daily('tout',max)

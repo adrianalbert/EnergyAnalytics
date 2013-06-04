@@ -51,7 +51,7 @@ scalars = function(a,model.name=NULL,subset.name=NULL) {
   return(delist(b))
 }
 
-cf = function(a,model.name,subset.name=NULL,col='Estimate') {
+cf = function(a,model.name,subset.name=NULL,col='Estimate',cfName='coefficients') {
   sn = T
   mn = T
   mn = unlist(a[,'model.name'])==model.name
@@ -60,7 +60,7 @@ cf = function(a,model.name,subset.name=NULL,col='Estimate') {
   }
   b = subset(a,mn & sn) # filter to the subset and model requested
   if(empty(b)) { return(c()) }
-  out = t(apply(b,1,function(x) return(c(id=x$id,x['coefficients'][[1]][,col]))))
+  out = t(apply(b,1,function(x) return(c(id=x$id,x[cfName][[1]][,col]))))
   if(class(out[1]) == 'list') { # this seems to happen when some regessons had fewer non-NA coefficients than others.
     print('warning. Some regressons have incomplete coefficients and are being dropped.')
     lengths = as.numeric(lapply(out,length))

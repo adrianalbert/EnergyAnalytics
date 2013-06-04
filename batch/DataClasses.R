@@ -263,7 +263,7 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
   # flatten into a vector and re-convert into date objects
   dates = as.POSIXlt(as.vector(dateMat),origin='1970-01-01')
   
-  if (is.null(weather)) weather = WeatherClass(zipcode)
+  if (is.null(weather)) weather = WeatherClass(zipcode,doSG=T)
   tout = weather$resample(dates,'tout')
   pout = weather$resample(dates,'pout')
   rain = weather$resample(dates,'rain')

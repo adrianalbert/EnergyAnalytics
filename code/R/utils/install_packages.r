@@ -14,7 +14,7 @@ reqed.packages = c('RMySQL','zoo', 'depmixS4', 'ggplot2', 'utils', 'multicore', 
                    'dummies', 'linkcomm', 'useful', 'reshape', 'grid', 'profr', 'R.utils', 
                    'proftools', 'data.table', 'igraph', 'useful', 'RColorBrewer', 'reshape2',
                    'solaR','mapproj','ggmap','gpclib','UScensus2010','colorspace','gridExtra',
-                   'sp','gptk','gtools','hexbin','classInt','rgeos','cvTools')
+                   'sp','gptk','gtools','hexbin','classInt','rgeos','cvTools','sandwich')
 
 # get already installed packages
 avail.packages = installed.packages()
