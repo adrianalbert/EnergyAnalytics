@@ -23,6 +23,7 @@ source(file.path(getwd(),'zipMap.R'))
 resultsDir = 'results_daily'       # daily models for all homes
 #resultsDir = 'results_daily_flex'  # 2 change point models
 resultsDir = 'results_daily_standard'
+resultsDir = 'results_daily_standard2'
 resultsDir = 'results_daily_nestedCP'
 dirZips = do.call(rbind,strsplit(list.files(file.path(getwd(),resultsDir),pattern='modelResults.RData'),'_'))[,1]
 allZips = dirZips
@@ -79,6 +80,33 @@ if(file.exists(resultBasicsFile)) {
 }
 gc()
 
+if(file.exists(coeffDataFile)) {
+  load(coeffDataFile)
+} else {
+  results.cfs    = list()
+  results.stde   = list()
+  results.stdeNW = list()
+  results.pvs    = list()
+  results.pvsNW  = list()
+  results.tvs    = list()
+  models = unique(sclrs$model.name)
+  for(model in models) {
+    
+    print(paste(model,'from',paste(models,collapse=',')))
+    results.cfs[[model]]  = combine(allZips,resultType='d_summaries',fun=cf,         model.name=model,appendZipData=F)
+    results.stde[[model]] = combine(allZips,resultType='d_summaries',fun=stderrs,    model.name=model,appendZipData=F)
+    results.pvs[[model]]  = combine(allZips,resultType='d_summaries',fun=pvals,      model.name=model,appendZipData=F)
+    results.tvs[[model]]  = combine(allZips,resultType='d_summaries',fun=tvals,      model.name=model,appendZipData=F)
+    results.stdeNW[[model]] = combine(allZips,resultType='d_summaries',fun=stderrsNW,model.name=model,appendZipData=F)
+    results.pvsNW[[model]]  = combine(allZips,resultType='d_summaries',fun=pvalsNW,  model.name=model,appendZipData=F)
+    
+  }
+  save(list=c('results.cfs','results.stde','results.pvs','results.tvs','results.pvsNW','results.stdeNW'),file=coeffDataFile)
+  #save(list=c('results.cfs','results.stde','results.pvs','results.tvs'),file=coeffDataFile)
+}
+gc()
+
+
 ws = getWeatherSummary()
 if(file.exists(cpDataFile)) {
   load(cpDataFile)
@@ -124,27 +152,6 @@ if(file.exists(bestModelDataFile)) {
   bestModels = do.call(rbind,by(sclrs,sclrs$id,function(df) df[which.max(df$r.squared),]))
   save(list=c('bestModels'),file=bestModelDataFile)
 }
-
-if(file.exists(coeffDataFile)) {
-  load(coeffDataFile)
-} else {
-  results.cfs  = list()
-  results.stde = list()
-  results.pvs  = list()
-  results.tvs  = list()
-  models = unique(sclrs$model.name)
-  for(model in models) {
-    
-    print(paste(model,'from',paste(models,collapse=',')))
-    results.cfs[[model]]  = combine(allZips,resultType='d_summaries',fun=cf,     model.name=model,appendZipData=T)
-    results.stde[[model]] = combine(allZips,resultType='d_summaries',fun=stderrs,model.name=model,appendZipData=T)
-    results.pvs[[model]]  = combine(allZips,resultType='d_summaries',fun=pvals,  model.name=model,appendZipData=T)
-    #results.tvs[[model]]  = combine(allZips,resultType='d_summaries',fun=tvals,  model.name=model,appendZipData=T)
-  }
-  save(list=c('results.cfs','results.stde','results.pvs'),file=coeffDataFile)
-  #save(list=c('results.cfs','results.stde','results.pvs','results.tvs'),file=coeffDataFile)
-}
-gc()
 
 # heating cumsum
 ord = order(cp1Data$lower)

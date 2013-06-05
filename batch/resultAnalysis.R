@@ -54,6 +54,7 @@ scalars = function(a,model.name=NULL,subset.name=NULL) {
 cf = function(a,model.name,subset.name=NULL,col='Estimate',cfName='coefficients') {
   sn = T
   mn = T
+  if(is.null(cfName)) { cfName='coefficients' }
   mn = unlist(a[,'model.name'])==model.name
   if (! is.null(subset.name)) { 
     sn = unlist(a[,'subset.name'])==subset.name
@@ -69,16 +70,24 @@ cf = function(a,model.name,subset.name=NULL,col='Estimate',cfName='coefficients'
   return(out)
 }
 
-stderrs = function(a,model.name,subset.name=NULL) {
-  return(cf(a,model.name,subset.name,col='Std. Error'))
+pvalsNW    = function(a,model.name,subset.name=NULL) {
+  return(pvals(a,model.name,subset.name,cfName='coefficientsNW'))
 }
 
-tvals = function(a,model.name,subset.name=NULL) {
-  return(cf(a,model.name,subset.name,col='t value'))
+stderrsNW = function(a,model.name,subset.name=NULL) {
+  return(stderrs(a,model.name,subset.name,cfName='coefficientsNW'))
 }
 
-pvals = function(a,model.name,subset.name=NULL) {
-  return(cf(a,model.name,subset.name,col='Pr(>|t|)'))
+stderrs = function(a,model.name,subset.name=NULL,cfName=NULL) {
+  return(cf(a,model.name,subset.name,col='Std. Error',cfName=cfName))
+}
+
+tvals = function(a,model.name,subset.name=NULL,cfName=NULL) {
+  return(cf(a,model.name,subset.name,col='t value',cfName=cfName))
+}
+
+pvals = function(a,model.name,subset.name=NULL,cfName=NULL) {
+  return(cf(a,model.name,subset.name,col='Pr(>|t|)',cfName=cfName))
 }
 
 

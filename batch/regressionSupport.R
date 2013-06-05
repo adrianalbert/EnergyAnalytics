@@ -368,6 +368,7 @@ toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,ter
   changeModel = NULL
   if(is.null(forceCP)) {
     changeModel = toutChangePointFast(df=df,reweight=F)
+    #print(changeModel)
     modelCP = changeModel[grep('^cp',names(changeModel))]
   }
   else { modelCP = forceCP }
@@ -433,7 +434,15 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
   basics$AIC         <- AIC(m)    # Akaike information criterion
   
   if(doNewey) {
-    basics$NWcoefficients <- unclass(coeftest(m,vcov.=NeweyWest))
+    basics$BG <- unclass(bgtest(m,order=1)) # Breusch-Godfrey test for first-order serial correlation
+    DW             <- unclass(dwtest(m)) # Durban-Watson test for serial corr (range is 0-4. 2 means no corr, DW near 1 is cause for concern)
+    basics$DW      <- DW$statistic
+    basics$DW.pval <- DW$p.value
+    basics$coefficientsNW <- unclass(coeftest(m,vcov.=NeweyWest))
+    basics$pacf = unclass(pacf(m$residuals,plot=F))$acf
+    basics$pacf.1 <- basics$pacf[1]
+    basics$pacf.significance <- qnorm((1 + 0.95)/2)/sqrt(sum(!is.na(m$residuals)))
+    
   }
   s <- c(basics,as.list(summary(m, correlation=FALSE))) # generic list is more friendly for adding to a data.frame
   class(s) <- 'list'         # make sure the class is no longer summary.lm
@@ -610,6 +619,7 @@ rDFA = function(residence,norm=F,bp=65,rm.na=FALSE) {
   df$tout.mean  = w$dayMeans[dayMatch,'tout']
   df$tout.min   = w$dayMins[dayMatch,'tout']
   df$tout.max   = w$dayMaxs[dayMatch,'tout']
+  df$tout.mean.65.l1 = lag(pmax(0,(df$tout.mean-65)),1) # 1 day lagged tout.mean over 65F
   dl            = w$dayLengths[dayMatch,'dayMeans']
   df$day.length = NULL # day length is optional because it takes a long time to compute
   if(length(dl) > 0) { df$day.length = dl - min(dl) }

@@ -146,7 +146,7 @@ if(init) {
   rV = ResDataClass(6502182810,93304); # V shape
   # todo: find more without temp dep or heating only...
 }
-r = rV
+r = rCO
 runOut = testModelRun(cfg,r)
 summaries = runOut$summaries
 others = runOut$others
