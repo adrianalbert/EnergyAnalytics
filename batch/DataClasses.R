@@ -413,7 +413,7 @@ save.png.plot = function(r,path,issues=NULL) {
     colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
     issueTxt = ''
     if(length(issues)>1) { issueTxt = paste(colnames(issues)[-1],collapse=', ') }
-    plot( r, colorMap=colorMap, main=paste(r$zip, r$id),issueTxt=issueTxt,estimates=toutDoubleChangePoint(rDFA(r)) )
+    plot( r, colorMap=colorMap, main=paste(r$zip, r$id),issueTxt=issueTxt,estimates=toutChangePointFast(df=rDFA(r)) )
   }, 
   error = function(e) { print(e) },
   finally = { dev.off() } )

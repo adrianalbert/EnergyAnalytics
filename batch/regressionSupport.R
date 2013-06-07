@@ -473,8 +473,9 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
     #s$fold.rmse <- kFold(df,modelDescriptor,K=5)  # hand rolled cross validation function
     # this use of the id as the random number seed might be a bit strange, but it ensures that 
     # all cvFits across different model specifications use the same subsets of data
-    # this ensures consistency for the purposes of comparison
-    s$cv.rmse   <- cvFold(df,modelDescriptor,K=5,R=cvReps,seed=s$id) # pre-rolled function from cvTools
+    # this ensures consistency for the purposes of comparison 
+    # (it is modded by the max integer size to ensure) it works as a seed
+    s$cv.rmse   <- cvFold(df,modelDescriptor,K=5,R=cvReps,seed=(s$id %% .Machine$integer.max)) # pre-rolled function from cvTools
   }
   return(s)
 }

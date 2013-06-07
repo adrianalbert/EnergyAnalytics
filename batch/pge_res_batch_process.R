@@ -60,7 +60,7 @@ if(file.exists(invalidIdsFile)) {
   print('No list of invalid sp_ids. They will be checked one at a time.')
 }
 
-#cfg$INVALID_IDS = NULL
+cfg$INVALID_IDS = NULL
 
 # generate the string values that will identify the desired subset of a data.frame
 # using the command subset(df,subset=str,...)
@@ -151,11 +151,11 @@ if (length(args) > 0) {
   cfg$allZips  <- db.getZips(useCache=cfg$CACHE_QUERY_DATA)
 }
 # bakersfield, oakland
-cfg$allZips = c(93304,94610)
+#cfg$allZips = c(93304,94610)
 
-#cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
-#               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
-#               95202,93619,93614,93304,93701,95631,95726,95223,95666)
+cfg$allZips = c(94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,
+               95035,94041,95112,95113,95765,95648,95901,94531,94585,95205,
+               95202,93619,93614,93304,93701,95631,95726,95223,95666)
 
 TEST_SINGLE = F
 if(TEST_SINGLE) {
