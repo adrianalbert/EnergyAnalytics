@@ -153,6 +153,21 @@ if(file.exists(bestModelDataFile)) {
   save(list=c('bestModels'),file=bestModelDataFile)
 }
 
+sclrsPlus = merge(sclrs,basics[c('id','kw.var','kw.mean')],by.x='id', by.y='id')
+
+ggplot(subset(sclrsPlus,
+              model.name %in% 
+                c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1','DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL','DOW_toutCP_DL_l1DailyCP')),
+              aes(x=adj.r.squared,color=model.name)) + geom_density() + 
+        xlim(0,60) + labs(title='Adj R2 sequence for various thermal properties')
+
+# note that sigma^2 = 1/(n-p) Sum(w[i] R[i]^2)
+ggplot(subset(sclrsPlus,
+              model.name %in% 
+                c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1','DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL','DOW_toutCP_DL_l1DailyCP')),
+              aes(x=sigma/(kw.mean*24)*100,color=model.name)) + geom_density() + 
+        xlim(0,60)  + labs(title='Coeff of Variation for various thermal properties')
+
 # heating cumsum
 ord = order(cp1Data$lower)
 plot(-1 * cp1Data$lower[ord][cp1Data$lower[ord] < 0],pch=20,main='Magnitude of heating demand (kWh/HDD)',ylab='kWh/HDD',xlab='Count of residences',ylim=c(0,-1*min(cp1Data$lower)))
@@ -217,7 +232,6 @@ ggplot(sclrs,aes(x=r.squared,color=model.name)) + geom_density() + xlim(0,1) + l
 ggplot(sclrs,aes(x=cv.rmse,color=model.name)) + geom_density() + xlim(0,20) + labs(title='Cross validated RMSE for model runs by model type',x='RMSE (cross validated)')
 
 # rmse normed by mean kw for model runs
-sclrsPlus = merge(sclrs,basics[c('id','kw.var','kw.mean')],by.x='id', by.y='id')
 ggplot(sclrsPlus,aes(x=cv.rmse/(kw.mean*24),color=model.name)) + 
   geom_density() + xlim(0,1) + 
   labs(title='Cross validated CV for model runs by model type',x='RMSE/mean (cross validated)')

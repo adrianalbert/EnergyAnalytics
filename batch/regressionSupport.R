@@ -390,7 +390,7 @@ toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,ter
   return(out)
 }
 
-toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL,forceCP=NULL) {
+toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms='+ DOW - 1',basics=NULL,forceCP=NULL) {
   # todo: test 1,2,and 3 segment change point models.
   #coolCP = 70
   bestFit = toutDoubleChangePoint(df)
@@ -401,7 +401,7 @@ toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0
   if(nSegs > 2) middle = paste('tou.mean_middle_',1:(nSegs-2),sep='')
   colnames(pieces) <- c('tout.mean_lower',middle,'tout.mean_upper')
   # define regression formula that uses the piecewise pieces
-  dailyCPf  = paste('kwh ~',paste(colnames(pieces),collapse=" + ",sep=''),'+ DOW - 1')
+  dailyCPf  = paste('kwh ~',paste(colnames(pieces),collapse=" + ",sep=''),terms)
   out = list( 
     regressors   = pieces,
     changeModel  = bestFit,
@@ -471,7 +471,10 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
   # k-fold prediction error
   if (cvReps > 0) {
     #s$fold.rmse <- kFold(df,modelDescriptor,K=5)  # hand rolled cross validation function
-    s$cv.rmse   <- cvFold(df,modelDescriptor,K=5,R=cvReps) # pre-rolld function from cvTools
+    # this use of the id as the random number seed might be a bit strange, but it ensures that 
+    # all cvFits across different model specifications use the same subsets of data
+    # this ensures consistency for the purposes of comparison
+    s$cv.rmse   <- cvFold(df,modelDescriptor,K=5,R=cvReps,seed=s$id) # pre-rolled function from cvTools
   }
   return(s)
 }
@@ -609,8 +612,8 @@ rDFA = function(residence,norm=F,bp=65,rm.na=FALSE) {
   df$kwh   = residence$daily('kw',sum)
   df$kw.mean = residence$daily('kw',mean)
   df$kw.max = residence$daily('kw',max)
-  df$CDH = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout  > bp,na.rm=na.rm))
-  df$HDH = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(tout <= bp,na.rm=na.rm))
+  df$CDH = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(pmax(0,tout-bp),na.rm=na.rm))
+  df$HDH = residence$daily('tout',function(tout,bp=65,na.rm=T) sum(pmax(0,bp-tout),na.rm=na.rm))
   w = residence$weather
   # todo: this can cause errors when there is insufficient weather data. See for example ResDataClass(6705412110,93307)
   dayMatch = as.Date(w$dayMeans$day) %in% as.Date(df$day)
@@ -619,6 +622,10 @@ rDFA = function(residence,norm=F,bp=65,rm.na=FALSE) {
   df$tout.mean  = w$dayMeans[dayMatch,'tout']
   df$tout.min   = w$dayMins[dayMatch,'tout']
   df$tout.max   = w$dayMaxs[dayMatch,'tout']
+  df$tout.mean.65 = pmax(0,df$tout.mean-65)
+  tPieces = regressor.piecewise(df[['tout.mean']],c(65))
+  df$tout.mean.65lower = tPieces[,1] # lower data for fixed 65 CP
+  df$tout.mean.65upper = tPieces[,2] # upper data for fixed 65 CP
   df$tout.mean.65.l1 = lag(pmax(0,(df$tout.mean-65)),1) # 1 day lagged tout.mean over 65F
   dl            = w$dayLengths[dayMatch,'dayMeans']
   df$day.length = NULL # day length is optional because it takes a long time to compute
@@ -890,9 +897,9 @@ kFold = function(df,modelDescriptor,K=5) {
   return(rmspe)
 }
 
-cvFold = function(df,modelDescriptor,K=5,R=1) {
+cvFold = function(df,modelDescriptor,K=5,R=1,seed=NULL) {
   fmla = formula(modelDescriptor$formula)
-  cvOut = cvFit(lm,formula=fmla,data=df,K=K,R=R,foldType='random',cost=rmspe) #root mean squared prediction error
+  cvOut = cvFit(lm,formula=fmla,data=df,K=K,R=R,foldType='random',cost=rmspe,seed=seed) #root mean squared prediction error
   #print(cvOut)
   #print(names(cvOut))
   #print(cvOut$reps)

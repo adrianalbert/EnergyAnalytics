@@ -107,16 +107,21 @@ cfg$models.hourly = list(
   #parts       = DescriptorGenerator(name='parts',genImpl=partsGenerator,subset=list(all="TRUE"))
 )
 cfg$models.daily = list(
-  tout            = "kwh ~ tout.mean",
-  WKND            = "kwh ~ WKND",
-  DOW             = "kwh ~ DOW",
-  DOW_tout        = "kwh ~ DOW + tout.mean",
-  DOW_tout_DL     = "kwh ~ DOW + tout.mean + day.length",
-  DOW_tout.min_DL = "kwh ~ DOW + tout.min  + day.length",
-  DOW_tout.max_DL = "kwh ~ DOW + tout.max  + day.length",
-  DOW_DD_DL       = "kwh ~ DOW + CDH + day.length",
-  DOW_tout_DL_vac = "kwh ~ DOW + tout.mean + day.length + vac",
-  DOW_toutCP_DL   = DescriptorGenerator(name='DOW_toutCP_DL',  genImpl=toutDailyCPGenerator,    subset=list(all="TRUE"), terms='+ DOW + day.length') # 1 CP
+  tout              = ModelDescriptor(    name='tout',             formula="kwh ~ tout.mean",cvReps=4),
+  WKND              = ModelDescriptor(    name='WKND',             formula="kwh ~ WKND",cvReps=4),
+  DOW               = ModelDescriptor(    name='DOW',              formula="kwh ~ DOW",cvReps=4),
+  DOW_tout          = ModelDescriptor(    name='DOW_tout',         formula="kwh ~ DOW + tout.mean",cvReps=4),
+  DOW_tout_DL       = ModelDescriptor(    name='DOW_tout_DL',      formula="kwh ~ DOW + tout.mean + day.length",cvReps=4),
+  DOW_tout_DL_65    = ModelDescriptor(    name='DOW_tout_DL_65',   formula="kwh ~ DOW + tout.mean + day.length + tout.mean.65",cvReps=4),
+  DOW_tout_DL_CP65  = ModelDescriptor(    name='DOW_tout_DL_CP65', formula="kwh ~ DOW + tout.mean.65lower + tout.mean.65upper + day.length",cvReps=4),
+  DOW_tout_DL_l1    = ModelDescriptor(    name='DOW_tout_DL_l1',   formula="kwh ~ DOW + tout.mean + day.length + tout.mean.65.l1",cvReps=4),
+  DOW_tout.min_DL   = ModelDescriptor(    name='DOW_tout.min_DL',  formula="kwh ~ DOW + tout.min  + day.length",cvReps=4),
+  DOW_tout.max_DL   = ModelDescriptor(    name='DOW_tout.max_DL',  formula="kwh ~ DOW + tout.max  + day.length",cvReps=4),
+  DOW_DD_DL         = ModelDescriptor(    name='DOW_DD_DL',        formula="kwh ~ DOW + CDH + day.length",cvReps=4),
+  DOW_tout_DL_vac   = ModelDescriptor(    name='DOW_tout_DL_vac',  formula="kwh ~ DOW + tout.mean + day.length + vac",cvReps=4),
+  DOW_toutCP_DL     = DescriptorGenerator(name='DOW_toutCP_DL',    genImpl=toutDailyCPGenerator, terms='+ DOW + day.length',subset=list(all="TRUE"),cvReps=1), # 1 CP
+  DOW_toutCP_DL_l1  = DescriptorGenerator(name='DOW_toutCP_DL_l1', genImpl=toutDailyCPGenerator, terms='+ DOW + day.length + tout.mean.65.l1',subset=list(all="TRUE"),cvReps=4), # 1 CP
+  DOW_tout2CP_DL_l1 = DescriptorGenerator(name='DOW_tout2CP_DL_l1',genImpl=toutDailyFlexCPGenerator, terms='+ DOW + day.length + tout.mean.65.l1',subset=list(all="TRUE"),cvReps=4)  # 2 CPs
   #tout_mean_WKND = "kwh ~ tout.mean + WKND + day.length",
   #tout_DL        = "kwh ~ day.length"
   ##tout_mean_vac  = "kwh ~ tout.mean + WKND + vac",
@@ -147,7 +152,9 @@ if(init) {
   # todo: find more without temp dep or heating only...
 }
 r = rCO
+tic()
 runOut = testModelRun(cfg,r)
+toc(prefix='run time')
 summaries = runOut$summaries
 others = runOut$others
 d_summaries = runOut$d_summaries
