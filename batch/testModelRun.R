@@ -121,6 +121,7 @@ cfg$models.daily = list(
   DOW_tout_DL_vac   = ModelDescriptor(    name='DOW_tout_DL_vac',  formula="kwh ~ DOW + tout.mean + day.length + vac",cvReps=4),
   DOW_toutCP_DL     = DescriptorGenerator(name='DOW_toutCP_DL',    genImpl=toutDailyCPGenerator, terms='+ DOW + day.length',subset=list(all="TRUE"),cvReps=1), # 1 CP
   DOW_toutCP_DL_l1  = DescriptorGenerator(name='DOW_toutCP_DL_l1', genImpl=toutDailyCPGenerator, terms='+ DOW + day.length + tout.mean.65.l1',subset=list(all="TRUE"),cvReps=4), # 1 CP
+  DOW_toutNP_DL_l1  = DescriptorGenerator(name='DOW_toutNP_DL_l1', genImpl=toutDailyNPCPGenerator, terms='+ DOW + day.length + tout.mean.65.l1',subset=list(all="TRUE"),cvReps=4), # non parametric change point model fixed at 55,65,75
   DOW_tout2CP_DL_l1 = DescriptorGenerator(name='DOW_tout2CP_DL_l1',genImpl=toutDailyFlexCPGenerator, terms='+ DOW + day.length + tout.mean.65.l1',subset=list(all="TRUE"),cvReps=4)  # 2 CPs
   #tout_mean_WKND = "kwh ~ tout.mean + WKND + day.length",
   #tout_DL        = "kwh ~ day.length"

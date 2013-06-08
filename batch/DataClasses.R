@@ -68,6 +68,17 @@ db.getZipData = function(zip=NULL,useCache=F) {
   return(out)
 }
 
+MULTI_PERSON = NULL
+db.getMultPersonSPs = function(useCache=F,forceRefresh=F) {
+  if(is.null(MULTI_PERSON)) {
+    cacheFile = NULL
+    if(useCache) { cacheFile=paste('multiPersonSPs.RData',sep='') }
+    query = paste('SELECT sp_ID, COUNT(per_id) FROM pge_res_final GROUP BY sp_id HAVING COUNT(per_id) > 1')
+    mp = run.query(query,conf.meterDB(),cacheFile=cacheFile,forceRefresh=forceRefresh)
+  }
+  return(MULTI_PERSON)
+}
+
 sumDay = function(df) {
   sums = 24 * colMeans(df,na.rm=T) # calculate the sums for all columns
 }

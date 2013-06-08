@@ -359,10 +359,15 @@ toutPieces24MAGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,
 }
 
 toutDailyFixedCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL) {
-  return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,cvReps=cvReps,basics=basics,forceCP=65))
+  return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,cvReps=cvReps,basics=basics,terms=terms,forceCP=65))
+}
+
+toutDailyNPCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL) {
+  return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,cvReps=cvReps,basics=basics,terms=terms,forceCP=c(55,65,75)))
 }
   
-# toutDailyCP finds a single change point for a model of daily kWh usage.
+# toutDailyCP finds a single change point for a model of daily kWh usage or takes any number of forced 
+# change points as arguments
 toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms='+ DOW - 1',basics=NULL,forceCP=NULL) {
   if(is.null(terms)) { terms = ''}
   changeModel = NULL
@@ -373,8 +378,13 @@ toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,ter
   }
   else { modelCP = forceCP }
   pieces = regressor.piecewise(df$tout.mean,modelCP) # get a list of daily piecewise splits for tout.mean
-  if (dim(pieces)[2] == 1) colnames(pieces) <- c('tout.mean') # no split made
-  if (dim(pieces)[2] == 2) colnames(pieces) <- c('tout.mean_lower','tout.mean_upper') # 2 cols: above and below cp
+  nSegs = dim(pieces)[2]
+  if (nSegs == 1) colnames(pieces) <- c('tout.mean') # no split made
+  if (nSegs == 2) colnames(pieces) <- c('tout.mean_lower','tout.mean_upper') # 2 cols: above and below cp
+  if(nSegs > 2) {
+    middle = paste('tou.mean_middle_',1:(nSegs-2),sep='')
+    colnames(pieces) <- c('tout.mean_lower',middle,'tout.mean_upper')
+  }
   # define regression formula that uses the piecewise pieces
   dailyCPf  = paste('kwh ~',paste(colnames(pieces),collapse=" + ",sep=''),terms)
   out = list( 
