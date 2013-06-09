@@ -443,8 +443,8 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
   basics$logLik      <- logLik(m) # log liklihood for the model
   basics$AIC         <- AIC(m)    # Akaike information criterion
   
-  print(names(m))
-  print(summary(m, correlation=T))
+  #print(names(m))
+  #print(summary(m, correlation=T))
   if(doNewey) {
     basics$BG <- unclass(bgtest(m,order=1)) # Breusch-Godfrey test for first-order serial correlation
     DW             <- unclass(dwtest(m)) # Durban-Watson test for serial corr (range is 0-4. 2 means no corr, DW near 1 is cause for concern)
