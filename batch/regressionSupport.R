@@ -443,6 +443,8 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
   basics$logLik      <- logLik(m) # log liklihood for the model
   basics$AIC         <- AIC(m)    # Akaike information criterion
   
+  print(names(m))
+  print(summary(m, correlation=T))
   if(doNewey) {
     basics$BG <- unclass(bgtest(m,order=1)) # Breusch-Godfrey test for first-order serial correlation
     DW             <- unclass(dwtest(m)) # Durban-Watson test for serial corr (range is 0-4. 2 means no corr, DW near 1 is cause for concern)
@@ -454,6 +456,7 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
     basics$pacf.significance <- qnorm((1 + 0.95)/2)/sqrt(sum(!is.na(m$residuals)))
     
   }
+  
   s <- c(basics,as.list(summary(m, correlation=FALSE))) # generic list is more friendly for adding to a data.frame
   class(s) <- 'list'         # make sure the class is no longer summary.lm
   s$hist          <- hist(s$residuals,breaks=100,plot=F)
@@ -526,7 +529,11 @@ regressor.piecewise = function(regressor,bins) {
   nm = c()
   for(binUpper in c(bins,Inf)) {
     col = regressor - binLower
-    col[col < 0] = 0
+    # this is to avoid columns of zeros when the bins are outside the data
+    # values are scaled by the first bin value to make sure they aren't too 
+    # big or too small for the data
+    smalls = bins[1] * runif(length(col),0.00001,0.00009) 
+    col[col < 0] = smalls[col < 0]
     col[(col > binUpper-binLower)] = binUpper-binLower
     mat = cbind(mat,col)
     nm = c(nm,paste('tout',binLower,'_',binUpper,sep=''))
