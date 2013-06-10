@@ -25,6 +25,7 @@ resultsDir = 'results_daily'       # daily models for all homes
 resultsDir = 'results_daily_standard'
 resultsDir = 'results_daily_standard2'
 resultsDir = 'results_daily_nestedCP'
+resultsDir = 'results_daily_full'
 dirZips = do.call(rbind,strsplit(list.files(file.path(getwd(),resultsDir),pattern='modelResults.RData'),'_'))[,1]
 allZips = dirZips
 
@@ -52,6 +53,11 @@ cpDataFile        = file.path(getwd(),resultsDir,'cpData.RData')
 coeffDataFile     = file.path(getwd(),resultsDir,'coeffData.RData')
 bestModelDataFile = file.path(getwd(),resultsDir,'bestModelData.RData')
 invalidIdsFile    = file.path(getwd(),resultsDir,'invalidIds.RData')
+
+#loadData = function(zip) {
+#  dataFile = file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep=''))
+#  load(dataFile)
+#}
 
 if(file.exists(invalidIdsFile)) {
   load(invalidIdsFile)
@@ -113,7 +119,7 @@ if(file.exists(cpDataFile)) {
 } else {
   cp1Data = combine(allZips,
                    resultType='d_others',
-                   subResultType='tout1CP',
+                   subResultType='DOW_toutCP_DL_l1',
                    fun=function(x) {
                      cpMatrix = t(apply(x, 1, 
                      function(y) { 
@@ -128,7 +134,7 @@ if(file.exists(cpDataFile)) {
   cp1Data = merge(basics[,c('id','nObs','kw.mean')],cp1Data,by.x='id',by.y='id')
   cp2Data = combine(allZips,
                     resultType='d_others',
-                    subResultType='tout2CP',
+                    subResultType='DOW_tout2CP_DL_l1',
                     fun=function(x) {
                       cpMatrix = t(apply(x, 1, 
                        function(y) { 
