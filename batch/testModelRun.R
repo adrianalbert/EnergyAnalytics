@@ -1,13 +1,6 @@
-# define model classes:
-# 1. Hourly CP (x WKND + lag + solar)
-# 2. Pieces CP (x WKND + lag + solar)
-# 3. TOD (x DOW)
+#!/usr/bin/Rscript
 
-# test residuals for:
-# serial correlation
-# RMSE (+ penalty)
-# kurtosis
-
+# todo: is there a better way to detect the current directory?
 conf.basePath = file.path('~/EnergyAnalytics/batch')
 if(Sys.info()['sysname'] == 'Windows') {
   conf.basePath = file.path('f:/dev/pge_collab/EnergyAnalytics/batch')
@@ -15,6 +8,11 @@ if(Sys.info()['sysname'] == 'Windows') {
   .libPaths('~/R/library') # use my local R library even from the comand line
 }
 setwd(conf.basePath)
+
+library(reshape)
+library(timeDate)
+library(RColorBrewer)
+
 # run 'source' on all includes to load them 
 source(file.path(getwd(),'localConf.R'))         # Local computer specific configuration, especially db account info 
 source(file.path(getwd(),'dbUtil.R'))            # generic database support functions for things like connection management
@@ -23,12 +21,6 @@ source(file.path(getwd(),'basicFeatures.R'))     # typical max, min, mean, range
 source(file.path(getwd(),'regressionSupport.R')) # mostly regressor manipulation
 source(file.path(getwd(),'solaRUtil.R'))         # solar geometry
 source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
-
-library(reshape)
-library(timeDate)
-library(RColorBrewer)
-library('cvTools') # cross validation tools
-
 
 testModelRun = function(cfg,r=NULL) {
   print(cfg)
@@ -144,15 +136,15 @@ cfg$models.daily = list(
 init = F
 if(init) {
   rNA2 = ResDataClass(2547072505,94610); # no tout dep,but troubling kink in 2 cp model
-  rNA = ResDataClass(2846844910,94610); # no tout dep
-  rCO = ResDataClass(553991005,93304);  # cooling only
-  #rU = ResDataClass(1882681258,93304); # U shape
-  rU = ResDataClass(6481381805,93304); # U shape
-  #rV = ResDataClass(6481399605,93304); # V shape
-  rV = ResDataClass(6502182810,93304); # V shape
+  rNA  = ResDataClass(2846844910,94610); # no tout dep
+  rCO  = ResDataClass(553991005,93304);  # cooling only
+  #rU   = ResDataClass(1882681258,93304); # U shape
+  rU   = ResDataClass(6481381805,93304); # U shape
+  #rV   = ResDataClass(6481399605,93304); # V shape
+  rV   = ResDataClass(6502182810,93304); # V shape
   # todo: find more without temp dep or heating only...
 }
-r = rCO
+r = rTest
 tic()
 runOut = testModelRun(cfg,r)
 toc(prefix='run time')
