@@ -535,7 +535,7 @@ regressor.piecewise = function(regressor,bins) {
     smalls = bins[1] * runif(length(col),0.00001,0.00009)
     negs = col < 0
     negs[is.na(negs)] = F # force NA values to become False boolean values
-    col[negs] = smalls[negs]
+    col[negs] = 0 #smalls[negs]
     col[(col > binUpper-binLower)] = binUpper-binLower
     mat = cbind(mat,col)
     nm = c(nm,paste('tout',binLower,'_',binUpper,sep=''))
