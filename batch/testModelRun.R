@@ -144,7 +144,7 @@ if(init) {
   rV   = ResDataClass(6502182810,93304); # V shape
   # todo: find more without temp dep or heating only...
 }
-r = rTest
+r = ResDataClass(553991005,93304,useCache=T) #rTest
 tic()
 runOut = testModelRun(cfg,r)
 toc(prefix='run time')
