@@ -241,15 +241,21 @@ WeatherClass = function(zipcode,doMeans=T,useCache=F,doSG=F){
   return(obj)
 }
 
-ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
+ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res',useCache=F){
   if(is.null(data) || length(data) == 0) {
-    query = paste(
-      'SELECT 
-        sp_id,zip5,DATE,
-      hkw1, hkw2, hkw3, hkw4, hkw5, hkw6, hkw7, hkw8, hkw9, hkw10,hkw11,hkw12,
-      hkw13,hkw14,hkw15,hkw16,hkw17,hkw18,hkw19,hkw20,hkw21,hkw22,hkw23,hkw24 
-      FROM',conf.meterTable(zip),'WHERE sp_id =',sp_id,'ORDER BY DATE')
-    data = run.query(query,conf.meterDB())
+    if(useCache) {
+      rawData = db.getAllData(zip,useCache=T)
+      data = rawData[rawData$sp_id == sp_id,]
+    } else {
+      print('else')
+      query = paste(
+        'SELECT 
+          sp_id,zip5,DATE,
+        hkw1, hkw2, hkw3, hkw4, hkw5, hkw6, hkw7, hkw8, hkw9, hkw10,hkw11,hkw12,
+        hkw13,hkw14,hkw15,hkw16,hkw17,hkw18,hkw19,hkw20,hkw21,hkw22,hkw23,hkw24 
+        FROM',conf.meterTable(zip),'WHERE sp_id =',sp_id,'ORDER BY DATE')
+      data = run.query(query,conf.meterDB())
+    }
   }
   if(length(data)==0) stop(paste('No data found for sp_id',sp_id))
   
@@ -274,7 +280,7 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res'){
   # flatten into a vector and re-convert into date objects
   dates = as.POSIXlt(as.vector(dateMat),origin='1970-01-01')
   
-  if (is.null(weather)) weather = WeatherClass(zipcode,doSG=T)
+  if (is.null(weather)) weather = WeatherClass(zipcode,doSG=T,useCache=useCache)
   tout = weather$resample(dates,'tout')
   pout = weather$resample(dates,'pout')
   rain = weather$resample(dates,'rain')
