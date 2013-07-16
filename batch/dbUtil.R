@@ -1,10 +1,13 @@
 require(RMySQL)
 
 QUERY_CACHE = paste(getwd(),'/','QUERY_CACHE','/',sep='')
+DB_CFG_FILE = 'stanford_DB.cfg'
+DEFAULT_DB  = 'pge_res'
 
 # utility functions that centralize config from one database sever to the next
-conf.dbCon = function(db='pge_res') {
-  con = dbConnect(MySQL(), default.file=paste(getwd(),'/','DB_connection.cfg',sep=''), dbname=db)
+conf.dbCon = function(db=DEFAULT_DB,cfgFile=DB_CFG_FILE) {
+  con = dbConnect(MySQL(), default.file=paste(getwd(),'/',cfgFile,sep=''), dbname=db)
+  return(con)
 }
 
 # utility fn to clear all active variables - 
@@ -33,13 +36,13 @@ showCons = function() {
   print(s)
 }
 
-run.query = function(query,db,cacheFile=NULL,forceRefresh=F) {
+run.query = function(query,db,cfgFile,cacheDir=NULL,cacheFile=NULL,forceRefresh=F) {
   QUERY_RESULT <- c()
   cachePath = NULL
   if(! is.null(cacheFile)) {
     # try to load from disk
-    dir.create(file.path(QUERY_CACHE),showWarnings=FALSE)
-    cachePath = paste(QUERY_CACHE,cacheFile,sep='')
+    dir.create(file.path(cacheDir),showWarnings=FALSE)
+    cachePath = paste(cacheDir,cacheFile,sep='')
     if(file.exists(cachePath)) {
       print(paste('Data cache found. Loading data from',cacheFile))
       load(cachePath) # this should load into the variable QUERY_RESULT
@@ -47,12 +50,13 @@ run.query = function(query,db,cacheFile=NULL,forceRefresh=F) {
   }
   if(length(QUERY_RESULT) == 0 | forceRefresh) { # skip the DB stuff if it has been loaded from disk
     print(query)
+    con = NULL
     tryCatch({
-      con  <- conf.dbCon(db)
+      con  <- conf.dbCon(db,cfgFile)
       res  <- dbGetQuery(con, query)
       if(length(res)>0) QUERY_RESULT  <- res
     },
-    error = function(e) {print(e)},
+    error = function(e) {print(paste('Error in run.query:',e))},
     finally = {
       # close the results set if necessary
       resultSet <- dbListResults(con)

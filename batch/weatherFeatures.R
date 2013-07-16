@@ -17,7 +17,7 @@ getWeatherSummary = function() {
     load(summaryFile)
   }
   else {
-    zips = db.getZips(useCache=T)
+    zips = DATA_SOURCE$getZips(useCache=T)
     i = 0
     n = length(zips)
     wList = as.list(rep(NA,length(zips)))
@@ -36,6 +36,9 @@ getWeatherSummary = function() {
     }
     save(weatherSummary,file=summaryFile)
   }
+  weatherSummary$toutC = (weatherSummary$tout - 32) * 5/9
+  weatherSummary$summer.toutC = (weatherSummary$summer.tout - 32) * 5/9
+  weatherSummary$winter.toutC = (weatherSummary$winter.tout - 32) * 5/9
   return(weatherSummary)
 }
 

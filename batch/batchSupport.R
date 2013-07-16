@@ -18,7 +18,7 @@ source(file.path(getwd(),'regressionSupport.R')) # mostly regressor manipulation
 source(file.path(getwd(),'solaRUtil.R'))         # solar geometry
 source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
 
-library(reshape)
+library(reshape2)
 library(timeDate)
 library(RColorBrewer)
 # run this if you need it, but everything should be installed by a setup script
@@ -58,10 +58,10 @@ runModelsByZip = function(cfg) {
     }
     tryCatch( {
       tic('allDataForZip')
-      zipData <- db.getAllData(zip,useCache=cfg$CACHE_QUERY_DATA)
+      zipData <- DATA_SOURCE$getAllData(zip,useCache=cfg$CACHE_QUERY_DATA)
       toc('allDataForZip')
-      sp_ids <- db.getSPs(zip,useCache=cfg$CACHE_QUERY_DATA)
-      sp_ids <- unique(zipData[,'sp_id']) # db.getSPs(zip)
+      sp_ids <- DATA_SOURCE$getSPs(zip,useCache=cfg$CACHE_QUERY_DATA)
+      sp_ids <- unique(zipData[,'sp_id']) # DATA_SOURCE$getSPs(zip)
       res$attemptedSP = c(res$attemptedSP,sp_ids)
       # we know that all sp's in the same zipcode share the same weather
       # so we speed execution by looking it up once and passing it in
@@ -141,7 +141,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
     #if(skip) { next }
     resData = NULL
     if (!is.null(data)) {  resData = data[data[,'sp_id']== sp_id,] }
-    r <- tryCatch(ResDataClass(sp_id,zip=zip,weather=weather,data=resData,db=conf.meterDB()), 
+    r <- tryCatch(ResDataClass(sp_id,zip=zip,weather=weather,data=resData), 
                   error = function(e) {print(e)}, finally={} )
     if ( ! "ResDataClass" %in% class(r) ) { # constructor returns the error class if it has a problem
       print('    not found (see error)')    # ignore residences that produce errors & continue
@@ -163,7 +163,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
         
         tic('model run')
         if(cfg$PLOT_VALID) {
-          save.png.plot(r,file.path(getwd(),cfg$outDir,paste(r$zip,'_',r$id,'.png',sep='')))
+          save.png.plot.temp(r,file.path(getwd(),cfg$outDir,paste(r$zip,'_',r$id,'_temp.png',sep='')))
         }
         if(cfg$RUN_FEATURES) {
           features.basic[[length(features.basic)+1]]  <- basicFeatures(r) # max, min, etc.

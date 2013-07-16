@@ -103,9 +103,9 @@ ggCalMap = function(df,zipCol,plotCol,calZipData=NULL,main=NULL) {
   caMap + geom_polygon(aes(x = long, y = lat, group=group,fill=lag1,alpha = .4),data=dff)
 }
 
-#calMap(db.getZipCounts(),'count','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues") )
-#calMap(db.getZipData(),'cecclmzn','zip5',main='CEC climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
-#calMap(db.getZipData(),'climate' ,'zip5',main='PGE climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
+#calMap(DATA_SOURCE$getZipCounts(),'count','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues") )
+#calMap(DATA_SOURCE$getZipData(),'cecclmzn','zip5',main='CEC climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
+#calMap(DATA_SOURCE$getZipData(),'climate' ,'zip5',main='PGE climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
 ws = getWeatherSummary()
 ws$rain = ws$rain * 365 * 24
 ws$rain[ws$rain > 120] = NA # there is junk rain data (suprise!!)

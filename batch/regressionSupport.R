@@ -1,5 +1,7 @@
 library(sandwich) # Contains the NeweyWest funvction for calculating a modified vcov
 library(lmtest)   # provides coeftest, which can perform the z/t/p tests using NW
+library(cvTools)  # tools for corss validation
+
 # Model Descriptor and related classes ------------------------------------
 #
 # Model Descriptors specify all the information required to run one or more 
@@ -23,7 +25,7 @@ ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,cvReps=0,step=F)
     #print(paste('[ModelDescriptor.run]',obj$name,'(',names(obj$subset),'):',obj$formula))
     for(snm in names(obj$subset)) {
       df$sub = eval(parse(text=obj$subset[[snm]]),envir=df)  # load the subset flags into the data.frame
-      lm.result = lm(obj$formula,df,x=F,subset=sub==T) # run the lm on the subset indicated in the data frame
+      lm.result = lm(obj$formula,df,x=F,y=T,subset=sub==T) # run the lm on the subset indicated in the data frame
       if(step) {
         lmr = lm('kwh ~ 1',df,subset=sub==T)
         parts = strsplit(obj$formula,'~')[[1]]
@@ -461,9 +463,10 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
   class(s) <- 'list'         # make sure the class is no longer summary.lm
   s$hist          <- hist(s$residuals,breaks=100,plot=F)
   s$kurtosis      <- kurtosis(s$residuals)
+  
   s$call          <- c()     # lm model call (depends on variable scope and can be junk)
   s$terms         <- c()     # lm model terms (depends on variable scope and can be junk)
-  s$residuals     <- c()     # residuals scaled by weights assigned to the model
+  #s$residuals     <- c()     # residuals scaled by weights assigned to the model
   s$cov.unscaled  <- c()     # p x p matrix of (unscaled) covariances
   #s$aliased      <- c()     # named logical vector showing if the original coefficients are aliased
   s$na.action     <- c()     # get rid of extra meta info from the model
@@ -490,6 +493,26 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
     # (it is modded by the max integer size to ensure) it works as a seed
     s$cv.rmse   <- cvFold(df,modelDescriptor,K=5,R=cvReps,seed=(s$id %% .Machine$integer.max)) # pre-rolled function from cvTools
   }
+  PLOT_RESUDIALS = F
+  if(PLOT_RESUDIALS) {
+    tryCatch( {
+      kwh = df$kwh
+      lowPts = kwh < 1
+      png(file.path(getwd(),'residuals',paste(zip,id,'residuals.png',sep='_')))
+      op <- par(no.readonly = TRUE)
+      par( mfrow=c(2,2), oma=c(2,2,3,0),mar=c(2,2,2,2))# Room for the title
+      plot(m$y,col='black',main=paste('R2=',sprintf("%0.2f",s$r.squared),'cv.RMSE=',sprintf("%0.2f",s$cv.rmse)))
+      points(m$fitted.values,col='grey')
+      plot(s$hist)
+      plot(s$residuals,col='blue',main=paste('Residuals; kurtosis=',s$kurtosis))
+      pacf(s$residuals,main='PACF')
+    }, 
+    error = function(e) { print(e) },
+    finally = { 
+      par(op)
+      dev.off() 
+    } )
+  }
   return(s)
 }
 
@@ -500,9 +523,15 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
 # for example, splitRegressor(Tout,dates$hour) will return a matrix with 24 
 # columns, where the only non-zero entry per row contains the Tout value in
 # the column corresponding to the hour of day it was recorded 
-regressor.split = function(regressor,membership) {
+regressor.split = function(regressor,membership=NULL) {
   mat <- c()
   nm  <- c()
+  if(is.null(membership)) {
+    if(class(regressor) == 'factor') {
+      membership = regressor
+      regressor=rep(1,length(regressor))
+    }
+  }
   for (i in sort(unique(membership))) {
     mat <- cbind(mat,ifelse(membership==i,1,0)) # add a colunm of 1's and 0's
     nm <- c(nm,i)

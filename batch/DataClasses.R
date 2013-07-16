@@ -10,74 +10,10 @@ library(RColorBrewer)
 
 source(file.path(getwd(),'solaRUtil.R'))
 
-# utility function that returns a list of all the zipcodes in the data set
-db.getZips = function(useCache=F,forceRefresh=F) {
-  query    <- paste("select distinct zip5 from",conf.weatherTable(),'order by zip5')
-  cacheFile = NULL
-  if(useCache) { cacheFile='zipList.RData' }
-  return(run.query(query,conf.weatherDB(),cacheFile=cacheFile,forceRefresh=forceRefresh)[[1]])
-}
-
-db.getSPs = function(zip=NA,useCache=F,forceRefresh=F) {
-  cacheFile = NULL
-  if(is.na(zip)) { query <- paste("select distinct sp_id from",conf.meterTable()) }
-  else {
-    if(useCache) {
-      cacheFile = paste('spids_',zip,'.RData',sep='') # only cache sp list for individual zips
-    }
-    query  <- paste("select distinct sp_id from",conf.meterTable(zip),"where zip5=",zip) 
-  }
-  return(run.query(query,conf.meterDB(),cacheFile=cacheFile,forceRefresh=forceRefresh)[[1]])
-}
-
-db.getZipCounts = function() { 
-  query = 'SELECT zip5, COUNT(DISTINCT sp_id) as count FROM pge_res_final GROUP BY zip5'
-  return(run.query(query,conf.meterDB()))
-}
-
-db.getAllData = function(zip=NULL,useCache=F,forceRefresh=F) {
-  cacheFile = NULL
-  if(useCache) { cacheFile=paste('meterData_',zip,'.RData',sep='') }
-  query = paste(
-    'SELECT 
-         sp_id, zip5, DATE,
-         hkw1, hkw2, hkw3, hkw4, hkw5, hkw6, hkw7, hkw8, hkw9, hkw10,hkw11,hkw12,
-         hkw13,hkw14,hkw15,hkw16,hkw17,hkw18,hkw19,hkw20,hkw21,hkw22,hkw23,hkw24 
-         FROM',conf.meterTable(zip),'ORDER BY sp_id, DATE')
-  zipData = run.query(query,conf.meterDB(),cacheFile=cacheFile,forceRefresh=forceRefresh)
-  return(zipData)
-}
-
-# return the available summary information for every zipcode
-# including sp_id count, climate zone, weather station, and income stats
-ZIP_DATA = NULL
-db.getZipData = function(zip=NULL,useCache=F) {
-  if(is.null(ZIP_DATA)) {
-    query = paste(
-      'SELECT zip5, COUNT(DISTINCT sp_id), cecclmzn, climate, GCOUNTY, WTHRSTN,
-      median_income, median_income_quantiles
-      FROM', conf.accountTable(), 'GROUP BY zip5')
-    # has to go into the global env to persist as a 'cache'
-    cacheFile=NULL
-    if(useCache) { cacheFile='zipData.RData' }
-    assign('ZIP_DATA', run.query(query,conf.resDB(),cacheFile=cacheFile), envir = .GlobalEnv) 
-  }
-  #else { print('Using zip data cache') }
-  if(is.null(zip)) { out = ZIP_DATA                       }
-  else             { out = ZIP_DATA[ZIP_DATA$zip5 == zip,]}
-  return(out)
-}
-
-MULTI_PERSON = NULL
-db.getMultPersonSPs = function(useCache=F,forceRefresh=F) {
-  if(is.null(MULTI_PERSON)) {
-    cacheFile = NULL
-    if(useCache) { cacheFile=paste('multiPersonSPs.RData',sep='') }
-    query = paste('SELECT sp_ID, COUNT(per_id) FROM pge_res_final GROUP BY sp_id HAVING COUNT(per_id) > 1')
-    mp = run.query(query,conf.meterDB(),cacheFile=cacheFile,forceRefresh=forceRefresh)
-  }
-  return(MULTI_PERSON)
-}
+# DATA_SOURCE is a data provider that must be in the global context, currently stanford or wharton that provides:
+#    getZips, getSPs, getZipCounts, getAllData, getZipData, getMultPersonSPs
+#    getRawWeather, getRawResidentialData
+# Each has its own data cache directory and db config as well
 
 sumDay = function(df) {
   sums = 24 * colMeans(df,na.rm=T) # calculate the sums for all columns
@@ -133,23 +69,16 @@ dailySums = function(rawData) {
 # class structure based on example from
 # http://bryer.org/2012/object-oriented-programming-in-r
 WeatherClass = function(zipcode,doMeans=T,useCache=F,doSG=F){
-  query = paste(
-    'SELECT `date`, TemperatureF, Pressure, DewpointF, HourlyPrecip
-    FROM',conf.weatherTable(),'where zip5 =',zipcode,'ORDER BY DATE')
-  cacheFile=NULL
-  if(useCache) {
-    cacheFile=paste('weather_',zipcode,'.RData',sep='')
-  }
-  raw = run.query(query,conf.weatherDB(),cacheFile=cacheFile)
+  raw = DATA_SOURCE$getWeatherData(zipcode,useCache=useCache)
   if(length(raw)==0) stop(paste('No data found for zipcode',zipcode))
   
-   
   rawData = data.frame(
     dates = as.POSIXlt(raw[,1],tz="PST8PDT",'%Y-%m-%d %H:%M:%S'),
     tout = raw[,'TemperatureF'],
     pout = raw[,'Pressure'],
     rain = raw[,'HourlyPrecip'],
     dp   = raw[,'DewpointF']
+    #wind = raw[,'WindSpeed']
   )
   
   days = unique(as.Date(rawData$dates))
@@ -241,24 +170,17 @@ WeatherClass = function(zipcode,doMeans=T,useCache=F,doSG=F){
   return(obj)
 }
 
-ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res',useCache=F){
+ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,useCache=F,doSG=T){
   if(is.null(data) || length(data) == 0) {
     if(useCache) {
-      rawData = db.getAllData(zip,useCache=T)
+      rawData = DATA_SOURCE$getAllData(zip,useCache=T)
       data = rawData[rawData$sp_id == sp_id,]
     } else {
       print('else')
-      query = paste(
-        'SELECT 
-          sp_id,zip5,DATE,
-        hkw1, hkw2, hkw3, hkw4, hkw5, hkw6, hkw7, hkw8, hkw9, hkw10,hkw11,hkw12,
-        hkw13,hkw14,hkw15,hkw16,hkw17,hkw18,hkw19,hkw20,hkw21,hkw22,hkw23,hkw24 
-        FROM',conf.meterTable(zip),'WHERE sp_id =',sp_id,'ORDER BY DATE')
-      data = run.query(query,conf.meterDB())
+      data = DATA_SOURCE$getSPData(sp_id,zip)
     }
   }
   if(length(data)==0) stop(paste('No data found for sp_id',sp_id))
-  
   days = as.POSIXct(data[,'DATE'],tz="PST8PDT", '%Y-%m-%d')
   # some days are duplicated in the DB. Remove all but the first one.
   dup = which(diff(days) == 0)
@@ -271,7 +193,6 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res',useCa
   # reshape the kW readings into a vector matching the dates
   kw    = as.vector(t(kwMat))
   
-  
   # create a row of hourly values for each day
   daySteps = 24
   dtDay = daySteps/24 * 60 * 60 # in seconds
@@ -279,14 +200,13 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res',useCa
   dateMat = sapply(days,FUN=function(x) x + (0:(daySteps-1) * dtDay))
   # flatten into a vector and re-convert into date objects
   dates = as.POSIXlt(as.vector(dateMat),origin='1970-01-01')
-  
-  if (is.null(weather)) weather = WeatherClass(zipcode,doSG=T,useCache=useCache)
+  if (is.null(weather)) weather = WeatherClass(zipcode,doSG=doSG,useCache=useCache)
   tout = weather$resample(dates,'tout')
   pout = weather$resample(dates,'pout')
   rain = weather$resample(dates,'rain')
   dp   = weather$resample(dates,'dp')
+  #wind = weather$resample(dates,'wind')
   rh   = weather$rh(tout,dp)
-  
   # TODO: clear out obviously bad readings
   #keepers   = which(kw > 0)
   
@@ -302,6 +222,7 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,db='pge_res',useCa
     pout = pout,
     rain = rain,
     dp   = dp,
+    #wind = wind,
     rh   = rh,
     toutMat = matrix(tout,ncol=24,byrow=TRUE),
     get = function(x) obj[[x]],
@@ -388,26 +309,18 @@ mapColors = function(data,colorMap=NA,log=FALSE) {
   return(colorMap[idx])
 }
 
-hmap = function(data,colorMap=NA,yvals=NA,xvals=NA,log=FALSE,...) {
+hmap = function(data,colorMap=NULL,yvals=NA,xvals=NA,log=FALSE,...) {
   n = dim(data)[1]
   m = dim(data)[2]
   # defailt values
-  if(length(colorMap) < 2) { colorMap = heat.colors(100) }
-  if(length(xvals)    < 2) { xvals=1:m }
-  if(length(yvals)    < 2) { yvals=1:n }
-  
-  cols = rep(xvals,n) # duplicate column position values across all rows
-  rows = rep(yvals,each=m) # duplicate y values across a whole row of data
-  vals = as.vector(t(as.matrix(data))) # linearize the matrix of data
-  plot(cols,rows,col=mapColors(vals,colorMap,log=log),
-       ylim=c(max(yvals),min(yvals)),
-       xlim=c(min(xvals),max(xvals)),
-       axes=F,
-       cex=5,pch=15,
-       xlab='Hour of day',ylab='Date',...)
-  axis(1,at=(0:23)+0.5,labels=(1:24),mgp=c(1,0,0),tcl=0.5,tick=F) # 1 = xaxis, labels in the center of each range
-  axis(1,at=(0:24),labels=F,tick=T,mgp=c(1,0,0),tcl=0.5)          # ticks at boundaries
-  #axis(2,pretty(c(min(yvals),max(yvals))),mgp=c(1,0,0),tcl=0.5) # yaxis
+  if(is.null(colorMap)) { colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100)) }
+  image(t(data),col=colorMap,axes=F)
+  #axis(1, at = seq(0, 1, by = 1/6),labels=0:6 * 4,mgp=c(1,0,0),tcl=0.5)
+  #if(length(r$days) > 16) {
+  #  axis(2, at = seq(1,0, by = -1/15),labels=format(r$days[seq(1/16, 1, by = 1/16) * length(r$days)],'%m/%d/%y'),las=1,mgp=c(1,0,0),tcl=0.5)
+  #} else {
+  #  axis(2, at = seq(1,0, by = -1/(length(r$days)-1)),labels=format(r$days,'%m/%d/%y'),las=1,mgp=c(1,0,0),tcl=0.5)
+  #}
 }
 
 # quickly find the estimates for a simple change point model with one cp
@@ -431,6 +344,18 @@ save.png.plot = function(r,path,issues=NULL) {
     issueTxt = ''
     if(length(issues)>1) { issueTxt = paste(colnames(issues)[-1],collapse=', ') }
     plot( r, colorMap=colorMap, main=paste(r$zip, r$id),issueTxt=issueTxt,estimates=toutChangePointFast(df=rDFA(r)) )
+  }, 
+  error = function(e) { print(e) },
+  finally = { dev.off() } )
+}
+
+save.png.plot.temp = function(r,path,issues=NULL) {
+  tryCatch( {
+    png(path)
+    colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100))
+    issueTxt = ''
+    if(length(issues)>1) { issueTxt = paste(colnames(issues)[-1],collapse=', ') }
+    plot( r, type='temp', main=paste(r$zip, r$id),issueTxt=issueTxt)
   }, 
   error = function(e) { print(e) },
   finally = { dev.off() } )

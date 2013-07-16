@@ -54,6 +54,7 @@ scalars = function(a,model.name=NULL,subset.name=NULL) {
 cf = function(a,model.name,subset.name=NULL,col='Estimate',cfName='coefficients') {
   sn = T
   mn = T
+  #print(names(a))
   if(is.null(cfName)) { cfName='coefficients' }
   mn = unlist(a[,'model.name'])==model.name
   if (! is.null(subset.name)) { 
@@ -146,6 +147,7 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
     #print(class(modelResults[['d_summaries']]))
     #print(class(modelResults$d_summaries))
     #print(cf(modelResults[['d_summaries']],model.name=model.name,subset.name=NULL))
+        
     if(is.null(model.name)) {
       new = fun(data)
     } else {
@@ -153,6 +155,14 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
     }
     #print(new)
     if(length(new) == 0) { next }
+    # the next several lines try to eliminate duplicate entries
+    dataNames = names(new) # assume data.frame
+    if(is.null(dataNames)) dataNames = colnames(new) # fall back to array with names cols
+    print(dataNames)
+    uniqueCols = intersect(dataNames,c('id','model.name','subset.name')) # find all cols of interest
+    if(length(uniqueCols) > 0) {
+      new = new[!duplicated(new[,uniqueCols]),] # somehow, some of the sp_id entries are duplicates
+    }
     new = cbind(new,zip5=zip) # ensure the zipcode is there
     #print(colnames(new))
     rownames(new) <- c()
@@ -162,8 +172,10 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
   }
   #print(rList[[38]])
   #print(colnames(rList[[38]]))
+  nCols = lapply(rList,function(x) length(colnames(x)))
+  rList[nCols == 0] <- NULL # remove empty parts of the list.
   #print(do.call(rbind,lapply(rList,function(x) c(length(colnames(x)),unique(x['zip5'])))))
-  #print(do.call(rbind,lapply(rList,function(x) c(names(x),unique(x['zip5'])))))
+  print(do.call(rbind,lapply(rList,function(x) c(colnames(x),unique(x['zip5'])))))
   
   result = do.call(rbind,rList[!is.na(rList)]) # here we bind the results together
   if(appendZipData) { result = addZipData(result) }
