@@ -9,12 +9,7 @@ library('stringr') # contains padding function
 data(countyMapEnv) # loads up county and state map data (?)
 data(stateMapEnv)
  
-## Set the working directory
-conf.basePath = '/Users/mehdyson/Documents/wharton/mapping'
-if(Sys.info()['sysname'] == 'Windows') {
-  conf.basePath = file.path('f:/dev/pge_collab/EnergyAnalytics/batch')
-}
-setwd(conf.basePath)
+# NOITE: the shape files used by this code must be in the current working directory.
 
 # Merge outside data with area spatial data frame
 append.spdf <- function(sp.df,sp.df.col,df.only,df.col){
@@ -32,7 +27,7 @@ append.spdf <- function(sp.df,sp.df.col,df.only,df.col){
 }
 
 # PLOT: Simple function that plots a column of continuous values on a color scale
-calZipPlot <- function (calzip,color.column,main=NULL,precis=0,colorMap=NULL){
+calZipPlot <- function (calzip,color.column,main=NULL,precis=0,colorMap=NULL,legend.cex=0.8,legend.title=NULL,legend.bg=NULL){
   # calzip is the california zipcodes SPDF
   # color.column is the column of the dataframe to be colorcoded
   # main is an optional plot title
@@ -59,13 +54,14 @@ calZipPlot <- function (calzip,color.column,main=NULL,precis=0,colorMap=NULL){
   plot(calzip,col=col,border=col)
   map("county",region="california",add=TRUE)
   if(is.factor(colorval)) {
+    #colorval = factor(colorval[colorval != '']) # kill blank assignments
     legend(x=-117.52516,y=41.94532,fill=colorMap,legend=levels(colorval),
-           cex=1,y.intersp=1)
+           cex=legend.cex,title=legend.title,y.intersp=1,bty='n',bg=legend.bg)
   }
   else {
     op = par(family='mono') # fixed width font
     legend(x=-117.52516,y=41.94532,fill=attr(col,"palette"),legend=names(attr(col,"table")),
-           cex=1,y.intersp=1)
+           cex=legend.cex,title=legend.title,y.intersp=1,bty='n',bg=legend.bg)
     par(op)
   }
 
@@ -82,14 +78,14 @@ getCalSPDF = function() {
   proj4string(shpData) <- "+proj=longlat +datum=WGS84" # projection instructions
   return(shpData)
 }
-calMap = function(df,plotCol,zipCol=NULL,calZipData=NULL,main=NULL,colorMap=NULL) {
+calMap = function(df,plotCol,zipCol=NULL,calZipData=NULL,main=NULL,colorMap=NULL,legend.cex=0.8,legend.title=NULL) {
   if(is.null(colorMap))   { colorMap   <- brewer.pal(7,"Reds") }
   if(is.null(calZipData)) { calZipData <- getCalSPDF()         }
   if(is.null(zipCol)) {
     zipCol = grep('^zip',colnames(df),value=T)[1]
   }
   calZipData@data<-append.spdf(calZipData,'NAME',df,zipCol)
-  calZipPlot(calZipData,plotCol,main,colorMap=colorMap)
+  calZipPlot(calZipData,plotCol,main,colorMap=colorMap,legend.cex=legend.cex,legend.title=legend.title)
 }
 
 ggCalMap = function(df,zipCol,plotCol,calZipData=NULL,main=NULL) {
@@ -103,12 +99,15 @@ ggCalMap = function(df,zipCol,plotCol,calZipData=NULL,main=NULL) {
   caMap + geom_polygon(aes(x = long, y = lat, group=group,fill=lag1,alpha = .4),data=dff)
 }
 
+# example usage: create data frame with zip codes and corresponding values
+# pass the data frame into the calMap function with the name of the column to use
+# for coloring zip code regions on the map. Color map and various formatting options  can be supplied as well.
+sample = data.frame(zip=93000:95000,vals=1:2001)
+calMap(sample,'vals',main='Sample plot',colorMap=rev(brewer.pal(9,"Blues")) )
 #calMap(DATA_SOURCE$getZipCounts(),'count','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues") )
 #calMap(DATA_SOURCE$getZipData(),'cecclmzn','zip5',main='CEC climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
 #calMap(DATA_SOURCE$getZipData(),'climate' ,'zip5',main='PGE climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
-ws = getWeatherSummary()
-ws$rain = ws$rain * 365 * 24
-ws$rain[ws$rain > 120] = NA # there is junk rain data (suprise!!)
+#ws = getWeatherSummary()
 #calMap(ws,'tout','zip5',main='Mean annual temperature',colorMap=rev(brewer.pal(9,"RdBu")) )
 #calMap(ws,'rain','zip5',main='Total annual rain (inches)',colorMap=brewer.pal(9,"Blues") )
 #calMap(ws,'dp','zip5',main='Mean annual dew point (F)',colorMap=brewer.pal(9,"Purples") )
