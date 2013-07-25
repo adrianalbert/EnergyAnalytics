@@ -12,7 +12,7 @@ weatherFeatures = function(w){ # r is an instance of WeatherClass
 }
 
 getWeatherSummary = function() {
-  summaryFile = paste(getwd(),'/weatherSummary.RData',sep='')
+  summaryFile = paste(DATA_SOURCE$CACHE_DIR,'/weatherSummary.RData',sep='')
   if(file.exists(summaryFile)) {
     load(summaryFile)
   }
@@ -24,7 +24,12 @@ getWeatherSummary = function() {
     for(zip in zips) {
       i = i+1
       print(paste(zip,'(',i,'/',n,')'))
-      wList[[i]] = weatherFeatures(WeatherClass(zip,doMeans=F,useCache=T))
+      tryCatch({
+        wList[[i]] = weatherFeatures(WeatherClass(zip,doMeans=F,useCache=T))
+      },
+      error = function(e) {print(paste('Error in weatherFeatures:',e))},
+      finally = {} )
+      
     }
     weatherSummary = data.frame(do.call(rbind,wList))
     colnames(weatherSummary)[1] <- c('zip5')
@@ -39,6 +44,8 @@ getWeatherSummary = function() {
   weatherSummary$toutC = (weatherSummary$tout - 32) * 5/9
   weatherSummary$summer.toutC = (weatherSummary$summer.tout - 32) * 5/9
   weatherSummary$winter.toutC = (weatherSummary$winter.tout - 32) * 5/9
+  weatherSummary$rain = weatherSummary$rain * 365 * 24
+  weatherSummary$rain[weatherSummary$rain > 120] = NA # there is junk rain data (suprise!!)
   return(weatherSummary)
 }
 

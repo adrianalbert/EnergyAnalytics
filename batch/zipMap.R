@@ -102,8 +102,13 @@ ggCalMap = function(df,zipCol,plotCol,calZipData=NULL,main=NULL) {
 # example usage: create data frame with zip codes and corresponding values
 # pass the data frame into the calMap function with the name of the column to use
 # for coloring zip code regions on the map. Color map and various formatting options  can be supplied as well.
-sample = data.frame(zip=93000:95000,vals=1:2001)
-calMap(sample,'vals',main='Sample plot',colorMap=rev(brewer.pal(9,"Blues")) )
+demo=F
+if(demo) {
+  sample = data.frame(zip=93000:95000,vals=1:2001)
+  calMap(sample,'vals',main='Sample plot',colorMap=rev(brewer.pal(9,"Blues")) )
+}
+
+
 #calMap(DATA_SOURCE$getZipCounts(),'count','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues") )
 #calMap(DATA_SOURCE$getZipData(),'cecclmzn','zip5',main='CEC climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
 #calMap(DATA_SOURCE$getZipData(),'climate' ,'zip5',main='PGE climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )

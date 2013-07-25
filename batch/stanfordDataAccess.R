@@ -1,7 +1,3 @@
-QUERY_CACHE = paste(getwd(),'/','QUERY_CACHE_STANFORD','/',sep='')
-DB_CFG_FILE = 'stanford_DB.cfg'
-DEFAULT_DB  = 'pge_res'
-
 QUERY_CACHE = paste(getwd(),'/','QUERY_CACHE_WHARTON','/',sep='')
 DB_CFG_FILE = 'wharton_DB.cfg'
 DEFAULT_DB  = 'pgefinal'
@@ -94,10 +90,10 @@ StanfordData = function(local=F){
   # return the available summary information for every zipcode
   # including sp_id count, climate zone, weather station, and income stats
   
-  obj$getZipData = function(zip=NULL,useCache=F) {
+  obj$getZipData = function(zip=NULL,useCache=T) {
     if(is.null(obj$ZIP_DATA)) {
       query = paste(
-        'SELECT zip5, COUNT(DISTINCT sp_id), cecclmzn, climate, GCOUNTY, WTHRSTN,
+        'SELECT zip5, COUNT(DISTINCT sp_id) as counts, cecclmzn, climate, GCOUNTY, WTHRSTN,
         median_income, median_income_quantiles
         FROM', obj$accountTable(), 'GROUP BY zip5')
       # has to go into the global env to persist as a 'cache'
@@ -105,6 +101,7 @@ StanfordData = function(local=F){
       if(useCache) { cacheFile='zipData.RData' }
       #assign('ZIP_DATA', run.query(query,obj$resDB(),cacheFile=cacheFile), envir = .GlobalEnv)
       obj$ZIP_DATA = run.query(query,obj$resDB(),obj$DB_CFG_FILE,cacheDir=obj$CACHE_DIR,cacheFile=cacheFile)
+      obj$ZIP_DATA = mergeCensus(obj$ZIP_DATA)
     }
     #else { print('Using zip data cache') }
     if(is.null(zip)) { out = obj$ZIP_DATA                       }

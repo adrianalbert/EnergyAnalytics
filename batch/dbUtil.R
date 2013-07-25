@@ -43,6 +43,7 @@ run.query = function(query,db,cfgFile,cacheDir=NULL,cacheFile=NULL,forceRefresh=
     # try to load from disk
     dir.create(file.path(cacheDir),showWarnings=FALSE)
     cachePath = paste(cacheDir,cacheFile,sep='')
+    print(cachePath)
     if(file.exists(cachePath)) {
       print(paste('Data cache found. Loading data from',cacheFile))
       load(cachePath) # this should load into the variable QUERY_RESULT

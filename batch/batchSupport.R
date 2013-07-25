@@ -65,7 +65,7 @@ runModelsByZip = function(cfg) {
       res$attemptedSP = c(res$attemptedSP,sp_ids)
       # we know that all sp's in the same zipcode share the same weather
       # so we speed execution by looking it up once and passing it in
-      weather <- WeatherClass(zip,useCache=cfg$CACHE_QUERY_DATA,doSG=T)
+      weather <- WeatherClass(zip,useCache=cfg$CACHE_QUERY_DATA,doSG=cfg$CALC_SOLAR_GEOM)
       tic('modelsBySP')
       modelResults <- runModelsBySP(sp_ids,cfg,zip=zip,data=zipData,weather=weather)
       rm(zipData,weather,sp_ids)

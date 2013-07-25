@@ -19,6 +19,7 @@ source(file.path(getwd(),'dbUtil.R'))
 source(file.path(getwd(),'DataClasses.R'))
 source(file.path(getwd(),'weatherFeatures.R'))
 source(file.path(getwd(),'zipMap.R'))
+source(file.path(getwd(),'census.R'))
 
 lm_eqn = function(m) {
   
@@ -56,6 +57,8 @@ resultsDir = 'results_daily_DL'
 dirZips = do.call(rbind,strsplit(list.files(file.path(getwd(),resultsDir),pattern='modelResults.RData'),'_'))[,1]
 allZips = dirZips
 
+
+resultsDir = 'w_results_basics'
 resultsDir = 'results_basics'
 dirZips = do.call(rbind,strsplit(list.files(file.path(getwd(),resultsDir),pattern='modelResults.RData'),'_'))[,1]
 allZips = dirZips
@@ -147,8 +150,6 @@ gc()
 
 
 ws = getWeatherSummary()
-ws$rain = ws$rain * 365 * 24
-ws$rain[ws$rain > 120] = NA # there is junk rain data (suprise!!)
 if(file.exists(cpDataFile)) {
   load(cpDataFile)
 } else {
@@ -439,25 +440,29 @@ ggplot(data.frame(results.cfs$DOW_toutCP_DL_l1DailyCP),aes(x=day.length*1000)) +
     scale_x_continuous(limits=c(-4000,3000),breaks=seq(-4000,3000,by = 500))
 mean(results.cfs$DOW_tout_DL_l1[,'day.length'])
 
+zipData = DATA_SOURCE$getZipData()
+calMap(zipData,'counts','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues"),legend.title='# per zip code' )
+calMap(StanfordData()$getZipData(),'cecclmzn','zip5',main='CEC climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
+calMap(zipData,'climate' ,'zip5',main='PGE climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
+calMap(zipData,'geography' ,'zip5',main='PGE sampling zones (10,000 accounts each)',colorMap=brewer.pal(3,"Dark2") )
 
-calMap(DATA_SOURCE$getZipCounts(),'count','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues") )
-calMap(DATA_SOURCE$getZipData(),'cecclmzn','zip5',main='CEC climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
-calMap(DATA_SOURCE$getZipData(),'climate' ,'zip5',main='PGE climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
 
-calMap(ws,'tout','zip5',main='Mean annual temperature',colorMap=rev(brewer.pal(9,"RdBu")) )
+calMap(ws,'tout','zip5',main='Mean annual temperature (F)',colorMap=rev(brewer.pal(9,"RdBu")) )
 calMap(ws,'rain','zip5',main='Total annual rain (inches)',colorMap=brewer.pal(9,"Blues") )
 calMap(ws,'dp','zip5',main='Mean annual dew point (F)',colorMap=brewer.pal(9,"Purples") )
 
 
 # maps of various metrics 
 # see zipMap.R for the calMap implementation and other plots
-calMap(basicMeans,'kw.total',main='Mean annual electricity consumption (kWh)',colorMap=brewer.pal(9,"Reds") )
+calMap(wbasicMeans,'kw.total',main='Mean annual electricity consumption (kWh)',colorMap=brewer.pal(9,"Reds") )
 calMap(basicMeans,'lag0',main='Simple correlation between Tout and kW denamd: corr(Tout,kW)',colorMap=rev(brewer.pal(9,"RdBu")) )
-basicMeansWS = merge(basicMeans,ws,by.x='zip5',by.y='zip5')
-basicMeansWS$rankDiff = rank(basicMeansWS$kw.total) - rank(basicMeansWS$tout)
-calMap(basicMeansWS,'rankDiff',main='Rank difference between kW demand and temperature',colorMap=rev(brewer.pal(9,"RdBu")) )
-ggplot(basicMeansWS,aes(x=toutC,y=kw.total)) + 
-  geom_smooth(method = "lm") + 
+wbasicMeansWS = merge(wbasicMeans,ws,by.x='zip5',by.y='zip5')
+wbasicsWS = merge(wbasics,ws,by.x='zip5',by.y='zip5')
+wbasicMeansWS$rankDiff = rank(wbasicMeansWS$kw.total) - rank(wbasicMeansWS$tout)
+wbasicMeansWS = mergeCensus(wbasicMeansWS)
+
+calMap(wbasicMeansWS,'rankDiff',main='Rank difference between annual kWh demand and temperature',colorMap=rev(brewer.pal(9,"RdBu")) )
+ggplot(wbasicMeansWS,aes(x=toutC,y=kw.total)) + 
   geom_point() + 
   labs(title='Annual home energy vs. Tout (means by zip code)',
        x='Annual average Tout (C)',
@@ -465,23 +470,155 @@ ggplot(basicMeansWS,aes(x=toutC,y=kw.total)) +
   ylim(0,20000) +
   theme_bw() + theme(text=element_text(size=16)) + 
   scale_x_continuous(breaks=seq(5,30,by=5)) + 
+  geom_smooth(method = "lm") + 
   annotate("text",x=11,y=18000,
-           label=lm_eqn(lm(kw.total ~ toutC,basicMeansWS)),
+           label=lm_eqn(lm(kw.total ~ toutC,wbasicMeansWS)),
            colour='black',size=5,parse=T)
 
 
-ggplot(basicMeansWS,aes(x=summer.tout,y=kw.total)) + 
+ggplot(wbasicMeansWS,aes(x=summer.toutC,y=kw.total)) + 
   geom_point() + 
-  labs(title='Annual energy vs. Tout (means by zip code)',x='Summer average Tout',y='Annual energy (kWh)') + 
+  labs(title='Annual energy vs. Tout (means by zip code)',x='Summer average Tout (C)',y='Annual energy (kWh)') + 
   ylim(0,20000) +
-  theme_bw()
+  theme_bw() + theme(text=element_text(size=16)) + 
+  scale_x_continuous(breaks=seq(10,30,by=5)) + 
+  geom_smooth(method = "lm") + 
+  annotate("text",x=16.5,y=18000,
+           label=lm_eqn(lm(kw.total ~ summer.toutC,wbasicMeansWS)),
+           colour='black',size=5,parse=T)
+
+
+wbasicMeansWS$var.winter = wbasicMeansWS$kw.var.winter * wbasicMeansWS$kw.mean
+wbasicMeansWS$var.summer = wbasicMeansWS$kw.var.summer * wbasicMeansWS$kw.mean
+
+ggplot(melt(wbasicMeansWS[,c('kw.mean','var.summer','var.winter')],id=c('kw.mean')),aes(x=value*kw.mean,color=variable,fill=variable)) + 
+  geom_density(size=1,alpha=0.2) + 
+  xlim(0,3) + 
+  theme_bw() + theme(text=element_text(size=16)) + 
+  labs(title='Seasonal hourly kW variance',x='Hourly variance (kW)') + 
+  #scale_colour_brewer(palette="Set1") + 
+  scale_fill_brewer(name="season",
+                      breaks=c('var.summer', 'var.winter'),
+                      labels=c('summer','winter'),palette='Set1' ) +
+  scale_color_brewer(name="season",
+                      breaks=c('var.summer', 'var.winter'),
+                      labels=c('summer','winter'),palette='Set1' )
+
 
 # histograms of annual energy demand
 ggplot(basics,aes(x=kw.total,color=cecclmzn)) + geom_density() + xlim(0,40000) + 
   labs(title='Prob. density of annual kWh by climate zone',x='Annual kWh',y='density')
 
-ggplot(basics,aes(x=kw.total)) + geom_histogram(binwidth=100) + xlim(0,40000) + 
-  labs(title='Histogram of annual kWh',x='Annual kWh',y='count')
+ggplot(wbasics,aes(x=kw.total)) + geom_histogram(binwidth=100,colour="gray50",fill='gray50') + xlim(0,30000) + 
+  theme_bw() + theme(text=element_text(size=16)) +
+  labs(title=paste('Histogram of annual kWh (N=',round_any(dim(wbasics)[1],100,floor),')',sep=''),x='Annual kWh',y='count')  +
+  geom_density(aes(y=100*..count..), colour="firebrick",size=1,alpha=0.5)
+
+s   = sum(wbasics$kw.total)
+q   = quantile(wbasics$kw.total,c(0.01,0.05,0.1,0.25,0.5,0.75,0.9,0.95,0.99))
+s90 = sum(wbasics$kw.total[wbasics$kw.total > q['90%']])
+
+plot(1:length(wbasics$kw.total)/length(wbasics$kw.total)*100,cumsum(sort(wbasics$kw.total,decreasing=T))/s,type='l',
+ylab='fraction of total annual energy',xlab=paste('percentile of home (N=',round_any(length(wbasics$kw.total),100,floor),')',sep=''),
+main='Cumulative distribution of annual energy', axes=F)
+axis(side = 2, at = seq(0,1,0.1))
+axis(side = 1, at = seq(0,100,10))
+abline(h=seq(0,1,0.1),v=seq(0,100,10),col='gray',lty=3)
+
+ggplot(wbasics,aes(x=log(kw.total))) + geom_histogram(binwidth=0.02,colour="gray50",fill='gray50') + 
+  theme_bw() + theme(text=element_text(size=16)) +
+  labs(title=paste('Histogram of annual kWh (N=',round_any(dim(wbasics)[1],100,floor),')',sep=''),x='Annual kWh',y='count')
+
+# we have to re-order the sampling regions to get the logical layout for this plot
+ggplot(transform(wbasics, geography=factor(geography,levels=c("Coast","Inland Hills","Central Valley"))), aes(x = kw.total)) +
+  stat_density(aes(ymax = ..density..,  ymin = -..density..),
+               fill = "grey50", colour = "grey50",
+               geom = "ribbon", position = "identity") +
+  facet_grid(. ~ geography) + 
+  theme_bw() + theme(text=element_text(size=16)) +
+  theme(axis.text.x=element_blank(),axis.ticks.x=element_blank()) +
+  coord_flip() + xlim(0,20000) + labs(title='Annual energy by climate',x='Annual kWh')
+
+p1 = ggplot(wbasics,aes(x=min)) + geom_density(size=1) + theme_bw() + 
+  labs(title='min (kW)',x='min (kW)') + xlim(0,1)
+p2 = ggplot(wbasics,aes(x=mean)) + geom_density(size=1) + theme_bw() + 
+  labs(title='mean (kW)',x='mean (kW)') + xlim(0,3)
+p3 = ggplot(wbasics,aes(x=max)) + geom_density(size=1) + theme_bw() + 
+  labs(title='max (kW)',x='max (kW)') + xlim(0,9)
+p4 = ggplot(wbasics,aes(x=range)) + geom_density(size=1) + theme_bw() + 
+  labs(title='range (kW)',x='range (kW)') + xlim(0,7)
+p5 = ggplot(wbasics,aes(x=mn2mx)) + geom_density(size=1) + theme_bw() + 
+  labs(title='min/max',x='min/max') + xlim(0,1)
+p6 = ggplot(wbasics,aes(x=n2d)) + geom_density(size=1) + theme_bw() + 
+  labs(title='night/day',x='night/day') + xlim(0,3)
+grid.arrange(p1,p2,p3,p4,p5,p6,ncol=3,main=paste('Distributions of load metrics (N=',round_any(dim(wbasics)[1],100,floor),')',sep=''))
+
+#Central Valley
+#1,550,138
+#Inland Hills
+#1,781,481
+#Coast
+#1,139,145
+
+
+ggplot(wbasics,aes(x=(max.hr.tout-32)*5/9)) + geom_density(size=1) + 
+  theme_bw() + theme(text=element_text(size=16)) + 
+  labs(title='Temperature at peak hour of demand',x='temp. (C) at peak hour of demand') + 
+  xlim(-5,45)
+
+ggplot(basics,aes(x=(max.day.tout-32)*5/9)) + geom_density(size=1) + 
+  theme_bw() + theme(text=element_text(size=16)) + 
+  labs(title='Temperature for peak day of demand',x='temp. (C) for peak day of demand') + 
+  xlim(-5,45)
+
+ggplot(wbasics,aes(x=(min.day.tout-32)*5/9)) + geom_density(size=1) + 
+  theme_bw() + theme(text=element_text(size=16)) + 
+  labs(title='Temperature for minimum day of demand',x='temp. (C) for minimum day of demand') + 
+  xlim(-5,35)
+
+ggplot(basics,aes(x=t90kw)) + geom_density(size=1) +
+  theme_bw() + theme(text=element_text(size=16)) + 
+  labs(title='Average timing of top 10% of demand hours',x='Average hour for top 10% of demand') + 
+  scale_x_continuous(breaks=1:24)
+
+ggplot(wbasics,aes(x=month(as.POSIXlt(max.day.date,origin='1970-01-01')))) + 
+  geom_histogram(binwidth=1) + scale_x_continuous(breaks=1:12) + 
+  theme_bw() + theme(text=element_text(size=16)) +
+  labs(title='Month of peak daily usage',x='Month number')
+
+ggplot(wbasics,aes(x=as.POSIXlt(max.day.date,origin='1970-01-01')$wday)) + 
+  geom_histogram(binwidth=1,color='white') + scale_x_continuous(breaks=0:6,labels=c('Su','Mo','Tu','We','Th','Fr','Sa')) + 
+  theme_bw() + theme(text=element_text(size=16)) +
+  labs(title='Day of peak daily usage',x='Day of week')
+
+ggplot(wbasics,aes(x=as.POSIXlt(max.hr.date,origin='1970-01-01')$wday)) + 
+  geom_histogram(binwidth=1,color='white') + scale_x_continuous(breaks=0:6,labels=c('Su','Mo','Tu','We','Th','Fr','Sa')) + 
+  theme_bw() + theme(text=element_text(size=16)) +
+  labs(title='Day of peak hourly usage',x='Day of week')
+
+ggplot(wbasics,aes(x=hour(as.POSIXlt(max.hr.date,origin='1970-01-01')))) + 
+  geom_histogram(binwidth=1) + scale_x_continuous(breaks=0:24) + 
+  theme_bw() + theme(text=element_text(size=16)) +
+  labs(title='Time of peak hour of usage',x='Hour of day')
+
+# add test for peak due to cooling
+wbasics$cooling = wbasics$max.day.pct > 0.65
+
+ggplot(wbasics,aes(x=hour(as.POSIXlt(max.hr.date,origin='1970-01-01')))) + 
+  geom_histogram(binwidth=1) + scale_x_continuous(breaks=0:24) + 
+  theme_bw() + theme(text=element_text(size=16)) +
+  labs(title='Time of peak hour of usage',x='Hour of day') + 
+  facet_grid(. ~ cooling,labeller=label_both)
+
+ggplot(wbasics,aes(x=kw.total,color=cooling)) + 
+  geom_density(size=1) + xlim(0,30000) +
+  theme_bw() + theme(text=element_text(size=16)) +
+  labs(title='Annual kWh conditional on high temp. peak demand',x='Annual energy (kWh)')
+
+ggplot(wbasics,aes(x=kw.total,fill=cooling)) + 
+  geom_histogram(binwidth=100) + xlim(0,30000) +
+  theme_bw() + theme(text=element_text(size=16)) +
+  labs(title='Annual kWh conditional on high temp. peak demand',x='Annual energy (kWh)')
 
 
 basics$minLevels = cut(basics$min * 1000,seq(0,1000,100))
@@ -490,11 +627,13 @@ ggplot(basics,aes(x=kw.total,color=minLevels)) + geom_density() + xlim(0,40000) 
 ggplot(basics,aes(x=min,y=kw.total)) + geom_point() + ylim(0,40000) + labs(title='Constant loads vs. total annual energy',x='Average daily min demand (kW)',y='annual energy (kWh)')
 
 # fraction of annual energy from daily min loads * 24
-baseFraction = basics$min*365*24 / basics$kw.total
+baseFraction = wbasics$min*365*24 / wbasics$kw.total
 plot(1:length(baseFraction)/length(baseFraction)*100,sort(baseFraction),type='l',
-     ylab='fraction of annual energy',xlab=paste('percentile of home (n=',length(baseFraction),')',sep=''),
-     main='Fraction of annual kWh from 24x7 loads')
-grid()
+     ylab='fraction of annual energy',xlab=paste('percentile of home (N=',round_any(length(baseFraction),100,floor),')',sep=''),
+     main='Fraction of annual kWh from minimum loads', axes = FALSE)
+axis(side = 2, at = seq(0,1,0.1))
+axis(side = 1, at = seq(0,100,10))
+abline(h=seq(0,1,0.1),v=seq(0,100,10),col='gray',lty=3)
 
 basics$maxLevels = cut(basics$max * 1000,seq(0,4000,600))
 ggplot(basics,aes(x=kw.total,fill=maxLevels)) + geom_histogram(binwidth=100) + xlim(0,40000) + labs(title='Count of homes by annual kWh',x='Annual kWh',y='Count')

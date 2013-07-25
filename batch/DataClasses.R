@@ -176,7 +176,6 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,useCache=F,doSG=T)
       rawData = DATA_SOURCE$getAllData(zip,useCache=T)
       data = rawData[rawData$sp_id == sp_id,]
     } else {
-      print('else')
       data = DATA_SOURCE$getSPData(sp_id,zip)
     }
   }
@@ -189,7 +188,15 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,useCache=F,doSG=T)
     days = as.POSIXct(data[,'DATE'],tz="PST8PDT", '%Y-%m-%d')
   }
   zipcode = data[1,'zip5']
-  kwMat = data[,4:27]
+  kwMat96 = NULL
+  kwMat   = NULL
+  # for now, assume that long rows of data are 15 minute
+  if(dim(data)[2] > 40) {
+    kwMat96 = as.matrix(data[,4:99])/1000
+    kwMat = sapply(t(1:24),function(x) rowMeans(kwMat96[,(4*(x-1)+1):(4*x)]))
+  } else {
+    kwMat = data[,4:27]
+  }
   # reshape the kW readings into a vector matching the dates
   kw    = as.vector(t(kwMat))
   
@@ -215,6 +222,7 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,useCache=F,doSG=T)
     dates = dates,
     kw  = kw,
     kwMat = kwMat,
+    kwMat96 = kwMat96,
     days = days,
     zipcode = zipcode,
     weather = weather,

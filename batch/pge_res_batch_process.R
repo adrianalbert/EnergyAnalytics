@@ -25,6 +25,10 @@ source(file.path(getwd(),'basicFeatures.R'))     # typical max, min, mean, range
 source(file.path(getwd(),'regressionSupport.R')) # mostly regressor manipulation
 source(file.path(getwd(),'solaRUtil.R'))         # solar geometry
 source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
+#source(file.path(getwd(),'stanfordDataAccess.R')) 
+#DATA_SOURCE = StanfordData(local=T)
+source(file.path(getwd(),'whartonDataAccess.R')) 
+DATA_SOURCE = WhartonData()
 
 # run this if you need it, but everything should be installed by a setup script
 # if (!require("RColorBrewer")) { install.packages("RColorBrewer") }
@@ -32,31 +36,30 @@ source(file.path(getwd(),'timer.R'))             # adds tic() and toc() function
 #library('DAAG') # Data Analysis and Graphics package has k-fold cross validation
 # cv.lm(df=mydata, model, m=5) # 5 fold cross-validation
 
-
+# instantiate data source - used by all the data access code
 # defines: separate cache directory, 15 min vs. hourly timesteps, availability of NG data
-source(file.path(getwd(),'stanfordDataAccess.R')) 
-#source(file.path(getwd(),'whartonDataAccess.R')) 
-DATA_SOURCE = StanfordData(local=T)
+
 
 cfg = list()
-cfg$outDir = 'results_daily_scatter'
+cfg$outDir = 'w_results_basics'
 
 cfg$SKIP_EXISTING_RDATA = F # don't run models if the RData file for their zip is present
 cfg$PLOT_INVALID = F # create png plots for residences that fail validaiton
-cfg$PLOT_VALID   = T # create png plots for residences that pass validaiton
+cfg$PLOT_VALID   = F # create png plots for residences that pass validaiton
 
 cfg$CACHE_QUERY_DATA   = T  # use file cache to store energy data and other query results
 
+cfg$CALC_SOLAR_GEOM    = F  # calculate sun position for every hour - this takes a long time for some reason
 
-cfg$RUN_FEATURES       = F  # run basic features
+cfg$RUN_FEATURES       = T  # run basic features
 cfg$RUN_HOURLY_MODELS  = F  # run hourly models
-cfg$RUN_DAILY_MODELS   = T  # run daily summary data models (moderate time consuming)
+cfg$RUN_DAILY_MODELS   = F  # run daily summary data models (moderate time consuming)
 cfg$RUN_MONTHLY_MODELS = F  # run monthly summary data models (moderate time consuming)
 cfg$RUN_STEP_SELECTION = F  # run nested model selection algorithm (time consuming)
 
 cfg$INVALID_IDS = NULL
 
-invalidIdsFile = file.path(getwd(),'invalidIds.RData')
+invalidIdsFile = file.path(DATA_SOURCE$CACHE_DIR,'invalidIds.RData')
 if(file.exists(invalidIdsFile)) {
   load(invalidIdsFile)
   cfg$INVALID_IDS = invalids
@@ -107,22 +110,22 @@ cfg$models.hourly = list(
 
 # todo: integration vacation days into regression
 cfg$models.daily = list(
-#   tout              = ModelDescriptor(    name='tout',             formula="kwh ~ tout.mean",cvReps=4),
-#   WKND              = ModelDescriptor(    name='WKND',             formula="kwh ~ WKND",cvReps=4),
-#   DOW               = ModelDescriptor(    name='DOW',              formula="kwh ~ DOW",cvReps=4),
-#   DOW_tout          = ModelDescriptor(    name='DOW_tout',         formula="kwh ~ DOW + tout.mean",cvReps=4),
-#   DOW_tout_DL       = ModelDescriptor(    name='DOW_tout_DL',      formula="kwh ~ DOW + tout.mean + day.length",cvReps=4),
-#   DOW_tout_DL_65    = ModelDescriptor(    name='DOW_tout_DL_65',   formula="kwh ~ DOW + tout.mean + day.length + tout.mean.65",cvReps=4),
-#   DOW_tout_DL_CP65  = ModelDescriptor(    name='DOW_tout_DL_CP65', formula="kwh ~ DOW + tout.mean.65lower + tout.mean.65upper + day.length",cvReps=4),
-#   DOW_tout_DL_l1    = ModelDescriptor(    name='DOW_tout_DL_l1',   formula="kwh ~ DOW + tout.mean + day.length + tout.mean.65.l1",cvReps=4),
-#   DOW_tout.min_DL   = ModelDescriptor(    name='DOW_tout.min_DL',  formula="kwh ~ DOW + tout.min  + day.length",cvReps=4),
-#   DOW_tout.max_DL   = ModelDescriptor(    name='DOW_tout.max_DL',  formula="kwh ~ DOW + tout.max  + day.length",cvReps=4),
-#   DOW_DD_DL         = ModelDescriptor(    name='DOW_DD_DL',        formula="kwh ~ DOW + CDH + day.length",cvReps=4),
-#   DOW_tout_DL_vac   = ModelDescriptor(    name='DOW_tout_DL_vac',  formula="kwh ~ DOW + tout.mean + day.length + vac",cvReps=4),
-#   DOW_toutCP_DL     = DescriptorGenerator(name='DOW_toutCP_DL',    genImpl=toutDailyCPGenerator, terms='+ DOW + day.length',subset=list(all="TRUE"),cvReps=1), # 1 CP
-  DOW_toutCP_DL_l1  = DescriptorGenerator(name='DOW_toutCP_DL_l1', genImpl=toutDailyCPGenerator, terms='+ DOW + day.length + tout.mean.65.l1',subset=list(all="TRUE"),cvReps=4) # 1 CP
-#   DOW_toutNP_DL_l1  = DescriptorGenerator(name='DOW_toutNP_DL_l1', genImpl=toutDailyNPCPGenerator, terms='+ DOW + day.length + tout.mean.65.l1',subset=list(all="TRUE"),cvReps=4), # non parametric change point model fixed at 55,65,75
-#   DOW_tout2CP_DL_l1 = DescriptorGenerator(name='DOW_tout2CP_DL_l1',genImpl=toutDailyFlexCPGenerator, terms='+ DOW + day.length + tout.mean.65.l1',subset=list(all="TRUE"),cvReps=4)  # 2 CPs
+   tout              = ModelDescriptor(    name='tout',             formula="kwh ~ tout.mean",cvReps=4),
+   WKND              = ModelDescriptor(    name='WKND',             formula="kwh ~ WKND",cvReps=4),
+   DOW               = ModelDescriptor(    name='DOW',              formula="kwh ~ DOW",cvReps=4),
+   DOW_tout          = ModelDescriptor(    name='DOW_tout',         formula="kwh ~ DOW + tout.mean",cvReps=4),
+   DOW_tout_DL       = ModelDescriptor(    name='DOW_tout_DL',      formula="kwh ~ DOW + tout.mean + day.length",cvReps=4),
+   DOW_tout_DL_65    = ModelDescriptor(    name='DOW_tout_DL_65',   formula="kwh ~ DOW + tout.mean + day.length + tout.mean.65",cvReps=4),
+   DOW_tout_DL_CP65  = ModelDescriptor(    name='DOW_tout_DL_CP65', formula="kwh ~ DOW + tout.mean.65lower + tout.mean.65upper + day.length",cvReps=4),
+   DOW_tout_DL_l1    = ModelDescriptor(    name='DOW_tout_DL_l1',   formula="kwh ~ DOW + tout.mean + day.length + tout.mean.65.l1",cvReps=4),
+   DOW_tout.min_DL   = ModelDescriptor(    name='DOW_tout.min_DL',  formula="kwh ~ DOW + tout.min  + day.length",cvReps=4),
+   DOW_tout.max_DL   = ModelDescriptor(    name='DOW_tout.max_DL',  formula="kwh ~ DOW + tout.max  + day.length",cvReps=4),
+   DOW_DD_DL         = ModelDescriptor(    name='DOW_DD_DL',        formula="kwh ~ DOW + CDH + day.length",cvReps=4),
+   DOW_tout_DL_vac   = ModelDescriptor(    name='DOW_tout_DL_vac',  formula="kwh ~ DOW + tout.mean + day.length + vac",cvReps=4),
+   DOW_toutCP_DL     = DescriptorGenerator(name='DOW_toutCP_DL',    genImpl=toutDailyCPGenerator, terms='+ DOW + day.length',subset=list(all="TRUE"),cvReps=1), # 1 CP
+   DOW_toutCP_DL_l1  = DescriptorGenerator(name='DOW_toutCP_DL_l1', genImpl=toutDailyCPGenerator, terms='+ DOW + day.length + tout.mean.65.l1',subset=list(all="TRUE"),cvReps=4), # 1 CP
+   DOW_toutNP_DL_l1  = DescriptorGenerator(name='DOW_toutNP_DL_l1', genImpl=toutDailyNPCPGenerator, terms='+ DOW + day.length + tout.mean.65.l1',subset=list(all="TRUE"),cvReps=4), # non parametric change point model fixed at 55,65,75
+   DOW_tout2CP_DL_l1 = DescriptorGenerator(name='DOW_tout2CP_DL_l1',genImpl=toutDailyFlexCPGenerator, terms='+ DOW + day.length + tout.mean.65.l1',subset=list(all="TRUE"),cvReps=4)  # 2 CPs
   
 #   wea_mean       = "kwh ~ tout.mean + pout.mean + rh.mean + WKND + vac",
 #   dailyCPFixed   = DescriptorGenerator(name='toutFixed',genImpl=toutDailyFixedCPGenerator,subset=list(all="TRUE")),
@@ -159,7 +162,7 @@ if (length(args) > 0) {
   cfg$allZips  <- DATA_SOURCE$getZips(useCache=cfg$CACHE_QUERY_DATA)
 }
 # bakersfield, oakland
-cfg$allZips = c(93304,94610)
+#cfg$allZips = c(93304,94610)
 
 
 #cfg$allZips = c(95684,94923,94503,94574,94559,94028,94539,94564,94702,94704,94085,

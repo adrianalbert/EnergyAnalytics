@@ -118,6 +118,7 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
   rList = as.list(rep(NA,600)) # there are < 600 zips so far... 
   i = 0
   n = length(ziplist)
+  prevColCount <- 0
   for (zip in ziplist) { 
     i = i+1
     zip = as.numeric(zip)
@@ -153,18 +154,29 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
     } else {
       new = fun(data,model.name=model.name,subset.name=subset.name)
     }
-    #print(new)
+    
     if(length(new) == 0) { next }
     # the next several lines try to eliminate duplicate entries
     dataNames = names(new) # assume data.frame
     if(is.null(dataNames)) dataNames = colnames(new) # fall back to array with names cols
-    print(dataNames)
+    #print(dataNames)
     uniqueCols = intersect(dataNames,c('id','model.name','subset.name')) # find all cols of interest
     if(length(uniqueCols) > 0) {
       new = new[!duplicated(new[,uniqueCols]),] # somehow, some of the sp_id entries are duplicates
     }
+    # cbind doesn't work on a single row...
+    if(is.null(dim(new))) {
+      new = matrix(new,nrow=1,dimnames=list(NULL,names(new)))
+    }
     new = cbind(new,zip5=zip) # ensure the zipcode is there
-    #print(colnames(new))
+    newLength = length(colnames(new))
+    if(prevColCount > newLength) {
+      print(colnames(new))
+      print('trouble with column length')
+      print(new)
+      # skip?
+    }
+    prevColCount <- newLength
     rownames(new) <- c()
     rList[[i]] = new # inserting into a pre-allocated list is faster than running rbind all the time
     #rList[[length(rList)+1]] = new
@@ -175,7 +187,7 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
   nCols = lapply(rList,function(x) length(colnames(x)))
   rList[nCols == 0] <- NULL # remove empty parts of the list.
   #print(do.call(rbind,lapply(rList,function(x) c(length(colnames(x)),unique(x['zip5'])))))
-  print(do.call(rbind,lapply(rList,function(x) c(colnames(x),unique(x['zip5'])))))
+  #print(do.call(rbind,lapply(rList,function(x) c(colnames(x),unique(x['zip5'])))))
   
   result = do.call(rbind,rList[!is.na(rList)]) # here we bind the results together
   if(appendZipData) { result = addZipData(result) }
@@ -186,8 +198,10 @@ addZipData = function(orig) {
   if(! "data.frame" %in% class(orig)) {  # because the zip data is mixed, the return value
     orig = data.frame(orig)              # has to be a data frame too
   }
-  zipData = db.getZipData(useCache=T)
+  zipData = DATA_SOURCE$getZipData(useCache=T)
   zipCol = grep('^zip',colnames(orig),value=T)[1]
+  print(colnames(orig))
+  print('1')
   print(zipCol)
   orig[[zipCol]] = as.numeric(orig[[zipCol]])
   return(merge(orig,zipData,by.x=zipCol,by.y='zip5'))
