@@ -10,7 +10,10 @@ Mode <- function(x) {
 basicFeatures = function(r){ # r is an instance of ResDataClass
   data <- as.matrix(r$kwMat)
   id   <- r$id
-
+  
+  monthTotals = sapply(split(r$kw,factor(format(r$dates,'%b'),levels=month.abb)),mean,na.rm=T) * 30 * 24
+  names(monthTotals) <- paste('kw.total.',names(monthTotals),sep='')
+  
   summerMon = 4:8 # May through Sept - zero based
   summerSubset = as.POSIXlt(r$dates)$mon %in% summerMon
   
@@ -51,7 +54,8 @@ basicFeatures = function(r){ # r is an instance of ResDataClass
   dHalfway <- dMin + (dMax - dMin) / 2
   dHighD   <- rowSums(data > dHalfway,dims=1)
   dMn2mx   <- dMin / dMax
-  dN2d     <- rowMean(data[,2:5],na.rm=T) / rowMean(data[,14:17],na.rm=T) # 2-5am comp to 2-5pm
+  dN2d     <- rowMeans(data[,2:5],na.rm=T) / rowMeans(data[,16:19],na.rm=T) # 2-5am comp to 4-7pm
+  nv2dv    <- var(as.vector(data[,2:5]),na.rm=T) / var(as.vector(data[,16:19]),na.rm=T) # var for night 2-5am comp to evening 4-7pm
   # we need dates for this one...
   #wkend = something to do with the DOW in the dates
   #wkdays = ! wkend
@@ -112,14 +116,15 @@ basicFeatures = function(r){ # r is an instance of ResDataClass
   daily.kw.max.var   = var(dMax/kw.mean,                use='complete.obs') # normed by mean of kW
   
   lags = 0:24
-  lag.cor = apply(as.matrix(lags),  1,function(x) cor(r$kw,lag(r$tout,x),use='complete.obs')) 
+  #lag.cor = apply(as.matrix(lags),  1,function(x) cor(r$kw,lag(r$tout,x),use='complete.obs')) 
   lag.ma  = apply(as.matrix(lags[-1]),1,function(x) cor(r$kw,ma(r$tout,x), use='complete.obs')) # no width 0
-  names(lag.cor) <- c(paste('lag',lags,  sep=''))
-  names(lag.ma)  <- c(paste('ma', lags[-1],sep=''))
-
+  #names(lag.cor) <- c(paste('lag',lags,  sep=''))
+  #names(lag.ma)  <- c(paste('ma', lags[-1],sep=''))
+  max.MA = which.max(lag.ma)
   basics = c(id=id,
              nObs=nObs,
              kw.mean=kw.mean,kw.mean.summer=kw.mean.summer,kw.mean.winter=kw.mean.winter,
+             kw.total=kw.mean * 365 * 24,
              max=max,  # will be named 'max.97.' due to quantile origin
              min=min,  # will be called 'min.3.' due to quantile origin
              kw.var=kw.var,kw.var.summer=kw.var.summer,kw.var.winter=kw.var.winter,
@@ -132,15 +137,23 @@ basicFeatures = function(r){ # r is an instance of ResDataClass
              daily.kw.max.var=daily.kw.max.var,
              kw.pout.cor=kw.pout.cor,
              kw.tout.cor=kw.tout.cor,
-             lag.cor,
-             lag.ma)
+             max.MA=max.MA,
+             monthTotals,
+             nv2dv=nv2dv
+             #lag.cor,
+             #lag.ma
+             )
   
   dailyFeatures <- cbind(dMax,dMin,dMean,dRange,dHighD,dMn2mx,dN2d)
   dailyFeatures[dailyFeatures == Inf] = NA # these will be caught by the na.rm in the mean fn
   colnames(dailyFeatures) <- c('max','min','mean','range','dur','mn2mx','n2d')
-  
+  monthFeatures = t(sapply(split(data.frame(dailyFeatures),factor(format(r$days,'%b'),levels=month.abb)),colMeans,na.rm=T))
   # return the means across all days
-  ret <- c(basics,apply(dailyFeatures,2,FUN=mean,na.rm=T))
+  augF = monthFeatures[c('Aug'),]
+  names(augF) <- paste('Aug_',names(augF),sep='')
+  janF = monthFeatures[c('Jan'),]
+  names(janF) <- paste('Jan_',names(janF),sep='')
+  ret <- c(basics,apply(dailyFeatures,2,FUN=mean,na.rm=T),augF,janF)
   #print(ret)
   return(ret)
 }

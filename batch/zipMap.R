@@ -27,7 +27,7 @@ append.spdf <- function(sp.df,sp.df.col,df.only,df.col){
 }
 
 # PLOT: Simple function that plots a column of continuous values on a color scale
-calZipPlot <- function (calzip,color.column,main=NULL,precis=0,colorMap=NULL,legend.cex=0.8,legend.title=NULL,legend.bg=NULL){
+calZipPlot <- function (calzip,color.column,main=NULL,precis=0,colorMap=NULL,intervalStyle='quantile',legend.cex=0.8,legend.title=NULL,legend.bg=NULL){
   # calzip is the california zipcodes SPDF
   # color.column is the column of the dataframe to be colorcoded
   # main is an optional plot title
@@ -39,10 +39,11 @@ calZipPlot <- function (calzip,color.column,main=NULL,precis=0,colorMap=NULL,leg
   if(is.character(colorval)) { colorval = factor(colorval) }
   if(is.factor(colorval))    { col = mapColors(colorval,colorMap) }
   else {
-    quantiles <- classIntervals(colorval,n=7,style="quantile",dataPrecision=precis,na.rm=T)
-    col <- findColours(quantiles, colorMap) 
-    # plot(quantiles, pal = colorMap) 
+    quantiles <- classIntervals(colorval,n=7,style=intervalStyle,dataPrecision=precis,na.rm=T)
+    col <- findColours(quantiles, colorMap,digits=2) 
+    # plot(quantiles, pal = colorMap)
   }
+  
   
   # make a special color for NAN entries
   col[is.na(colorval)] <- 'grey80'
@@ -78,14 +79,14 @@ getCalSPDF = function() {
   proj4string(shpData) <- "+proj=longlat +datum=WGS84" # projection instructions
   return(shpData)
 }
-calMap = function(df,plotCol,zipCol=NULL,calZipData=NULL,main=NULL,colorMap=NULL,legend.cex=0.8,legend.title=NULL) {
+calMap = function(df,plotCol,zipCol=NULL,calZipData=NULL,main=NULL,colorMap=NULL,precis=0,intervalStyle='quantile',legend.cex=0.8,legend.title=NULL) {
   if(is.null(colorMap))   { colorMap   <- brewer.pal(7,"Reds") }
   if(is.null(calZipData)) { calZipData <- getCalSPDF()         }
   if(is.null(zipCol)) {
     zipCol = grep('^zip',colnames(df),value=T)[1]
   }
   calZipData@data<-append.spdf(calZipData,'NAME',df,zipCol)
-  calZipPlot(calZipData,plotCol,main,colorMap=colorMap,legend.cex=legend.cex,legend.title=legend.title)
+  calZipPlot(calZipData,plotCol,main,colorMap=colorMap,intervalStyle=intervalStyle,precis=precis,legend.cex=legend.cex,legend.title=legend.title)
 }
 
 ggCalMap = function(df,zipCol,plotCol,calZipData=NULL,main=NULL) {

@@ -25,9 +25,9 @@ source(file.path(getwd(),'basicFeatures.R'))     # typical max, min, mean, range
 source(file.path(getwd(),'regressionSupport.R')) # mostly regressor manipulation
 source(file.path(getwd(),'solaRUtil.R'))         # solar geometry
 source(file.path(getwd(),'timer.R'))             # adds tic() and toc() functions
-#source(file.path(getwd(),'stanfordDataAccess.R')) 
+source(file.path(getwd(),'stanfordDataAccess.R')) 
 #DATA_SOURCE = StanfordData(local=T)
-source(file.path(getwd(),'whartonDataAccess.R')) 
+#source(file.path(getwd(),'whartonDataAccess.R')) 
 DATA_SOURCE = WhartonData()
 
 # run this if you need it, but everything should be installed by a setup script

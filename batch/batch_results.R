@@ -85,6 +85,18 @@ invalidIdsFile    = file.path(getwd(),resultsDir,'invalidIds.RData')
 #  load(dataFile)
 #}
 
+
+if(file.exists(invalidIdsFile)) {
+  load(invalidIdsFile)
+} else {
+  invalids = combine(allZips, resultType='invalid.ids',
+                     fun=function(x) { return(x$id) }, appendZipData=F)
+  colnames(invalids) = c('id','zip')
+  save(list=c('invalids'),file=invalidIdsFile)
+}
+gc()
+
+
 if(file.exists(resultBasicsFile)) {
   load(resultBasicsFile)
 } else {
@@ -92,8 +104,6 @@ if(file.exists(resultBasicsFile)) {
   basics$idZip = paste(basics$id,basics$zip5,sep='.')
   
   basicMeans = combine(allZips,resultType='features.basic',fun=function(x) { t(colMeans(x)) },appendZipData=T )
-  MAm = as.matrix(basics[,grep("^ma[0-9]",colnames(basics))])
-  basics$maxMA = as.numeric(apply(MAm,1,which.max))
   
   basics$kw.total = basics$kw.mean * 365 * 24
   basicMeans$kw.total = basicMeans$kw.mean * 365 * 24
@@ -103,15 +113,18 @@ if(file.exists(resultBasicsFile)) {
 }
 gc()
 
-if(file.exists(invalidIdsFile)) {
-  load(invalidIdsFile)
-} else {
-  invalids = combine(allZips, resultType='invalid.ids',
-                    fun=function(x) { return(x$id) }, appendZipData=F)
-  colnames(invalids) = c('id','zip')
-  save(list=c('invalids'),file=invalidIdsFile)
-}
-gc()
+ws = getWeatherSummary()
+#wbasics = basics
+#wbasicMeans = basicMeans
+#wbasicMeansWS = merge(wbasicMeans,ws,by.x='zip5',by.y='zip5')
+#wbasicsWS = merge(wbasics,ws,by.x='zip5',by.y='zip5')
+#wbasicMeansWS$rankDiff = rank(wbasicMeansWS$kw.total) - rank(wbasicMeansWS$tout)
+
+
+basicMeansWS = merge(basicMeans,ws,by.x='zip5',by.y='zip5')
+basicsWS = merge(basics,ws,by.x='zip5',by.y='zip5')
+basicMeansWS$rankDiff = rank(basicMeansWS$kw.total) - rank(basicMeansWS$tout)
+
 
 if(file.exists(resultScalarsFile)) {
   load(resultScalarsFile)
@@ -121,6 +134,10 @@ if(file.exists(resultScalarsFile)) {
   save(list=c('sclrs'),file=resultScalarsFile)
 }
 gc()
+
+sclrsBasicsWS   = merge(sclrs,basicsWS[c('idZip','kw.var','kw.mean','maxMA')],by.x='idZip', by.y='idZip',all.x=T,all.y=F)
+gc()
+
 
 if(file.exists(coeffDataFile)) {
   load(coeffDataFile)
@@ -149,7 +166,6 @@ if(file.exists(coeffDataFile)) {
 gc()
 
 
-ws = getWeatherSummary()
 if(file.exists(cpDataFile)) {
   load(cpDataFile)
 } else {
@@ -232,10 +248,7 @@ if(file.exists(bestModelDataFile)) {
 }
 
 
-sclrsBasics        = merge(sclrs,basics[c('idZip','kw.var','kw.mean','maxMA')],by.x='idZip', by.y='idZip',all.x=T,all.y=F)
-sclrsBasicsWeather = merge(sclrsBasics,ws,by.x='zip5', by.y='zip5',all.x=T,all.y=F)
-rm('sclrsBasics')
-gc()
+
 
 bestm = melt(best,id.vars='idZip',variable.name='metric',value.name='model_name')
 ggplot(bestm,aes(x=metric,color=model_name,fill=model_name)) + geom_bar(position='dodge') + 
@@ -243,7 +256,7 @@ ggplot(bestm,aes(x=metric,color=model_name,fill=model_name)) + geom_bar(position
 rm(bestm)
 
 png(file.path(getwd(),'figures','density_ar2.png'),width=800,height=600)
-ggplot(subset(sclrsBasicsWeather,
+ggplot(subset(sclrsBasicsWS,
               model.name %in% 
                 c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
                   'DOW_tout.min_DL','DOW_tout.max_DL','DOW_DD_DL',
@@ -264,7 +277,7 @@ dev.off()
 
 
 # note that sigma^2 = 1/(n-p) Sum(w[i] R[i]^2)
-ggplot(subset(sclrsBasicsWeather,
+ggplot(subset(sclrsBasicsWS,
               model.name %in% 
                 c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
                   'DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL',
@@ -273,7 +286,7 @@ ggplot(subset(sclrsBasicsWeather,
               xlim(0,60)  + 
               labs(title='Coeff of Variation for various thermal properties')
 
-ggplot(subset(sclrsBasicsWeather,
+ggplot(subset(sclrsBasicsWS,
               model.name %in% 
                 c('DOW_tout_DL_65','DOW_tout_DL_CP65','DOW_toutNP_DL_l1DailyCP','DOW_toutCP_DLDailyCP',
                   'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
@@ -281,13 +294,13 @@ ggplot(subset(sclrsBasicsWeather,
               xlim(0,1)  + 
               labs(title='Adjusted R2 for change point models')
 
-ggplot(subset(sclrsBasicsWeather,
+ggplot(subset(sclrsBasicsWS,
               model.name %in% c('DOW_toutCP_DLDailyCP')),
        aes(x=adj.r.squared,color=cecclmzn)) + geom_density() + 
        xlim(0,1)  + 
        labs(title='Adjusted R2 for single change point model across CZs')
 
-ggplot(subset(sclrsBasicsWeather,
+ggplot(subset(sclrsBasicsWS,
               zip5 %in% c('93304')),
        aes(x=adj.r.squared,color=model.name)) + geom_density() + 
   xlim(0,1)  + ylim(0,4) +
@@ -319,7 +332,7 @@ ggplot(subset(sclrs,
   geom_point(alpha = 0.03) + labs(title='R2 vs. Tout',x='Tout',y='r.squared')
 
 
-ggplot(subset(sclrsBasicsWeather,
+ggplot(subset(sclrsBasicsWS,
               model.name %in% 
                 c('DOW_toutCP_DL_l1DailyCP')),aes(y=r.squared,x=kw.mean)) + 
   geom_point(alpha = 0.1) + labs(title='R2 vs. kwh',x='kwh',y='r.squared')
@@ -398,6 +411,73 @@ grid()
 # usr returns the outer dimensions of the current plot as c(xmin, xmax, ymin, ymax)
 legend(par('xaxp')[1],par('usr')[4]*0.95, paste(ts,'F'),lty=1:length(ts), title="Temperature",cex=0.8)
 
+
+
+#extract legend
+#https://github.com/hadley/ggplot2/wiki/Share-a-legend-between-two-ggplot2-graphs
+getLegend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+
+loadShapeBreaks = c('aug','jan','year')
+loadShapeColors = c('red','blue','grey30')
+loadShapePlots = list()
+loadShapePlots[['max']] = ggplot(wbasicsWS,aes(x=max,color='year')) + geom_density() + 
+  geom_density(data=wbasicsWS,aes(x=Jan_max,color='jan'))  +
+  geom_density(data=wbasicsWS,aes(x=Aug_max,color='aug'))   + 
+  theme_bw() + theme(text=element_text(size=16)) + 
+  labs(title='max',x='max (kWh/hr)') + 
+  #theme(legend.position="none") + 
+  scale_colour_manual("timeframe", breaks=loadShapeBreaks, values=loadShapeColors) +
+  xlim(0,7.5)
+
+loadShapePlots[['min']] = ggplot(wbasicsWS,aes(x=min)) + geom_density(color='grey10') + 
+  geom_density(data=wbasicsWS,aes(x=Jan_min),color='blue')  +
+  geom_density(data=wbasicsWS,aes(x=Aug_min),color='red')   +  
+  labs(title='min',x='min (kWh/hr)') + 
+  theme_bw() + theme(text=element_text(size=16)) + 
+  xlim(0,1.5)
+
+
+loadShapePlots[['mean']] = ggplot(wbasicsWS,aes(x=mean)) + geom_density(color='grey10') + 
+  geom_density(data=wbasicsWS,aes(x=Jan_mean),color='blue')  +
+  geom_density(data=wbasicsWS,aes(x=Aug_mean),color='red')   +  
+  labs(title='mean',x='mean (kWh/hr)') + 
+  theme_bw() + theme(text=element_text(size=16)) + 
+  xlim(0,3)
+
+loadShapePlots[['range']] = ggplot(wbasicsWS,aes(x=range)) + geom_density(color='grey10') + 
+  geom_density(data=wbasicsWS,aes(x=Jan_range),color='blue')  +
+  geom_density(data=wbasicsWS,aes(x=Aug_range),color='red')   +  
+  labs(title='range',x='range (kWh/hr)') + 
+  theme_bw() + theme(text=element_text(size=16)) + 
+  xlim(0,7)
+
+loadShapePlots[['mn2mx']] = ggplot(wbasicsWS,aes(x=mn2mx)) + geom_density(color='grey10') + 
+  geom_density(data=wbasicsWS,aes(x=Jan_mn2mx),color='blue')  +
+  geom_density(data=wbasicsWS,aes(x=Aug_mn2mx),color='red')   +  
+  labs(title='min/max',x='min/max') + 
+  theme_bw() + theme(text=element_text(size=16)) + 
+  xlim(0,0.75)
+
+loadShapePlots[['n2d']] = ggplot(wbasicsWS,aes(x=n2d)) + geom_density(color='grey10') + 
+  geom_density(data=wbasicsWS,aes(x=Jan_n2d),color='blue')  +
+  geom_density(data=wbasicsWS,aes(x=Aug_n2d),color='red')   +  
+  labs(title='night/day',x='night/day') + 
+  theme_bw() + theme(text=element_text(size=16)) + 
+  xlim(0,3)
+
+mylegend <- getLegend(loadShapePlots[['max']])
+arg.list = c(loadShapePlots,list(
+  #main='Daily load shape metrics averaged over Jan., Aug. and all year',
+  ncol=3))
+do.call(grid.arrange,arg.list)   
+
+
+
 sclrs2 = subset(sclrs,model.name=='DOW_tout2CP_DL_l1DailyFlexCP') # 2 change points
 sclrs1 = subset(sclrs,model.name=='DOW_toutCP_DL_l1DailyCP')     # 1 change point
 sclrs0 = subset(sclrs,model.name=='DOW_tout_DL_l1')          # no change point 
@@ -456,10 +536,7 @@ calMap(ws,'dp','zip5',main='Mean annual dew point (F)',colorMap=brewer.pal(9,"Pu
 # see zipMap.R for the calMap implementation and other plots
 calMap(wbasicMeans,'kw.total',main='Mean annual electricity consumption (kWh)',colorMap=brewer.pal(9,"Reds") )
 calMap(basicMeans,'lag0',main='Simple correlation between Tout and kW denamd: corr(Tout,kW)',colorMap=rev(brewer.pal(9,"RdBu")) )
-wbasicMeansWS = merge(wbasicMeans,ws,by.x='zip5',by.y='zip5')
-wbasicsWS = merge(wbasics,ws,by.x='zip5',by.y='zip5')
-wbasicMeansWS$rankDiff = rank(wbasicMeansWS$kw.total) - rank(wbasicMeansWS$tout)
-wbasicMeansWS = mergeCensus(wbasicMeansWS)
+
 
 calMap(wbasicMeansWS,'rankDiff',main='Rank difference between annual kWh demand and temperature',colorMap=rev(brewer.pal(9,"RdBu")) )
 ggplot(wbasicMeansWS,aes(x=toutC,y=kw.total)) + 
@@ -504,6 +581,11 @@ ggplot(melt(wbasicMeansWS[,c('kw.mean','var.summer','var.winter')],id=c('kw.mean
                       breaks=c('var.summer', 'var.winter'),
                       labels=c('summer','winter'),palette='Set1' )
 
+wbm = melt(wbasicMeansWS[,c('kw.total','median_hh_income_val','owner_hh_size_val','tout','owner_occupied_pct','pct_below_poverty_pct','median_home_value_val','median_pop_age_val','pop_above_65_val','median_rooms_val')],id.vars=c('kw.total'))
+ggplot(wbm,aes(x=value,y=kw.total)) + geom_point() + 
+  facet_wrap(~ variable,scales='free_x',nrow=2) + 
+  ylim(0,30000) +
+  theme_bw() + theme(text=element_text(size=16))
 
 # histograms of annual energy demand
 ggplot(basics,aes(x=kw.total,color=cecclmzn)) + geom_density() + xlim(0,40000) + 
@@ -576,10 +658,23 @@ ggplot(wbasics,aes(x=(min.day.tout-32)*5/9)) + geom_density(size=1) +
   labs(title='Temperature for minimum day of demand',x='temp. (C) for minimum day of demand') + 
   xlim(-5,35)
 
-ggplot(basics,aes(x=t90kw)) + geom_density(size=1) +
+ggplot(wbasics,aes(x=t90kw)) + geom_density(size=1) +
   theme_bw() + theme(text=element_text(size=16)) + 
   labs(title='Average timing of top 10% of demand hours',x='Average hour for top 10% of demand') + 
   scale_x_continuous(breaks=1:24)
+
+
+ggplot(basics,aes(x=kw90)) + geom_histogram(binwidth=1) +
+  theme_bw() + theme(text=element_text(size=16)) + 
+  labs(title='Modal timing of top 10% of demand hours',x='Modal hour for top 10% of demand') + 
+  scale_x_continuous(breaks=1:24)
+
+ggplot(basics,aes(x=maxHOD)) + geom_histogram(binwidth=1) +
+  theme_bw() + theme(text=element_text(size=16)) + 
+  labs(title='Max hourly mean',x='Hour with highest hourly mean') + 
+  scale_x_continuous(breaks=1:24)
+
+
 
 ggplot(wbasics,aes(x=month(as.POSIXlt(max.day.date,origin='1970-01-01')))) + 
   geom_histogram(binwidth=1) + scale_x_continuous(breaks=1:12) + 
@@ -645,7 +740,7 @@ ggplot(basicMeans,aes(x=median_income,y=kw.total)) + geom_point(colour="black") 
 ggplot(basicMeans,aes(x=median_income,y=kw.total,color=cecclmzn)) + geom_point() + ylim(0,20000) + labs(title='Zip code median income vs. mean annual energy (kWh)',y='Annual kWh',x='Median income')
 
 # best fit moving average width
-ggplot(sclrsBasicsWeather,aes(x=maxMA,color=cecclmzn,fill=cecclmzn)) + geom_histogram(binwidth=1) +
+ggplot(sclrsBasicsWS,aes(x=maxMA,color=cecclmzn,fill=cecclmzn)) + geom_histogram(binwidth=1) +
     labs(title='Best fit moving average width by climate zone',x='moving average width',y='count')
 # todo: use MA results with good fit from thermal models.
 # i.e. define a class of high thermal and low thermal response and locate them within 

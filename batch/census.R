@@ -222,6 +222,15 @@ mergeCensus = function(df,zctaCol='ZCTA',zipCol='zip5',censusStats=NULL) {
 # add 2010 census gazeteer population, lat, lon, etc values to zip codes that match ZCTAs
 # Note that this code uses 'merge' and order is not preserved: if a zip code is unrecognized, its row is filled 
 # with NAs and appended to the end of the data frame returned
+# Column 1   GEOID 	Five digit ZIP Code Tabulation Area Census Code
+# Column 2 	POP10 	2010 Census population count.
+# Column 3 	HU10 	2010 Census housing unit count.
+# Column 4 	ALAND 	Land Area (square meters) - Created for statistical purposes only
+# Column 5 	AWATER 	Water Area (square meters) - Created for statistical purposes only
+# Column 6 	ALAND_SQMI	Land Area (square miles) - Created for statistical purposes only
+# Column 7 	AWATER_SQMI	Water Area (square miles) - Created for statistical purposes only
+# Column 8 	INTPTLAT	Latitude (decimal degrees) First character is blank or "-" denoting North or South latitude respectively
+# Column 9 	INTPTLONG	Longitude (decimal degrees) First character is blank or "-" denoting East or West longitude respectively
 mergeGazeteer = function(df,zctaCol='ZCTA',zipCol='zip5') {
   # if one is not already present, use the zip code column to add a ZCTA column
   if(! 'ZCTA' %in% colnames(df)) {
