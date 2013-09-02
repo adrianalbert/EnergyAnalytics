@@ -84,7 +84,7 @@ clusterSumOfSquares = function(data,countSeq=1:15,iter.max=10) {
     km <- kmeans(data,centers=i,iter.max=iter.max)
     
     counts = apply(as.matrix(1:i),1,function(x) sum(km$cluster==x))
-    wss[i] <- (km$withinss/counts) / rowSums(km$centers)
+    wss[i] <- mean(km$withinss) #(km$withinss/counts) / rowSums(km$centers)
   }
   print(wss/nrow(data))
   #print(wss/nrow(data))
@@ -172,14 +172,20 @@ if(doFigures) {
   dev.copy2pdf(file = paste(outDir,'clutser_err.pdf',sep=''))
   
   
-  km = kmeans(as.matrix(occ.hr.m[,2:25],ncol=24),10,iter.max=20)
-  op <- par(no.readonly = TRUE)
-  par( mfrow=c(3,4), oma=c(2,2,3,0),mar=c(2,2,2,2)) # Room for the title
-  for(c in sort(unique(km$cluster))){
-    hmap(data=as.matrix(occ.hr[km$cluster == c,2:25]),main=paste(c,' (n=',sum(km$cluster==c),')',sep=''))
-  }
-  par(op)
+  fits = clusterSumOfSquares(as.matrix(occ.wday.m[,2:8]),seq(2,20,1),20)
+  vals = which(! is.na(fits))
+  plot(vals[-1],fits[vals][-1],type='o',ylab='error',xlab='# of clusters',main='Fit error vs. number of clusters')
+  dev.copy2pdf(file = paste(outDir,'wday_clutser_members.pdf',sep=''))
   
+  kwd = kmeans(as.matrix(occ.wday.m[,2:8],ncol=7),12,iter.max=20)
+  showClusters(kwd,occ.wday.m[,2:8],ncol=4)
+  dev.copy2pdf(file = paste(outDir,'wday_clutser_members.pdf',sep=''))
+  
+  matplot(t(kwd$centers),type='l',main='Day of week K-means cluster centers',ylab='density',xlab='Day of week (Sunday to Saturday')  
+  
+  
+  km = kmeans(as.matrix(occ.hr.m[,2:25],ncol=24),10,iter.max=20)
+  showClusters(km,occ.hr.m[,2:25])
   dev.copy2pdf(file = paste(outDir,'clutser_members.pdf',sep=''))
   
   op <- par(no.readonly = TRUE)
@@ -194,10 +200,19 @@ if(doFigures) {
   op <- par(no.readonly = TRUE)
   par( mfrow=c(2,1), oma=c(2,2,3,0),mar=c(2,2,2,2)) # Room for the title
   kmwd = kmeans(as.matrix(occ.wkdy.m[,2:25],ncol=24),10,iter.max=20)
-  matplot(t(kmwd$centers),type='l',main='K=Means cluster centers (annual percentile)',ylab='density',xlab='hour of day')  
+  matplot(t(kmwd$centers),type='l',main='Weekday K-means cluster centers (by monthly percentile)',ylab='density',xlab='hour of day')  
   kmnd = kmeans(as.matrix(occ.wknd.m[,2:25],ncol=24),10,iter.max=20)
-  matplot(t(kmnd$centers),type='l',main='K=Means cluster centers (monthly percentile)',ylab='density',xlab='hour of day')
+  matplot(t(kmnd$centers),type='l',main='Weekend K-means cluster centers (by monthly percentile)',ylab='density',xlab='hour of day')
   par(op)
   
   dev.copy2pdf(file = paste(outDir,'clutser_centers.pdf',sep=''))
+}
+
+showClusters = function(km,obs,ncol=4) {
+  op <- par(no.readonly = TRUE)
+  par( mfrow=c(ceiling(nrow(kwd$centers)/ncol),ncol), oma=c(2,2,3,0),mar=c(2,2,2,2)) # Room for the title
+  for(c in sort(unique(km$cluster))){
+    hmap(data=as.matrix(obs[km$cluster == c,]),main=paste(c,' (n=',sum(km$cluster==c),')',sep=''))
+  }
+  par(op)
 }

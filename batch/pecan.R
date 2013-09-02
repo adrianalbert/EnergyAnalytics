@@ -2,6 +2,9 @@
 # and copy the 1-minute... directory of pecan data into it
 # double check you are in the working directory that contains the pecan data
 
+#conf.basePath = file.path('f:/dev/pge_collab/EnergyAnalytics/batch')
+#setwd(conf.basePath)
+
 PECAN_DATA_DIR = 'pecan/1-minute interval data'
 PECAN_DATA_FILE = file.path(PECAN_DATA_DIR,'pecan.RData')
 PECAN_WEATHER_FILE = file.path(PECAN_DATA_DIR,'weather.RData')
@@ -23,7 +26,8 @@ pecan = function(forceReload=F) {
     dayData = c()
     for(homeDir in list.dirs(PECAN_DATA_DIR,full.name=F,recursive=F)) {
       parts = strsplit(homeDir,'[/\\]')[[1]]
-      home = parts[length(parts)]
+      home = str_trim(parts[length(parts)]) # just the name, with whitespace removed.
+      print(home)
       homeData = data.frame(c()) 
       for(df in list.files(homeDir,pattern='^[^~].*xlsx')) {
         print(df)
@@ -37,9 +41,10 @@ pecan = function(forceReload=F) {
         print(dim(dayData))
         homeData <- rbind(homeData,dayData)
       }
-      home <- str_replace(home,' ','')   # eliminate spaces
-      home <- strsplit(home,'-')[[1]][1] # Truncate at first '-' (if any)
-      parts = strsplit(names(homeData),'\\.+')
+      home <-  str_replace(home,' ','')      # eliminate spaces
+      home <-  strsplit(home,'-')[[1]][1]    # Truncate at first '-' (if any)
+      home <-  str_trim(home) # whitespace removed.
+      parts <- strsplit(names(homeData),'\\.+') # now fix the column names
       names(homeData) = sapply(parts,function(x) {
          out = c()
          if(x[length(x)] == 'kVA'){
@@ -72,22 +77,24 @@ toHourly = function(data,dateCol='date'){
   return(hourly)
 }
 
-pecanCombinedFile = c()
-if(file.exists(PECAN_COMBINED_FILE) && ! forceReload) {
-  load(PECAN_COMBINED_FILE)
-} else {
-  pecanData = pecan()
-  # append matching weather data to each pecan data.frame
-  source('wunderground.R')
-  pecanWeat = pecanWeatherData()
-  pecanCombinedData = list()
-  for(homeName in names(pecanData)) {
-    print(homeName)
-    homeData       = pecanData[[homeName]]
-    matchedWeather = interpolateTime(pecanWeat,homeData$date)
-    pecanCombinedData[[homeName]] <- merge(homeData,matchedWeather,by.x='date',by.y='Time')
+pecanPlusWeather = function(forceReload=F) {
+  pecanPlusWeather = list()
+  if(file.exists(PECAN_COMBINED_FILE) && ! forceReload) {
+    load(PECAN_COMBINED_FILE)
+  } else {
+    pecanData = pecan()
+    # append matching weather data to each pecan data.frame
+    source('wunderground.R')
+    pecanWeat = pecanWeatherData()
+    for(homeName in names(pecanData)) {
+      print(homeName)
+      homeData       = pecanData[[homeName]]
+      matchedWeather = interpolateTime(pecanWeat,homeData$date)
+      pecanPlusWeather[[homeName]] <- merge(homeData,matchedWeather,by.x='date',by.y='Time')
+    }
+    save(list=c('pecanPlusWeather'),file=PECAN_COMBINED_FILE) # update the data on disk
   }
-  save(list=c('pecanCombinedData'),file=PECAN_COMBINED_FILE) # update the data on disk
+  return(pecanPlusWeather)
 }
 
 
@@ -106,29 +113,35 @@ solar = c('gen')
 ev    = c('CAR1')
 net   = c('Grid')
 
-for(homeName in names(pecanCombinedData)){
-  print(homeName)
-  homeData = pecanCombinedData[[homeName]]
-  #print(names(homeData))
-  print(dim(homeData))
-  
-  op <- par(no.readonly = TRUE)
-  par( mfrow=c(2,1), oma=c(2,2,3,0),mar=c(2,2,2,2)) # Room for the title
-  maxUsage = max(usage(homeData,total))
-  plot(homeData$date,usage(homeData,total),type='l',col='gray',main='minute',ylim=c(0,maxUsage))
-  points(homeData$date,usage(homeData,HVAC),type='l',col='#ff9999')
-  points(homeData$date,usage(homeData,user),type='l',col='blue')
-  points(homeData$date,homeData$TemperatureF/*120/maxUsage,type='l',col='#99ff99')
-  
-  hrData = toHourly(homeData)
-  maxUsage = max(usage(hrData,total))
-  plot(hrData$date,usage(hrData,total),type='l',col='gray',main='hourly',ylim=c(0,maxUsage))
-  points(hrData$date,usage(hrData,HVAC),type='l',col='#ff9999')
-  points(hrData$date,usage(hrData,user),type='l',col='blue')
-  points(hrData$date,hrData$TemperatureF*120/maxUsage,type='l',col='#99ff99')
-  par(op)
+runExample = F
+if(runExample) {
+  ppw = pecanPlusWeather()
+  for(homeName in names(ppw)){
+    print(homeName)
+    homeData = ppw[[homeName]]
+    #print(names(homeData))
+    print(dim(homeData))
+    
+    op <- par(no.readonly = TRUE)
+    par( mfrow=c(2,1), oma=c(2,2,3,0),mar=c(2,2,2,2)) # Room for the title
+    maxUsage = max(usage(homeData,total))
+    plot(homeData$date,usage(homeData,total),type='l',col='gray',main='minute',ylim=c(0,maxUsage))
+    points(homeData$date,usage(homeData,HVAC),type='l',col='#ff9999')
+    points(homeData$date,usage(homeData,user),type='l',col='blue')
+    points(homeData$date,homeData$TemperatureF/100*maxUsage,type='l',col='#99ff99')
+    
+    hrData = toHourly(homeData)
+    maxUsage = max(usage(hrData,total))
+    plot(hrData$date,usage(hrData,total),type='l',col='gray',main='hourly',ylim=c(0,maxUsage))
+    points(hrData$date,usage(hrData,HVAC),type='l',col='#ff9999')
+    points(hrData$date,usage(hrData,user),type='l',col='blue')
+    points(hrData$date,hrData$TemperatureF/100*maxUsage,type='l',col='#99ff99')
+    mtext(homeName, line=0, font=2, cex=1.2, outer=TRUE)
+    par(op)
+    grid()
+    dev.copy2pdf(file=file.path(getwd(),PECAN_DATA_DIR,paste(homeName,'.pdf',sep='')))
+  }
 }
-
 
 #points(homeData$date,usage(homeData,fridge),type='l',col='green')
 #plot(homeData$date,usage(homeData,'THEATER1'),type='l')
