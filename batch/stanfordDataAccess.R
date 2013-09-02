@@ -78,6 +78,14 @@ StanfordData = function(local=F){
     data = run.query(query,obj$meterDB(),obj$DB_CFG_FILE)
   }
   
+  obj$getAllGasData = function(zip=NULL,useCache=F,forceRefresh=F) { # get all gas data for zip code
+    return(c()) # NO GAS DATA
+  }
+  
+  obj$getSPGasData = function(sp_id,zip=NULL) { # gets gas data (if any) by electric sp_id
+    return(c()) # NO GAS DATA
+  }
+  
   obj$getWeatherData = function(zip,useCache=F,forceRefresh=F) {
     cacheFile = NULL
     if(useCache) { cacheFile=paste('weather_',zip,'.RData',sep='') }

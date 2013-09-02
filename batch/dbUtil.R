@@ -47,6 +47,7 @@ run.query = function(query,db,cfgFile,cacheDir=NULL,cacheFile=NULL,forceRefresh=
     if(file.exists(cachePath)) {
       print(paste('Data cache found. Loading data from',cacheFile))
       load(cachePath) # this should load into the variable QUERY_RESULT
+      return(QUERY_RESULT)
     }
   }
   if(length(QUERY_RESULT) == 0 | forceRefresh) { # skip the DB stuff if it has been loaded from disk

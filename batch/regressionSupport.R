@@ -19,13 +19,13 @@ ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,cvReps=0,step=F)
     cvReps   = cvReps
   )
   
-  obj$run = function(resData,df=NULL) {
+  obj$run = function(resData,df=NULL,doOccModel=F) {
     summaries <- c()
     if(is.null(df)) { df = regressorDF(resData,norm=FALSE) }
     #print(paste('[ModelDescriptor.run]',obj$name,'(',names(obj$subset),'):',obj$formula))
     for(snm in names(obj$subset)) {
       df$sub = eval(parse(text=obj$subset[[snm]]),envir=df)  # load the subset flags into the data.frame
-      lm.result = lm(obj$formula,df,x=F,y=T,subset=sub==T) # run the lm on the subset indicated in the data frame
+      lm.result = lm(obj$formula,df,x=T,y=T,subset=sub==T,na.action=na.exclude) # run the lm on the subset indicated in the data frame
       if(step) {
         lmr = lm('kwh ~ 1',df,subset=sub==T)
         parts = strsplit(obj$formula,'~')[[1]]
@@ -46,6 +46,7 @@ ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,cvReps=0,step=F)
                                                   subnm           = snm,
                                                   cvReps          = obj$cvReps,
                                                   formula         = obj$formula,
+                                                  doOccModel      = doOccModel,
                                                   subset          = obj$subset[[snm]]) )
     }
     return(list(summaries=summaries)) # using list so other functions can return additional data
@@ -67,15 +68,15 @@ print.ModelDescriptor = function(md) {
 # returns a separate set of piecewise temerpature regressors for each hour.
 DescriptorGenerator = function(genImpl,name='',formula=NULL,subset=NULL,cvReps=0,terms=NULL){
   obj = list (
-    name     = name,
-    formula  = formula,
-    subset   = subset,
-    terms    = terms,
-    genImpl  = genImpl,
-    cvReps   = cvReps
+    name       = name,
+    formula    = formula,
+    subset     = subset,
+    terms      = terms,
+    genImpl    = genImpl,
+    cvReps     = cvReps
   )
   
-  obj$run = function(r,df=NULL) {
+  obj$run = function(r,df=NULL,doOccModel=F) {
     summaries = c()
     other     = c()
     if(is.null(df)) { df = regressorDF(r,norm=FALSE) }
@@ -84,7 +85,7 @@ DescriptorGenerator = function(genImpl,name='',formula=NULL,subset=NULL,cvReps=0
       df = cbind(df,updates$regressors)
     }
     for(modelDescriptor in updates$descriptors) {
-      runOut    = modelDescriptor$run(r,df) # returns a list, with a named entry 'summaries'
+      runOut    = modelDescriptor$run(r,df,doOccModel) # returns a list, with a named entry 'summaries'
       summaries = rbind(summaries,runOut$summaries)
     }
     # the rest....
@@ -276,9 +277,9 @@ toutPieces24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,te
   out = list( 
     regressors   = cbind(toutPIECES),
     descriptors  = list( 
-      Pieces24=ModelDescriptor( # regression with the bet fit lag
+      Pieces24=ModelDescriptor( # regression with the best fit lag
         name=paste(namePrefix,'24', sep=''), 
-        formula=paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ HOD - 1'), # TODO: maybe HOW?
+        formula=paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ HOW - 1'), # TODO: maybe HOW?
         subset=subset,cvReps=cvReps)
     )
   )
@@ -367,10 +368,14 @@ toutDailyFixedCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=
 toutDailyNPCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL) {
   return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,cvReps=cvReps,basics=basics,terms=terms,forceCP=c(55,65,75)))
 }
+
+toutDailyDivergeCPGenerator = function(...) {
+  return(toutDailyCPGenerator(...,diverge=T))
+}
   
 # toutDailyCP finds a single change point for a model of daily kWh usage or takes any number of forced 
 # change points as arguments
-toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms='+ DOW - 1',basics=NULL,forceCP=NULL) {
+toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms='+ DOW - 1',basics=NULL,forceCP=NULL,diverge=F) {
   if(is.null(terms)) { terms = ''}
   changeModel = NULL
   if(is.null(forceCP)) {
@@ -379,7 +384,7 @@ toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,ter
     modelCP = changeModel[grep('^cp',names(changeModel))]
   }
   else { modelCP = forceCP }
-  pieces = regressor.piecewise(df$tout.mean,modelCP) # get a list of daily piecewise splits for tout.mean
+  pieces = regressor.piecewise(df$tout.mean,modelCP,diverge=diverge) # get a list of daily piecewise splits for tout.mean
   nSegs = dim(pieces)[2]
   if (nSegs == 1) colnames(pieces) <- c('tout.mean') # no split made
   if (nSegs == 2) colnames(pieces) <- c('tout.mean_lower','tout.mean_upper') # 2 cols: above and below cp
@@ -433,7 +438,7 @@ toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0
 # designed to be friendly to storing a lot of results in sequence
 # so it separates out the simple scalar metrics from the more complicated
 # coefficients
-summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=1,doNewey=T,formula='',subset='') {
+summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=1,doNewey=F,doOccModel=F,formula='',subset='') {
   #lm(m,subset=m$y > 1)
   basics = list()
   basics$id          <- id
@@ -463,6 +468,28 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
   class(s) <- 'list'         # make sure the class is no longer summary.lm
   s$hist          <- hist(s$residuals,breaks=100,plot=F)
   s$kurtosis      <- kurtosis(s$residuals)
+  s$residuals     <- residuals(s) # include NAs in the resudials
+
+  if(doOccModel) {
+    # note that we can only assume that the length of residuals and dates 
+    # are the same if the regression uses na.action=na.exclude and we call
+    # residuals(s), not s$residuals.If the lengths differ, we will report 
+    # incorrect dates
+    #print('running occ models')
+    dens = quantileDensities(s$residuals,df$dates)
+    s$occ.hr   = dens$hr
+    s$occ.wday = dens$wday
+    s$occ.wknd = dens$wknd
+    s$occ.wkdy = dens$wkdy
+    s$mon      = dens$mon
+    mdens = quantileDensities(s$residuals,df$dates,monthly=T)
+    s$occ.hr.m   = mdens$hr
+    s$occ.wday.m = mdens$wday
+    s$occ.wknd.m = mdens$wknd
+    s$occ.wkdy.m = mdens$wkdy
+    s$mon.m      = mdens$mon
+  }
+  
   
   s$call          <- c()     # lm model call (depends on variable scope and can be junk)
   s$terms         <- c()     # lm model terms (depends on variable scope and can be junk)
@@ -482,7 +509,8 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
   if("x" %in% names(m)) {
     s$contribution <- colSums(t(m$coefficients * t(m$x)))
   }
-  s$total        <- sum(predict(m))
+  s$total        <- sum(predict(m),na.rm=T)
+  s$prediction   <- predict(m)
   
   # k-fold prediction error
   if (cvReps > 0) {
@@ -551,7 +579,7 @@ regressor.split = function(regressor,membership=NULL) {
 # TODO: This can create a column of zeros, which should break the regression
 # so we might need to prune the columns when we're done and keep track of
 # which bins are in play when comparing across regressions
-regressor.piecewise = function(regressor,bins) {
+regressor.piecewise = function(regressor,bins,diverge=F) {
   if(any(is.na(bins))) return(as.matrix(regressor)) # if bins itself is NA or any of its values are NA, return the original data
   binLower = 0
   mat <- c()
@@ -569,6 +597,9 @@ regressor.piecewise = function(regressor,bins) {
     mat = cbind(mat,col)
     nm = c(nm,paste('tout',binLower,'_',binUpper,sep=''))
     binLower = binUpper
+  }
+  if(diverge) {
+    mat[,1] = pmax(bins[1] - regressor,0)
   }
   colnames(mat) <- nm
   return(mat)

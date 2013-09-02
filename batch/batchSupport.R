@@ -59,6 +59,8 @@ runModelsByZip = function(cfg) {
     tryCatch( {
       tic('allDataForZip')
       zipData <- DATA_SOURCE$getAllData(zip,useCache=cfg$CACHE_QUERY_DATA)
+      gasData <- DATA_SOURCE$getAllGasData(zip,useCache=cfg$CACHE_QUERY_DATA)
+      if(is.null(gasData)) { gasData = data.frame(c()) } # distinguish from null so lookup isn't attempted residence by residence
       toc('allDataForZip')
       sp_ids <- DATA_SOURCE$getSPs(zip,useCache=cfg$CACHE_QUERY_DATA)
       sp_ids <- unique(zipData[,'sp_id']) # DATA_SOURCE$getSPs(zip)
@@ -67,7 +69,7 @@ runModelsByZip = function(cfg) {
       # so we speed execution by looking it up once and passing it in
       weather <- WeatherClass(zip,useCache=cfg$CACHE_QUERY_DATA,doSG=cfg$CALC_SOLAR_GEOM)
       tic('modelsBySP')
-      modelResults <- runModelsBySP(sp_ids,cfg,zip=zip,data=zipData,weather=weather)
+      modelResults <- runModelsBySP(sp_ids,cfg,zip=zip,data=zipData,gasData=gasData,weather=weather)
       rm(zipData,weather,sp_ids)
       save(modelResults,file=resultsFile)
       res$completedZip <- rbind(res$completedZip,zip)
@@ -79,6 +81,8 @@ runModelsByZip = function(cfg) {
     }, 
     error = function(e) {
       print(e)
+      #traceback()
+      #stop(e)
       modelResults = NA
       # put an empty file in place to differentiate between un-run zips and unsuccessful runs
       save(modelResults,e,file=resultsFile)   }, 
@@ -92,7 +96,7 @@ runModelsByZip = function(cfg) {
 # TODO: aks Ram about his k-fold idea and look at serial folds as well as random
 # TODO: consolidate after each model run, before serializing to disk
 
-runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
+runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,gasData=NULL,weather=NULL) {
   naList = as.list(rep(NA,length(sp_ids)))
   features.basic  <- naList
   summaries       <- naList
@@ -139,9 +143,11 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
     
     #if(sp_id == 6502353905) { skip = FALSE } # debug shortcut
     #if(skip) { next }
-    resData = NULL
-    if (!is.null(data)) {  resData = data[data[,'sp_id']== sp_id,] }
-    r <- tryCatch(ResDataClass(sp_id,zip=zip,weather=weather,data=resData), 
+    resData    = NULL
+    resGasData = data.frame(c())
+    if (!is.null(data))    {  resData = data[data[,'sp_id']== sp_id,] }
+    if (!is.null(gasData) & length(gasData) > 0) {  resGasData = gasData[gasData[,'sp_id']== sp_id,] }
+    r <- tryCatch(ResDataClass(sp_id,zip=zip,weather=weather,data=resData,gasData=resGasData), 
                   error = function(e) {print(e)}, finally={} )
     if ( ! "ResDataClass" %in% class(r) ) { # constructor returns the error class if it has a problem
       print('    not found (see error)')    # ignore residences that produce errors & continue
@@ -177,7 +183,7 @@ runModelsBySP = function(sp_ids,cfg,zip=NULL,data=NULL,weather=NULL) {
           for(mdName in names(cfg$models.hourly)) {
             #print(mdName)
             md = cfg$models.hourly[[mdName]]
-            runOut = md$run(r,df)
+            runOut = md$run(r,df,doOccModel=cfg$DO_OCC_MODEL)
             summaries[[length(summaries)+1]] = runOut$summaries
             if(! empty(runOut$other)) {
               others[[md$name]] = rbind(others[[md$name]],list(id=r$id,data=runOut$other))

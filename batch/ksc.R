@@ -83,6 +83,7 @@ ksc = function(A,k,init.cen=NULL,init.mem=NULL,max.iter=100){
   cur.mem = ksc.assign.update(A,k,cur.cen)
   
   for (i in 1:max.iter){
+    print(paste('iteration',i,'of',max.iter))
     prev.mem = cur.mem
     cur.cen = ksc.center.update(cur.mem, A,k)
     cur.mem = ksc.assign.update(A,k,cur.cen)

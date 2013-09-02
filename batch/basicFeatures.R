@@ -69,8 +69,22 @@ basicFeatures = function(r){ # r is an instance of ResDataClass
   kw.mean        = mean(r$kw,na.rm=T)
   kw.mean.summer = mean(r$kw[ summerSubset],na.rm=T)
   kw.mean.winter = mean(r$kw[!summerSubset],na.rm=T)
+
+  therm.mean = NA
+  therm.mean.summer = NA
+  therm.mean.winter = NA
+  therm.min = NA
   
-  
+  if(length(r$therms > 0)) {
+    therm.mean     = mean(r$therms,na.rm=T)
+    gasSummer      = as.POSIXlt(r$gasDays)$mon %in% summerMon
+    therm.mean.summer = mean(r$therms[ gasSummer],na.rm=T)
+    therm.mean.winter = mean(r$therms[!gasSummer],na.rm=T)
+    thermdf = data.frame(therm=r$therms,day=r$gasDays,month=as.POSIXlt(r$gasDays)$mon)
+    thermMonth = dcast(thermdf,month ~ .,mean,value.var='therm')
+    names(thermMonth) <- c('month','therm')
+    therm.min = mean(thermMonth$therm[thermMonth$month %in% 5:7])
+  }
   maxIdx = which.max(r$kw)
   minIdx = which.min(r$kw)
   
@@ -125,6 +139,9 @@ basicFeatures = function(r){ # r is an instance of ResDataClass
              nObs=nObs,
              kw.mean=kw.mean,kw.mean.summer=kw.mean.summer,kw.mean.winter=kw.mean.winter,
              kw.total=kw.mean * 365 * 24,
+             therm.mean=therm.mean,therm.mean.summer=therm.mean.summer,therm.mean.winter=therm.mean.winter,
+             therm.total=therm.mean * 365 * 24,
+             therm.min=therm.min,
              max=max,  # will be named 'max.97.' due to quantile origin
              min=min,  # will be called 'min.3.' due to quantile origin
              kw.var=kw.var,kw.var.summer=kw.var.summer,kw.var.winter=kw.var.winter,

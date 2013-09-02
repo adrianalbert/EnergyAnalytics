@@ -170,7 +170,11 @@ WeatherClass = function(zipcode,doMeans=T,useCache=F,doSG=F){
   return(obj)
 }
 
-ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,useCache=F,doSG=T){
+ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,gasData=NULL,useCache=F,doSG=T){
+  if(is.null(zip)) { 
+    zip = DATA_SOURCE$getZipForId(sp_id)
+    print(paste('looked up zip',zip))
+  }
   if(is.null(data) || length(data) == 0) {
     if(useCache) {
       rawData = DATA_SOURCE$getAllData(zip,useCache=T)
@@ -179,14 +183,32 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,useCache=F,doSG=T)
       data = DATA_SOURCE$getSPData(sp_id,zip)
     }
   }
+  if(is.null(gasData)) {
+    if(useCache) {
+      rawGasData = DATA_SOURCE$getAllGasData(zip,useCache=T)
+      gasData = rawGasData[rawGasData$sp_id == sp_id,]
+    } else {
+      gasData = DATA_SOURCE$getSPGasData(sp_id,zip)
+    }
+  }
   if(length(data)==0) stop(paste('No data found for sp_id',sp_id))
-  days = as.POSIXct(data[,'DATE'],tz="PST8PDT", '%Y-%m-%d')
+  days    = as.POSIXct(data[,'DATE'],tz="PST8PDT", '%Y-%m-%d')
+  gasDays = NULL
+  if(length(gasData)>0) {
+    gasDays = as.POSIXct(gasData[,'DATE'],tz="PST8PDT", '%Y-%m-%d')
+  }
   # some days are duplicated in the DB. Remove all but the first one.
   dup = which(diff(days) == 0)
   if(any(dup > 0)) {
     data = data[-dup,] # delete the row
     days = as.POSIXct(data[,'DATE'],tz="PST8PDT", '%Y-%m-%d')
   }
+  dup = which(diff(gasDays) == 0)
+  if(any(dup > 0)) {
+    gasData = gasData[-dup,] # delete the row
+    gasDays = as.POSIXct(gasData[,'DATE'],tz="PST8PDT", '%Y-%m-%d')
+  }
+  
   zipcode = data[1,'zip5']
   kwMat96 = NULL
   kwMat   = NULL
@@ -216,14 +238,22 @@ ResDataClass = function(sp_id,zip=NULL,weather=NULL,data=NULL,useCache=F,doSG=T)
   rh   = weather$rh(tout,dp)
   # TODO: clear out obviously bad readings
   #keepers   = which(kw > 0)
+  gasTout = NULL
+  if(length(gasDays)>0) {
+    gwd = match(as.Date(gasDays),weather$dayMeans$day) # gas weather dates
+    gasTout = weather$dayMeans$tout[gwd]
+  }
   
   obj = list (
-    id = sp_id,
-    dates = dates,
-    kw  = kw,
-    kwMat = kwMat,
+    id      = sp_id,
+    dates   = dates,
+    kw      = kw,
+    kwMat   = kwMat,
     kwMat96 = kwMat96,
-    days = days,
+    days    = days,
+    gasDays = gasDays,
+    therms  = gasData$therms,
+    gasTout = gasTout,
     zipcode = zipcode,
     weather = weather,
     tout = tout,
@@ -322,7 +352,7 @@ hmap = function(data,colorMap=NULL,yvals=NA,xvals=NA,log=FALSE,...) {
   m = dim(data)[2]
   # defailt values
   if(is.null(colorMap)) { colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100)) }
-  image(t(data),col=colorMap,axes=F)
+  image(t(data),col=colorMap,axes=F,...)
   #axis(1, at = seq(0, 1, by = 1/6),labels=0:6 * 4,mgp=c(1,0,0),tcl=0.5)
   #if(length(r$days) > 16) {
   #  axis(2, at = seq(1,0, by = -1/15),labels=format(r$days[seq(1/16, 1, by = 1/16) * length(r$days)],'%m/%d/%y'),las=1,mgp=c(1,0,0),tcl=0.5)

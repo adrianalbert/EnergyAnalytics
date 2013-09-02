@@ -113,7 +113,19 @@ combineSummaries = function(ziplist,resultType='summaries') {
   return(summaries)
 }
 
+dataFile = function(zip,resDir=NULL) {
+  if(is.null(resDir)) {resDir = resultsDir}
+  df = file.path(getwd(),resDir,paste(zip,'_modelResults.RData',sep=''))
+  return(df)
+}
+
+loadResult = function(zip,resDir=NULL) {
+  load(dataFile(zip,resDir))
+  return(modelResults)
+}
+
 combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=function(x) { x },model.name=NULL,subset.name=NULL,appendZipData=F) {
+  tic('combine')
   result = c()
   rList = as.list(rep(NA,600)) # there are < 600 zips so far... 
   i = 0
@@ -123,13 +135,13 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
     i = i+1
     zip = as.numeric(zip)
     print(paste('loading data for',zip,'(',i,'/',n,')'))
-    dataFile = file.path(getwd(),resultsDir,paste(zip,'_modelResults.RData',sep=''))
+    dFile = dataFile(zip)
     #print(dataFile)
-    if (! file.exists(dataFile)){
+    if (! file.exists(dFile)){
       print(paste('No data file for',zip,'skipping.'))
       next
     }
-    load(dataFile)
+    load(dFile)
     if(! resultType %in% names(modelResults) ) {
       print(paste('no entry for',resultType))
       next
@@ -175,6 +187,7 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
       print('trouble with column length')
       print(new)
       # skip?
+      next
     }
     prevColCount <- newLength
     rownames(new) <- c()
@@ -191,6 +204,7 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
   
   result = do.call(rbind,rList[!is.na(rList)]) # here we bind the results together
   if(appendZipData) { result = addZipData(result) }
+  toc('combine')
   return(result)
 }
 
