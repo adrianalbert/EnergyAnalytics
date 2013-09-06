@@ -91,6 +91,19 @@ clusterSumOfSquares = function(data,countSeq=1:15,iter.max=10) {
   return(wss/nrow(data))
 }
 
+
+showClusters = function(km,obs,ncol=4,xlabs=NULL,main=NULL,ylab=NULL,xlab=NULL,...) {
+  op <- par(no.readonly = TRUE)
+  par( mfrow=c(ceiling(nrow(kwd$centers)/ncol),ncol), oma=c(2,2,3,0),mar=c(2,1,2,1)) # Room for the title
+  for(c in sort(unique(km$cluster))){
+    hmap(data=as.matrix(obs[km$cluster == c,]),main=paste(c,' (n=',sum(km$cluster==c),')',sep=''),xlabs=xlabs,...)
+  }
+  if(!is.null(main)) { mtext(main, line=0, font=2, cex=1.2, outer=TRUE) }
+  if(!is.null(ylab)) { mtext(ylab, line=0, font=2, cex=0.8, side=2, outer=TRUE) }
+  if(!is.null(xlab)) { mtext(xlab, line=0, font=2, cex=0.8, side=1, outer=TRUE) }
+  par(op)
+}
+
 testData = function() {
   setwd('f:/dev/pge_collab/EnergyAnalytics/batch')
   sam = read.csv('data/sam_home_data.csv')
@@ -120,7 +133,8 @@ if(test) {
 
 doFigures = F
 if(doFigures) {
-  outDir = 'occupancy/'
+  occupancyDir = 'C:/Users/Sam/Dropbox/writing/occupancy_paper/'
+  load(file.path(getwd(),'w_results_occ','occupancy.RData'))
   dg = DescriptorGenerator(name='toutPieces',genImpl=toutPieces24Generator,subset=list(all="TRUE"))
   
   r = ResDataClass(553991005,93304,useCache=T,doSG=F)
@@ -147,72 +161,77 @@ if(doFigures) {
   meane = meane / sum(meane)
   
   op <- par(no.readonly = TRUE)
-  par( mfrow=c(2,1), oma=c(2,2,3,0),mar=c(2,2,2,2)) # Room for the title
-  plot(r$kw,ylab='kW',col='#444444')
-  points(pieces$summaries[[26]],type='l', col='blue')
-  plot(pieces$summaries[[9]],ylab='kW',xlab='observation #',col='#444444')
-  points(qod,e[qod],col='blue',ylab='kW')
-  points(mqod,e[mqod],col='red',ylab='kW')
-  
-  mtext('Model predictions, residuals, and outliers', line=0, font=2, cex=1.2, outer=TRUE)
+  par( mfrow=c(2,1), oma=c(2,2,1,0),mar=c(2,4,2,2))
+  plot(r$dates,r$kw,col='#444444',main='Observations (grey) & model (green)',ylab='kW')
+  points(r$dates,pieces$summaries[,'prediction'][[1]], col='#22ff22',cex=0.4,pch=15)
+  grid()
+  plot(r$dates,pieces$summaries[,'residuals'][[1]],xlab='observation #',col='#444444',main='Residuals (grey) & monthly top 5% (red)',ylab='kW')
+  #points(qod,e[qod],col='blue',ylab='kW',cex=0.4)
+  points(r$dates[mqod],e[mqod],col='red',cex=0.4,pch=15)
+  #mtext('Model predictions, residuals, and outliers', line=0, font=2, cex=1.4, outer=TRUE)
+  grid()
   par(op)
-  dev.copy2pdf(file = paste(outDir,'single_model.pdf',sep=''))
+  
+  dev.copy2pdf(file = paste(occupancyDir,'single_model.pdf',sep=''),width=12,height=8)
   
   dens = quantileDensities(e,r$dates)
   densM = quantileDensities(e,r$dates,monthly=T)
-  plot(dens$hr[1:24],type='l',main='p(Occupancy Event)',ylab='density',xlab='hour of day')
-  points(densM$hr[1:24],type='o',col='blue')
-  points(meankw,col='red')
-  points(meane,col='green')
-  dev.copy2pdf(file = paste(outDir,'p_occ_event.pdf',sep=''))
+  plot(densM$hr[1:24]*densM$hr[25],type='o',main='Count of occupancy events by hour',ylab='count',xlab='Hour of day',pch=16,col='red',xaxt='n',ylim=c(0,max(densM$hr[1:24]*densM$hr[25])))
+  #points(densM$hr[1:24]*densM$hr[25],type='o',col='blue')
+  points(meankw*dens$hr[25],col='#999999',type='l',lty=2)
+  grid()
+  legend(37,c('Count of top 5%','Rescaled mean load'),lty=c(1,2),pch=c(16,-1),col=c('red','#999999'))
+  xlabs=0:23
+  axis(1, at=1:length(xlabs), labels=xlabs)
+  #points(meane,col='green')
+  dev.copy2pdf(file = paste(occupancyDir,'p_occ_event.pdf',sep=''),width=12,height=6)
     
-  fits = clusterSumOfSquares(as.matrix(occ.hr[,2:25]),seq(2,60,4),20)
+  fits = clusterSumOfSquares(as.matrix(occ.hr.m[,2:25]),seq(2,60,4),20)
   vals = which(! is.na(fits))
   plot(vals,fits[vals],type='o',ylab='error',xlab='# of clusters',main='Fit error vs. number of clusters')
-  dev.copy2pdf(file = paste(outDir,'clutser_err.pdf',sep=''))
-  
+  dev.copy2pdf(file = paste(occupancyDir,'clutser_err.pdf',sep=''))
   
   fits = clusterSumOfSquares(as.matrix(occ.wday.m[,2:8]),seq(2,20,1),20)
   vals = which(! is.na(fits))
   plot(vals[-1],fits[vals][-1],type='o',ylab='error',xlab='# of clusters',main='Fit error vs. number of clusters')
-  dev.copy2pdf(file = paste(outDir,'wday_clutser_members.pdf',sep=''))
+  dev.copy2pdf(file = paste(occupancyDir,'wday_clutser_err.pdf',sep=''))
   
   kwd = kmeans(as.matrix(occ.wday.m[,2:8],ncol=7),12,iter.max=20)
-  showClusters(kwd,occ.wday.m[,2:8],ncol=4)
-  dev.copy2pdf(file = paste(outDir,'wday_clutser_members.pdf',sep=''))
+  showClusters(kwd,occ.wday.m[,2:8],ncol=4,xlabs=c('Su','Mo','Tu','We','Th','Fr','Sa'),main='Members of HOD occupant event clusters',ylab='members',xlab='Day of week')
+  dev.copy2pdf(file = paste(occupancyDir,'wday_clutser_members.pdf',sep=''))
   
-  matplot(t(kwd$centers),type='l',main='Day of week K-means cluster centers',ylab='density',xlab='Day of week (Sunday to Saturday')  
+  matplot(t(kwd$centers),type='l',main='Day of week K-means cluster centers',ylab='probability density',xlab='Day of week',xaxt='n')
+  xlabs=c('Su','Mo','Tu','We','Th','Fr','Sa')
+  axis(1, at=1:length(xlabs), labels=xlabs)
+  dev.copy2pdf(file = paste(occupancyDir,'wday_clutser_centers.pdf',sep=''))
   
+  km = kmeans(as.matrix(occ.hr.m[,2:25],ncol=24),12,iter.max=20)
+  showClusters(km,occ.hr.m[,2:25],ncol=4,xlabs=c(0:23),main='Members of hour of day occupant event clusters',ylab='members',xlab='Hour of day')
+  dev.copy2pdf(file = paste(occupancyDir,'clutser_members.pdf',sep=''))
   
-  km = kmeans(as.matrix(occ.hr.m[,2:25],ncol=24),10,iter.max=20)
-  showClusters(km,occ.hr.m[,2:25])
-  dev.copy2pdf(file = paste(outDir,'clutser_members.pdf',sep=''))
-  
-  op <- par(no.readonly = TRUE)
-  par( mfrow=c(2,1), oma=c(2,2,3,0),mar=c(2,2,2,2)) # Room for the title
-  matplot(t(km$centers),type='l',main='K=Means cluster centers (all days)',ylab='density',xlab='hour of day')  
-  kmwd = kmeans(as.matrix(occ.wkdy[,2:25],ncol=24),10,iter.max=20)
-  matplot(t(kmwd$centers),type='l',main='K=Means cluster centers (weekdays only)',ylab='density',xlab='hour of day')
-  par(op)
-  
-  dev.copy2pdf(file = paste(outDir,'clutser_centers_orig.pdf',sep=''))
+  #op <- par(no.readonly = TRUE)
+  #par( mfrow=c(2,1), oma=c(2,2,3,0),mar=c(2,2,2,2)) # Room for the title
+  #matplot(t(km$centers),type='l',main='K=Means cluster centers (all days)',ylab='density',xlab='hour of day')  
+  #kmwd = kmeans(as.matrix(occ.wkdy[,2:25],ncol=24),10,iter.max=20)
+  #matplot(t(kmwd$centers),type='l',main='K=Means cluster centers (weekdays only)',ylab='density',xlab='hour of day')
+  #par(op)
+  #dev.copy2pdf(file = paste(occupancyDir,'clutser_centers_orig.pdf',sep=''))
 
   op <- par(no.readonly = TRUE)
-  par( mfrow=c(2,1), oma=c(2,2,3,0),mar=c(2,2,2,2)) # Room for the title
+  par( mfrow=c(2,1), oma=c(2,3,1,0),mar=c(2,1,2,1)) # Room for the title
   kmwd = kmeans(as.matrix(occ.wkdy.m[,2:25],ncol=24),10,iter.max=20)
-  matplot(t(kmwd$centers),type='l',main='Weekday K-means cluster centers (by monthly percentile)',ylab='density',xlab='hour of day')  
+  matplot(t(kmwd$centers),type='l',main='Weekday K-means cluster centers (by monthly percentile)',ylab='density',xlab='hour of day',xaxt='n')  
+  axis(1, at=(1:length(xlabs)), labels=xlabs,cex=0.6)
+  grid()
   kmnd = kmeans(as.matrix(occ.wknd.m[,2:25],ncol=24),10,iter.max=20)
-  matplot(t(kmnd$centers),type='l',main='Weekend K-means cluster centers (by monthly percentile)',ylab='density',xlab='hour of day')
+  matplot(t(kmnd$centers),type='l',main='Weekend K-means cluster centers (by monthly percentile)',ylab='density',xlab='hour of day',xaxt='n')
+  xlabs = 0:23
+  axis(1, at=(1:length(xlabs)), labels=xlabs,cex=0.6)
+  grid()
+  mtext('Hour of day', line=0, font=2, cex=1, side=1, outer=TRUE)
+  mtext('probability density', line=2, font=2, cex=1, side=2, outer=TRUE)
   par(op)
   
-  dev.copy2pdf(file = paste(outDir,'clutser_centers.pdf',sep=''))
+  dev.copy2pdf(file = paste(occupancyDir,'clutser_centers.pdf',sep=''),width=12,height=8)
 }
 
-showClusters = function(km,obs,ncol=4) {
-  op <- par(no.readonly = TRUE)
-  par( mfrow=c(ceiling(nrow(kwd$centers)/ncol),ncol), oma=c(2,2,3,0),mar=c(2,2,2,2)) # Room for the title
-  for(c in sort(unique(km$cluster))){
-    hmap(data=as.matrix(obs[km$cluster == c,]),main=paste(c,' (n=',sum(km$cluster==c),')',sep=''))
-  }
-  par(op)
-}

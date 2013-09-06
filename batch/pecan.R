@@ -14,7 +14,7 @@ require('reshape2')
 require('stringr')
 
 zip5 = 78723 # TODO: get weather data...
-station = 'KTXAUSTI204'
+PECAN_STATION = 'KTXAUSTI204'
 tz = 'CST6CDT'
 
 pecan = function(forceReload=F) {
@@ -77,6 +77,21 @@ toHourly = function(data,dateCol='date'){
   return(hourly)
 }
 
+# get all weather in the range of the pecan street data
+# yes, there ais a lot of hard coded stuff in here that could be more parameterized
+pecanWeatherData = function(forceReload = F) {
+  # default station selected by hand for decent weather history Bouldin-South Austin, Austin, TX
+  pecanWeather = c()
+  if(file.exists(PECAN_WEATHER_FILE) && ! forceReload) {
+    load(PECAN_WEATHER_FILE)
+  } else {
+    pecanWeather = wuWeather(PECAN_STATION,'2012-08-01','2012-10-01')
+    save(list='pecanWeather',file=PECAN_WEATHER_FILE)
+  }
+  return(pecanWeather)
+}
+
+
 pecanPlusWeather = function(forceReload=F) {
   pecanPlusWeather = list()
   if(file.exists(PECAN_COMBINED_FILE) && ! forceReload) {
@@ -113,7 +128,7 @@ solar = c('gen')
 ev    = c('CAR1')
 net   = c('Grid')
 
-runExample = F
+runExample = T
 if(runExample) {
   ppw = pecanPlusWeather()
   for(homeName in names(ppw)){
@@ -123,23 +138,31 @@ if(runExample) {
     print(dim(homeData))
     
     op <- par(no.readonly = TRUE)
-    par( mfrow=c(2,1), oma=c(2,2,3,0),mar=c(2,2,2,2)) # Room for the title
+    m <- matrix(c(1,2,3),nrow=3,ncol=1,byrow=T)
+    layout(mat = m,heights = c(0.4,0.4,0.2))
+    par(oma=c(2,2,2,0),mar=c(2,4,2,1)) # Room for the title
     maxUsage = max(usage(homeData,total))
-    plot(homeData$date,usage(homeData,total),type='l',col='gray',main='minute',ylim=c(0,maxUsage))
+    plot(homeData$date,usage(homeData,total),type='l',col='gray',main='minute',ylab='kW',ylim=c(0,1.1*maxUsage))
     points(homeData$date,usage(homeData,HVAC),type='l',col='#ff9999')
     points(homeData$date,usage(homeData,user),type='l',col='blue')
     points(homeData$date,homeData$TemperatureF/100*maxUsage,type='l',col='#99ff99')
-    
+    grid()
     hrData = toHourly(homeData)
     maxUsage = max(usage(hrData,total))
-    plot(hrData$date,usage(hrData,total),type='l',col='gray',main='hourly',ylim=c(0,maxUsage))
+    plot(hrData$date,usage(hrData,total),type='l',col='gray',main='hourly',ylim=c(0,1.1*maxUsage),ylab='kW')
     points(hrData$date,usage(hrData,HVAC),type='l',col='#ff9999')
     points(hrData$date,usage(hrData,user),type='l',col='blue')
     points(hrData$date,hrData$TemperatureF/100*maxUsage,type='l',col='#99ff99')
-    mtext(homeName, line=0, font=2, cex=1.2, outer=TRUE)
-    par(op)
     grid()
-    dev.copy2pdf(file=file.path(getwd(),PECAN_DATA_DIR,paste(homeName,'.pdf',sep='')))
+    mtext(paste(homeName,'kW demand'), line=0, font=2, cex=1.2, outer=TRUE)
+    par(mar=c(1,4,1,1))
+    plot.new()
+    legend("center", lty=1,cex=1,
+           legend=c('total','HVAC','user','temperature'), 
+           col=c('gray','#ff9999','blue','#99ff99'),horiz=T)
+    par(op)
+    
+    dev.copy2pdf(file=file.path(getwd(),PECAN_DATA_DIR,paste(homeName,'.pdf',sep='')),width=10,height=6)
   }
 }
 

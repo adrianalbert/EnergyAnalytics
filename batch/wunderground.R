@@ -98,26 +98,14 @@ interpolateTime = function(data,newTimes,dateCol='Time') {
   return(newData)
 }
 
-# get single day
-#wuWeather(station,'2009-01-25')
-# get all weather in the range of the pecan street data
-# yes, there ais a lot of hard coded stuff in here that could be more parameterized
-pecanWeatherData = function(forceReload = F) {
-  # default station selected by hand for decent weather history Bouldin-South Austin, Austin, TX
-  station='KTXAUSTI90'
-  pecanWeather = c()
-  if(file.exists(PECAN_WEATHER_FILE) && ! forceReload) {
-    load(PECAN_WEATHER_FILE)
-  } else {
-    pecanWeather = wuWeather(station,'2012-08-01','2012-10-01')
-    save(list='pecanWeather',file=PECAN_WEATHER_FILE)
-  }
-  return(pecanWeather)
-}
-
 test=F
 if(test){
-  pecanWeather = pecanWeatherData()
+  station='KTXAUSTI90' # this is ausitn Tx
+  
+  # get single day
+  #wuWeather(station,'2009-01-25')
+  
+  weather = wuWeather(station,'2012-08-01','2012-10-01')
   
   # interpolate data to arbitrary times
   t = pecanWeather$Time
@@ -126,6 +114,5 @@ if(test){
   
   # average data to hourly intervals
   hourly = toHourly(pecanWeather[,c('Time',weatherCols)],'Time')
-
 }
 

@@ -347,12 +347,14 @@ mapColors = function(data,colorMap=NA,log=FALSE) {
   return(colorMap[idx])
 }
 
-hmap = function(data,colorMap=NULL,yvals=NA,xvals=NA,log=FALSE,...) {
+hmap = function(data,colorMap=NULL,yvals=NA,xvals=NA,xlabs=NULL,ylabs=NULL,...) {
   n = dim(data)[1]
   m = dim(data)[2]
   # defailt values
   if(is.null(colorMap)) { colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100)) }
   image(t(data),col=colorMap,axes=F,...)
+  if(!is.null(xlabs)){ axis(1, at=(1:length(xlabs) - 1)/(length(xlabs)-1), labels=xlabs) }
+  if(!is.null(ylabs)){ axis(2, at=(1:length(ylabs) - 1)/(length(ylabs)-1), labels=ylabs) }
   #axis(1, at = seq(0, 1, by = 1/6),labels=0:6 * 4,mgp=c(1,0,0),tcl=0.5)
   #if(length(r$days) > 16) {
   #  axis(2, at = seq(1,0, by = -1/15),labels=format(r$days[seq(1/16, 1, by = 1/16) * length(r$days)],'%m/%d/%y'),las=1,mgp=c(1,0,0),tcl=0.5)

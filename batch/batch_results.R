@@ -36,14 +36,15 @@ lm_eqn = function(m) {
   
   as.character(as.expression(eq));                 
 }
+empDir = 'C:/Users/Sam/Dropbox/writing/empirical_paper'
+dailyDir = 'C:/Users/Sam/Dropbox/writing/daily_regression_paper'
 
 resultsDir = 'results_cp1_energy'
-resultsDir = 'results_daily'       # daily models for all homes
+resultsDir = 'results_daily_full'       # daily models for all homes
 #resultsDir = 'results_daily_flex'  # 2 change point models
 resultsDir = 'results_daily_standard'
 resultsDir = 'results_daily_standard2'
 resultsDir = 'results_daily_nestedCP'
-resultsDir = 'results_daily_full'
 resultsDir = 'w_results_occ'
 #resultsDir = 'results_daily_residuals'
 # load the results data for hte residuals
@@ -131,7 +132,8 @@ basicMeansWS = merge(basicMeans,ws,by.x='zip5',by.y='zip5')
 basicsWS = merge(basics,ws,by.x='zip5',by.y='zip5')
 basicMeansWS$rankDiff = rank(basicMeansWS$kw.total) - rank(basicMeansWS$tout)
 
-
+#resType = 'summaries'
+resType = 'd_summaries'
 if(file.exists(resultScalarsFile)) {
   load(resultScalarsFile)
 } else {
@@ -144,7 +146,8 @@ gc()
 sclrsBasicsWS   = merge(sclrs,basicsWS[c('idZip','kw.var','kw.mean','maxMA')],by.x='idZip', by.y='idZip',all.x=T,all.y=F)
 gc()
 
-
+#resType = 'summaries'
+resType = 'd_summaries'
 if(file.exists(coeffDataFile)) {
   load(coeffDataFile)
 } else {
@@ -158,12 +161,12 @@ if(file.exists(coeffDataFile)) {
   for(model in models) {
     
     print(paste(model,'from',paste(models,collapse=',')))
-    results.cfs[[model]]    = combine(allZips,resultType='d_summaries',fun=cf,         model.name=model,appendZipData=F)
-    #results.stde[[model]]   = combine(allZips,resultType='d_summaries',fun=stderrs,    model.name=model,appendZipData=F)
-    results.pvs[[model]]    = combine(allZips,resultType='d_summaries',fun=pvals,      model.name=model,appendZipData=F)
-    #results.tvs[[model]]    = combine(allZips,resultType='d_summaries',fun=tvals,      model.name=model,appendZipData=F)
-    #results.stdeNW[[model]] = combine(allZips,resultType='d_summaries',fun=stderrsNW,model.name=model,appendZipData=F)
-    results.pvsNW[[model]]  = combine(allZips,resultType='d_summaries',fun=pvalsNW,  model.name=model,appendZipData=F)
+    results.cfs[[model]]    = combine(allZips,resultType=resType,fun=cf,         model.name=model,appendZipData=F)
+    #results.stde[[model]]   = combine(allZips,resultType=resType,fun=stderrs,    model.name=model,appendZipData=F)
+    results.pvs[[model]]    = combine(allZips,resultType=resType,fun=pvals,      model.name=model,appendZipData=F)
+    #results.tvs[[model]]    = combine(allZips,resultType=resType,fun=tvals,      model.name=model,appendZipData=F)
+    #results.stdeNW[[model]] = combine(allZips,resultType=resType,fun=stderrsNW,model.name=model,appendZipData=F)
+    #results.pvsNW[[model]]  = combine(allZips,resultType=resType,fun=pvalsNW,  model.name=model,appendZipData=F)
     
   }
   save(list=c('results.cfs','results.stde','results.pvs','results.pvsNW','results.stdeNW'),file=coeffDataFile)
@@ -254,27 +257,10 @@ if(file.exists(resultEnergyFile)) {
 gc()
 ecBasics = merge(energyContribution,basics)
 ecRatio = ecBasics$tout.mean_upper / (ecBasics$nObs * ecBasics$kw.mean)
-plot(sort(ecRatio[ecBasics$tout.mean_lower > 0 & ecBasics$tout.mean_upper > 0 & ecBasics$X.Intercept. > 0]),type='l')
+plot(sort(ecRatio[ecBasics$tout.mean_lower > 0 & ecBasics$tout.mean_upper > 0 & ecBasics$X.Intercept. > 0]),type='l',main='Fraction of annual kWh from cooling loads')
 
 cp1 = subset(sclrs,subset=sclrs$model.name=='DOW_toutCP_DL_l1DailyCP')
 cp1 = merge(energyContribution,cp1,all.y=F)
-
-occ.hr= combine( allZips,
-                 resultType='summaries',
-                 #subResultType='DOW_toutCP_DL_l1DailyCP',
-                 fun=function(x) {
-                   hrMatrix = t(apply(x, 1, 
-                                      function(y) {
-                                        #print(y)
-                                        out = c(id=y$id,y$occ.hr)
-                                        #names(out) <- c('id',rownames(y$data));
-                                        return(out)
-                                      }));
-                   return(data.frame(hrMatrix))
-                 },
-                 appendZipData=F)
-
-
 occ.wday.m= combine( allZips,
                      resultType='summaries',
                      #subResultType='DOW_toutCP_DL_l1DailyCP',
@@ -292,19 +278,65 @@ occ.wday.m= combine( allZips,
 
 
 occ.wknd.m= combine( allZips,
+                     resultType='summaries',
+                     #subResultType='DOW_toutCP_DL_l1DailyCP',
+                     fun=function(x) {
+                       hrMatrix = t(apply(x, 1, 
+                                          function(y) {
+                                            #print(y)
+                                            out = c(id=y$id,y$occ.wknd.m)
+                                            #names(out) <- c('id',rownames(y$data));
+                                            return(out)
+                                          }));
+                       return(data.frame(hrMatrix))
+                     },
+                     appendZipData=F)
+
+occ.wkdy.m= combine( allZips,
+                     resultType='summaries',
+                     #subResultType='DOW_toutCP_DL_l1DailyCP',
+                     fun=function(x) {
+                       hrMatrix = t(apply(x, 1, 
+                                          function(y) {
+                                            #print(y)
+                                            out = c(id=y$id,y$occ.wkdy.m)
+                                            #names(out) <- c('id',rownames(y$data));
+                                            return(out)
+                                          }));
+                       return(data.frame(hrMatrix))
+                     },
+                     appendZipData=F)
+
+
+occ.hr.m= combine( allZips,
                    resultType='summaries',
                    #subResultType='DOW_toutCP_DL_l1DailyCP',
                    fun=function(x) {
                      hrMatrix = t(apply(x, 1, 
                                         function(y) {
                                           #print(y)
-                                          out = c(id=y$id,y$occ.wknd.m)
+                                          out = c(id=y$id,y$occ.hr.m)
                                           #names(out) <- c('id',rownames(y$data));
                                           return(out)
                                         }));
                      return(data.frame(hrMatrix))
                    },
                    appendZipData=F)
+
+occ.hr= combine( allZips,
+                 resultType='summaries',
+                 #subResultType='DOW_toutCP_DL_l1DailyCP',
+                 fun=function(x) {
+                   hrMatrix = t(apply(x, 1, 
+                                      function(y) {
+                                        #print(y)
+                                        out = c(id=y$id,y$occ.hr)
+                                        #names(out) <- c('id',rownames(y$data));
+                                        return(out)
+                                      }));
+                   return(data.frame(hrMatrix))
+                 },
+                 appendZipData=F)
 
 occ.wkdy= combine( allZips,
                    resultType='summaries',
@@ -336,37 +368,6 @@ occ.mon= combine( allZips,
                   },
                   appendZipData=F)
 
-occ.hr.m= combine( allZips,
-                 resultType='summaries',
-                 #subResultType='DOW_toutCP_DL_l1DailyCP',
-                 fun=function(x) {
-                   hrMatrix = t(apply(x, 1, 
-                                      function(y) {
-                                        #print(y)
-                                        out = c(id=y$id,y$occ.hr.m)
-                                        #names(out) <- c('id',rownames(y$data));
-                                        return(out)
-                                      }));
-                   return(data.frame(hrMatrix))
-                 },
-                 appendZipData=F)
-
-
-
-occ.wkdy.m= combine( allZips,
-                   resultType='summaries',
-                   #subResultType='DOW_toutCP_DL_l1DailyCP',
-                   fun=function(x) {
-                     hrMatrix = t(apply(x, 1, 
-                                        function(y) {
-                                          #print(y)
-                                          out = c(id=y$id,y$occ.wkdy.m)
-                                          #names(out) <- c('id',rownames(y$data));
-                                          return(out)
-                                        }));
-                     return(data.frame(hrMatrix))
-                   },
-                   appendZipData=F)
 
 occ.how= combine( allZips,
                      resultType='summaries',
@@ -386,7 +387,7 @@ occ.how= combine( allZips,
 
 
 # todo: what is wrong with occ.mon?!
-save(list=c('occ.hr','occ.wkdy','occ.hr.m','occ.wkdy.m','occ.wday.m','occ.wknd.m'),file=occupancyFile)
+save(list=c('occ.hr.m','occ.wkdy.m','occ.wday.m','occ.wknd.m'),file=occupancyFile)
 
 load(occupancyFile)
 k = ksc(as.matrix(occ.hr[,2:25],ncol=24),8,max.iter=30)
@@ -477,10 +478,11 @@ ggplot(subset(sclrsBasicsWS,
                 c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
                   'DOW_tout.min_DL','DOW_tout.max_DL','DOW_DD_DL',
                   'DOW_toutCP_DL_l1DailyCP')),
-              aes(x=adj.r.squared,color=model.name,linetype=model.name)) + geom_density(size=1) + 
-              xlim(0,1.0) + 
-              theme_bw() + theme(text=element_text(size=16)) + 
+              aes(x=adj.r.squared,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
+              xlim(-0.05,1.0) + 
+              theme_bw() + theme(text=element_text(size=14)) + 
               labs(title='Adjusted R2 sequence for various thermal properties')
+dev.copy2pdf(file = file.path(dailyDir,'adj_R2.pdf'),width=10,height=5)
 dev.off()
 
 
@@ -499,11 +501,11 @@ ggplot(subset(sclrsBasicsWS,
                 c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
                   'DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL',
                   'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
-              aes(x=cv.rmse/(kw.mean*24)*100,color=model.name,linetype=model.name)) + geom_density(size=1) + 
-              xlim(0,90)  + 
-              theme_bw() + theme(text=element_text(size=16)) + 
+              aes(x=cv.rmse/(kw.mean*24)*100,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
+              xlim(0,120)  + 
+              theme_bw() + theme(text=element_text(size=14)) + 
               labs(title='Coefficient of Variation for various thermal properties',x='Variation (%)')
-
+dev.copy2pdf(file = file.path(dailyDir,'coeff_var.pdf'),width=10,height=5)
 
 ggplot(subset(sclrsBasicsWS,
               model.name %in% 
@@ -513,27 +515,30 @@ ggplot(subset(sclrsBasicsWS,
                   'DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
                   'DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL',
                   'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
-       aes(x=cv.rmse,color=model.name,linetype=model.name)) + geom_density(size=1) + 
+       aes(x=cv.rmse,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
   xlim(0,25)  + 
-  theme_bw() + theme(text=element_text(size=16)) + 
+  theme_bw() + theme(text=element_text(size=14)) + 
   labs(title='Cross validated RMSE for various thermal models',x='cv.RMSE (kWh/day)')
+dev.copy2pdf(file = file.path(dailyDir,'CV_RMSE_all_models.pdf'),width=10,height=5)
 
 
 ggplot(subset(sclrsBasicsWS,
               model.name %in% 
                 c('DOW_tout_DL_65','DOW_tout_DL_CP65','DOW_toutNP_DL_l1DailyCP','DOW_toutCP_DLDailyCP',
                   'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
-              aes(x=cv.rmse,color=model.name,linetype=model.name)) + geom_density(size=1) + 
-              xlim(0,15)  + 
-              theme_bw() + theme(text=element_text(size=16)) + 
+              aes(x=adj.r.squared,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
+              xlim(-0.05,1)  + 
+              theme_bw() + theme(text=element_text(size=14)) + 
               labs(title='Adjusted R2 for change point models')
+dev.copy2pdf(file = file.path(dailyDir,'adj_R2_CP_models.pdf'),width=10,height=5)
 
 ggplot(subset(sclrsBasicsWS,
               model.name %in% c('DOW_toutCP_DLDailyCP')),
-       aes(x=adj.r.squared,color=cecclmzn,linetype=cecclmzn)) + geom_density(size=1) + 
-       xlim(0,1)  + 
-       theme_bw() + theme(text=element_text(size=16)) + 
+       aes(x=adj.r.squared,color=cecclmzn,linetype=cecclmzn)) + geom_density(size=0.7) + 
+       xlim(-0.2,1)  + 
+       theme_bw() + theme(text=element_text(size=14)) + 
        labs(title='Adjusted R2 for single change point model across CZs')
+dev.copy2pdf(file = file.path(dailyDir,'adj_R2_by_CZ.pdf'),width=10,height=5)
 
 ggplot(subset(sclrsBasicsWS,
               zip5 %in% c('93304')),
@@ -547,22 +552,25 @@ ggplot(subset(sclrs,
                 c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
                   'DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL',
                   'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
-       aes(x=kurtosis,color=model.name,linetype=model.name)) + geom_density(size=1) + 
-  xlim(-2,15) + 
-  theme_bw() + theme(text=element_text(size=16)) + 
+       aes(x=kurtosis,color=model.name,linetype=model.name)) + geom_freqpoly(size=0.7,binwidth=0.1,fill=NA) + 
+  #xlim(-2,7) + 
+  coord_cartesian(xlim=c(-2, 7)) +
+  theme_bw() + theme(text=element_text(size=14)) + 
   labs(title='Kurtosis of residuals across model runs by model type',
        x='kurtosis')
+dev.copy2pdf(file = file.path(dailyDir,'kurtosis.pdf'),width=10,height=5)
 
 ggplot(subset(sclrs,
               model.name %in% 
                 c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
                   'DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL',
                   'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
-       aes(x=pacf.1,color=model.name,linetype=model.name)) + geom_density(size=1) + 
+       aes(x=pacf.1,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
   xlim(-0.4,1) + 
-  theme_bw() + theme(text=element_text(size=16)) + 
-  labs(title='Partial auto correlation across model runs by model type',
-       x='pacf(1)')
+  theme_bw() + theme(text=element_text(size=14)) + 
+  labs(title='Lag 1 correlation across model runs by model type',
+       x='Corr(t,t-1)')
+dev.copy2pdf(file = file.path(dailyDir,'correlation_t_t-1.pdf'),width=10,height=5)
 
 ggplot(subset(sclrs,
               model.name %in% 
@@ -590,24 +598,31 @@ ggplot(subset(sclrs,
                 c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
                   'DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL',
                   'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
-       aes(x=DW,color=model.name,linetype=model.name)) + geom_density(size=1) + 
-  theme_bw() + theme(text=element_text(size=16)) + 
+       aes(x=DW,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
+  theme_bw() + theme(text=element_text(size=14)) + 
   labs(title='Durbin-Watson test statistic across model runs by model type',
        x='d')
+dev.copy2pdf(file = file.path(dailyDir,'durbin-watson.pdf'),width=10,height=5)
 
-# NG data required for this one
+# NG data required for these ones
 ggplot(basics,aes(x=therm.mean)) + geom_histogram(binwidth=0.1) + xlim(0,6) + 
   labs(x='mean therms per day',y='household count',title='Mean therms per day')
+dev.copy2pdf(file = file.path(empDir,'daily_therms_hist.pdf'),width=6,height=6)
 
 ggplot(basics,aes(x=therm.min)) + geom_histogram(binwidth=0.1) + xlim(0,6) + 
-  labs(x='base therms per day',y='household count',title='Mean base therms (hot water and cooking with heating removed) per day')
-
-ggplot(basics,aes(x=therm.mean*365 - therm.min*365)) + geom_histogram(binwidth=10) + xlim(-200,1000) + 
-  labs(x='Heating therms per year',y='household count',title='Estimated heating therms per year')
+  labs(x='base therms per day',y='household count',title='Mean base therms per day')
+dev.copy2pdf(file = file.path(empDir,'base_therms.pdf'),width=6,height=6)
 
 basics$therm.heating = (basics$therm.mean - basics$therm.min) * 365
+
+ggplot(basics,aes(x=therm.heating)) + geom_histogram(binwidth=10) + xlim(-200,1000) + 
+  labs(x='Heating therms per year',y='household count',title='Estimated heating therms per year')
+dev.copy2pdf(file = file.path(empDir,'heating_therms.pdf'),width=6,height=6)
+
+
 ggplot(basics,aes(x=therm.heating,color=climate)) + geom_density() + xlim(-200,1000) + 
   labs(x='Heating therms per year',y='density',title='Estimated heating therms per year')
+dev.copy2pdf(file = file.path(empDir,'heating_therms_by_CZ.pdf'),width=6,height=6)
 
 # heating cumsum
 ord = order(cp1Data$lower)
@@ -774,12 +789,18 @@ mean(results.cfs$DOW_tout_DL_l1[,'day.length'])
 
 zipData = DATA_SOURCE$getZipData()
 calMap(zipData,'counts','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues"),legend.title='# per zip code',nIntervals=7,intervalStyle='fixed',intervalBreaks=c(0,5,40,80,120,160,200,240,302 ))
+dev.copy2pdf(file = file.path(empDir,'meter_count_map.pdf'),width=6,height=6)
+
 calMap(StanfordData()$getZipData(),'cecclmzn','zip5',main='CEC climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
 calMap(zipData,'climate' ,'zip5',main='PGE climate zones',colorMap=brewer.pal(12,"Paired")[c(-1,-9,-11)] )
-calMap(zipData,'geography' ,'zip5',main='PGE sampling zones (10,000 accounts each)',colorMap=brewer.pal(3,"Dark2") )
+
+calMap(zipData,'geography' ,'zip5',main='PGE sampling zones (10,000 accounts each)',colorMap=c("#5AAE61","#D53E4F","#4EB3D3")) #brewer.pal(3,"Spectral") )
+dev.copy2pdf(file = file.path(empDir,'PGE_sample_zone_map.pdf'),width=6,height=6)
 
 
 calMap(ws,'tout','zip5',main='Mean annual temperature (F)',colorMap=rev(brewer.pal(9,"RdBu")),nIntervals=9 )
+dev.copy2pdf(file = file.path(empDir,'mean_temp_map.pdf'),width=6,height=6)
+
 calMap(ws,'rain','zip5',main='Total annual rain (inches)',colorMap=brewer.pal(9,"Blues") )
 calMap(ws,'dp','zip5',main='Mean annual dew point (F)',colorMap=brewer.pal(9,"Purples") )
 
@@ -787,13 +808,16 @@ calMap(ws,'dp','zip5',main='Mean annual dew point (F)',colorMap=brewer.pal(9,"Pu
 # maps of various metrics 
 # see zipMap.R for the calMap implementation and other plots
 calMap(wbasicMeans,'kw.total',main='Mean annual electricity consumption (kWh)',colorMap=brewer.pal(9,"Reds"),nIntervals=7,intervalStyle='fixed',intervalBreaks=c(0,2000,6000,10000,14000,18000,22000,max(wbasicMeans$kw.total,na.rm=T)+1) )
+dev.copy2pdf(file = file.path(empDir,'mean_annual_kwh_map.pdf'),width=6,height=6)
+
 calMap(basicMeans,'lag0',main='Simple correlation between Tout and kW denamd: corr(Tout,kW)',colorMap=rev(brewer.pal(9,"RdBu")) )
 
 
 calMap(wbasicMeansWS,'rankDiff',main='Rank difference between annual kWh demand and temperature',colorMap=rev(brewer.pal(9,"RdBu")) )
+
 ggplot(wbasicMeansWS,aes(x=toutC,y=kw.total)) + 
   geom_point() + 
-  labs(title='Annual home energy vs. Tout (means by zip code)',
+  labs(title='Annual kWh vs. Tout (by zip code)',
        x='Annual average Tout (C)',
        y='Annual home energy (kWh)') + 
   ylim(0,20000) +
@@ -803,11 +827,11 @@ ggplot(wbasicMeansWS,aes(x=toutC,y=kw.total)) +
   annotate("text",x=11,y=18000,
            label=lm_eqn(lm(kw.total ~ toutC,wbasicMeansWS)),
            colour='black',size=5,parse=T)
-
+dev.copy2pdf(file = file.path(empDir,'annual_energy_vs_tout.pdf'),width=6,height=6)
 
 ggplot(wbasicMeansWS,aes(x=summer.toutC,y=kw.total)) + 
   geom_point() + 
-  labs(title='Annual energy vs. Tout (means by zip code)',x='Summer average Tout (C)',y='Annual energy (kWh)') + 
+  labs(title='Annual kWh vs. summer Tout (by zip code)',x='Summer average Tout (C)',y='Annual energy (kWh)') + 
   ylim(0,20000) +
   theme_bw() + theme(text=element_text(size=16)) + 
   scale_x_continuous(breaks=seq(10,30,by=5)) + 
@@ -815,7 +839,7 @@ ggplot(wbasicMeansWS,aes(x=summer.toutC,y=kw.total)) +
   annotate("text",x=16.5,y=18000,
            label=lm_eqn(lm(kw.total ~ summer.toutC,wbasicMeansWS)),
            colour='black',size=5,parse=T)
-
+dev.copy2pdf(file = file.path(empDir,'annual_energy_vs_tout_summer.pdf'),width=6,height=6)
 
 wbasicMeansWS$var.winter = wbasicMeansWS$kw.var.winter * wbasicMeansWS$kw.mean
 wbasicMeansWS$var.summer = wbasicMeansWS$kw.var.summer * wbasicMeansWS$kw.mean
@@ -832,12 +856,16 @@ ggplot(melt(wbasicMeansWS[,c('kw.mean','var.summer','var.winter')],id=c('kw.mean
   scale_color_brewer(name="season",
                       breaks=c('var.summer', 'var.winter'),
                       labels=c('summer','winter'),palette='Set1' )
+dev.copy2pdf(file = file.path(empDir,'summer_vs_winter_var.pdf'),width=8,height=5)
 
-wbm = melt(wbasicMeansWS[,c('kw.total','kw.var','n2d','min','max','range','summer.tout','median_hh_income_val','owner_hh_size_val','tout','owner_occupied_pct','pct_below_poverty_pct','median_home_value_val','median_pop_age_val','pop_above_65_val','median_rooms_val')],id.vars=c('kw.total','min','max','range','kw.var','n2d','summer.tout'))
+wbasicMeansWS$median_hh_income_k = wbasicMeansWS$median_hh_income_val / 1000
+wbasicMeansWS$median_home_value_k = wbasicMeansWS$median_home_value_val / 1000
+wbm = melt(wbasicMeansWS[,c('kw.total','kw.var','n2d','min','max','range','summer.tout','median_hh_income_k','owner_hh_size_val','tout','owner_occupied_pct','pct_below_poverty_pct','median_home_value_k','median_pop_age_val','median_rooms_val')],id.vars=c('kw.total','min','max','range','kw.var','n2d','summer.tout'))
 ggplot(wbm,aes(x=value,y=kw.total)) + geom_point() + 
   facet_wrap(~ variable,scales='free_x',nrow=2) + 
   ylim(0,30000) +
   theme_bw() + theme(text=element_text(size=16))
+dev.copy2pdf(file = file.path(empDir,'kwh_vs_demographics_faceted.pdf'),width=10,height=5)
 
 ggplot(wbm,aes(x=value,y=min)) + geom_point() + 
   facet_wrap(~ variable,scales='free_x',nrow=2) + 
@@ -881,6 +909,7 @@ ggplot(wbasics,aes(x=kw.total)) + geom_histogram(binwidth=100,colour="gray50",fi
   #geom_density(aes(y=100*..count..), colour="firebrick",size=1,alpha=0.5) + 
   stat_function(fun=slnorm,args=c(scale=length(wbasics$kw.total)*100,lnm$estimate),color='firebrick',size=1,alpha=0.9)
   #annotate("text",label=lnm$estimate, x =15000,y=250, size = 6, colour = "black")
+dev.copy2pdf(file = file.path(empDir,'annual_energy_hist.pdf'),width=10,height=5)
 
 ggplot(wbasics,aes(x=kw.total)) + geom_histogram(binwidth=200) 
 
@@ -895,6 +924,8 @@ main='Cumulative distribution of annual energy', axes=F)
 axis(side = 2, at = seq(0,1,0.1))
 axis(side = 1, at = seq(0,100,10))
 abline(h=seq(0,1,0.1),v=seq(0,100,10),col='gray',lty=3)
+dev.copy2pdf(file = file.path(empDir,'cum_annual_energy.pdf'),width=8,height=5)
+
 
 ggplot(wbasics,aes(x=log(kw.total))) + geom_histogram(binwidth=0.02,colour="gray50",fill='gray50') + 
   theme_bw() + theme(text=element_text(size=16)) +
@@ -909,6 +940,7 @@ ggplot(transform(wbasics, geography=factor(geography,levels=c("Coast","Inland Hi
   theme_bw() + theme(text=element_text(size=16)) +
   theme(axis.text.x=element_blank(),axis.ticks.x=element_blank()) +
   coord_flip() + xlim(0,20000) + labs(title='Annual energy by climate',x='Annual kWh')
+dev.copy2pdf(file = file.path(empDir,'annual_energy_violin.pdf'),width=8,height=5)
 
 p1 = ggplot(wbasics,aes(x=min)) + geom_density(size=1) + theme_bw() + 
   labs(title='min (kW)',x='min (kW)') + xlim(0,1)
@@ -924,6 +956,9 @@ p6 = ggplot(wbasics,aes(x=n2d)) + geom_density(size=1) + theme_bw() +
   labs(title='night/day',x='night/day') + xlim(0,3)
 grid.arrange(p1,p2,p3,p4,p5,p6,ncol=3,main=paste('Distributions of load metrics (N=',round_any(dim(wbasics)[1],100,floor),')',sep=''))
 
+dev.copy2pdf(file = file.path(empDir,'load_metric_distros.pdf'),width=10,height=5)
+
+
 #Central Valley
 #1,550,138
 #Inland Hills
@@ -936,12 +971,20 @@ ggplot(wbasics,aes(x=(max.hr.tout-32)*5/9)) + geom_density(size=1) +
   theme_bw() + theme(text=element_text(size=16)) + 
   labs(title='Temperature at peak hour of demand',x='temp. (C) at peak hour of demand') + 
   xlim(-5,45)
+dev.copy2pdf(file = file.path(empDir,'tout_at_peak_kw.pdf'),width=6,height=6)
 
 ggplot(basics,aes(x=(max.day.tout-32)*5/9)) + geom_density(size=1) + 
   theme_bw() + theme(text=element_text(size=16)) + 
   labs(title='Temperature for peak day of demand',x='temp. (C) for peak day of demand') + 
   xlim(-5,45)
 
+ggplot(basics,aes(x=max.day.pct*100)) + geom_histogram(binwidth=1) + 
+  theme_bw() + theme(text=element_text(size=16)) + 
+  labs(title='Temperature percentile for peak day of demand',x='temp. percentile') + 
+  xlim(0,100)
+dev.copy2pdf(file = file.path(empDir,'tout_pct_peak_day.pdf'),width=6,height=6)
+
+basics$max.day.pct
 ggplot(wbasics,aes(x=(min.day.tout-32)*5/9)) + geom_density(size=1) + 
   theme_bw() + theme(text=element_text(size=16)) + 
   labs(title='Temperature for minimum day of demand',x='temp. (C) for minimum day of demand') + 
@@ -957,6 +1000,7 @@ ggplot(basics,aes(x=kw90)) + geom_histogram(binwidth=1) +
   theme_bw() + theme(text=element_text(size=16)) + 
   labs(title='Modal timing of top 10% of demand hours',x='Modal hour for top 10% of demand') + 
   scale_x_continuous(breaks=1:24)
+dev.copy2pdf(file = file.path(empDir,'modal_top_10_hrs.pdf'),width=6,height=6)
 
 ggplot(basics,aes(x=maxHOD)) + geom_histogram(binwidth=1) +
   theme_bw() + theme(text=element_text(size=16)) + 
@@ -969,30 +1013,37 @@ ggplot(wbasics,aes(x=month(as.POSIXlt(max.day.date,origin='1970-01-01')))) +
   geom_histogram(binwidth=1) + scale_x_continuous(breaks=1:12) + 
   theme_bw() + theme(text=element_text(size=16)) +
   labs(title='Month of peak daily usage',x='Month number')
+dev.copy2pdf(file = file.path(empDir,'month_of_peak_day.pdf'),width=6,height=6)
 
 ggplot(wbasics,aes(x=as.POSIXlt(max.day.date,origin='1970-01-01')$wday)) + 
   geom_histogram(binwidth=1,color='white') + scale_x_continuous(breaks=0:6,labels=c('Su','Mo','Tu','We','Th','Fr','Sa')) + 
   theme_bw() + theme(text=element_text(size=16)) +
   labs(title='Day of peak daily usage',x='Day of week')
+dev.copy2pdf(file = file.path(empDir,'day_of_peak_day.pdf'),width=6,height=6)
 
 ggplot(wbasics,aes(x=as.POSIXlt(max.hr.date,origin='1970-01-01')$wday)) + 
   geom_histogram(binwidth=1,color='white') + scale_x_continuous(breaks=0:6,labels=c('Su','Mo','Tu','We','Th','Fr','Sa')) + 
   theme_bw() + theme(text=element_text(size=16)) +
   labs(title='Day of peak hourly usage',x='Day of week')
+dev.copy2pdf(file = file.path(empDir,'day_of_peak_hour.pdf'),width=6,height=6)
 
 ggplot(wbasics,aes(x=hour(as.POSIXlt(max.hr.date,origin='1970-01-01')))) + 
   geom_histogram(binwidth=1) + scale_x_continuous(breaks=0:24) + 
   theme_bw() + theme(text=element_text(size=16)) +
   labs(title='Time of peak hour of usage',x='Hour of day')
+dev.copy2pdf(file = file.path(empDir,'time_of_peak.pdf'),width=6,height=6)
+
 
 # add test for peak due to cooling
 wbasics$cooling = wbasics$max.day.pct > 0.65
+wbasics$cooling[is.na(wbasics$cooling)] <- F
 
 ggplot(wbasics,aes(x=hour(as.POSIXlt(max.hr.date,origin='1970-01-01')))) + 
   geom_histogram(binwidth=1) + scale_x_continuous(breaks=0:24) + 
   theme_bw() + theme(text=element_text(size=16)) +
   labs(title='Time of peak hour of usage',x='Hour of day') + 
   facet_grid(. ~ cooling,labeller=label_both)
+dev.copy2pdf(file = file.path(empDir,'time_of_peak_facet.pdf'),width=10,height=5)
 
 ggplot(wbasics,aes(x=kw.total,color=cooling)) + 
   geom_density(size=1) + xlim(0,30000) +
@@ -1018,6 +1069,8 @@ plot(1:length(baseFraction)/length(baseFraction)*100,sort(baseFraction),type='l'
 axis(side = 2, at = seq(0,1,0.1))
 axis(side = 1, at = seq(0,100,10))
 abline(h=seq(0,1,0.1),v=seq(0,100,10),col='gray',lty=3)
+
+dev.copy2pdf(file = file.path(empDir,'fraction_min.pdf'),width=10,height=5)
 
 basics$maxLevels = cut(basics$max * 1000,seq(0,4000,600))
 ggplot(basics,aes(x=kw.total,fill=maxLevels)) + geom_histogram(binwidth=100) + xlim(0,40000) + labs(title='Count of homes by annual kWh',x='Annual kWh',y='Count')
@@ -1080,37 +1133,39 @@ toutScatter = function(r,main='',type='daily',useMean=F,xlim=c(40,95),ylim=NULL)
 
 op <- par(no.readonly = TRUE)
 par( mfrow=c(3,3), oma=c(2,0,3,0),mar=c(2,2,2,2))# Room for the title
-toutScatter(ResDataClass(1064429605,93304),'1') # _/  good fit
-toutScatter(ResDataClass(1418575405,93304),'2') # \/  good fit
-toutScatter(ResDataClass(6481381805,93304),'3') # \_/ good fit
-toutScatter(ResDataClass(6502182810,93304),'4') # \_/ good fit
-toutScatter(ResDataClass(6533703010,93304),'5') # WTF bad fit
-toutScatter(ResDataClass(3044473610,94704),'6') # \_  ok fit
-toutScatter(ResDataClass(3074319310,94704),'7') # \_  ok fit
-toutScatter(ResDataClass(3064027805,94704),'8') # __  bad fit
-toutScatter(ResDataClass(3074465310,94704),'9') # __  ok fit
+toutScatter(ResDataClass(1064429605,93304,useCache=T,doSG=F),'1') # _/  good fit
+toutScatter(ResDataClass(1418575405,93304,useCache=T,doSG=F),'2') # \/  good fit
+toutScatter(ResDataClass(6481381805,93304,useCache=T,doSG=F),'3') # \_/ good fit
+toutScatter(ResDataClass(6502182810,93304,useCache=T,doSG=F),'4') # \_/ good fit
+toutScatter(ResDataClass(6533703010,93304,useCache=T,doSG=F),'5') # WTF bad fit
+toutScatter(ResDataClass(3044473610,94704,useCache=T,doSG=F),'6') # \_  ok fit
+toutScatter(ResDataClass(3074319310,94704,useCache=T,doSG=F),'7') # \_  ok fit
+toutScatter(ResDataClass(3064027805,94704,useCache=T,doSG=F),'8') # __  bad fit
+toutScatter(ResDataClass(3074465310,94704,useCache=T,doSG=F),'9') # __  ok fit
 mtext("Typical daily kWh vs. mean Tout scatters", line=0, font=2, cex=1.2,outer=TRUE)
 par(op)
+dev.copy2pdf(file = file.path(dailyDir,'typical_daily_scatters.pdf'),width=8,height=7)
 
 
 op <- par(no.readonly = TRUE)
 par( mfrow=c(1,2), oma=c(2,0,3,0),mar=c(2,2,2,2))# Room for the title
-r = ResDataClass(1064429605,93304)
+r = ResDataClass(1064429605,93304,useCache=T,doSG=F)
 toutScatter(r,'Hourly averages',type='hourly',  useMean=T,xlim=c(30,105),ylim=c(0,8)) # _/ hourly
 toutScatter(r,'Daily averages',type='daily',    useMean=T,xlim=c(30,105),ylim=c(0,8)) # _/ daily
 #toutScatter(r,'Monthly averages',type='monthly',useMean=T,xlim=c(30,105),ylim=c(0,8)) # _/ monthly
 mtext("Impact of time averaging on electricity consumption data", line=0, font=2, cex=1.2,outer=TRUE)
 par(op)
+dev.copy2pdf(file = file.path(dailyDir,'hr_vs_daily_scatters.pdf'),width=8,height=5)
 
-r = ResDataClass(1064429605,93304);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # _/  good fit
-r = ResDataClass(1418575405,93304);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \/  good fit
-r = ResDataClass(6481381805,93304);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_/ good fit
-r = ResDataClass(6502182810,93304);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_/ good fit
-r = ResDataClass(6533703010,93304);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # WTF bad fit
-r = ResDataClass(3044473610,94704);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_  ok fit
-r = ResDataClass(3074319310,94704);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_  ok fit
-r = ResDataClass(3064027805,94704);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # __  bad fit
-r = ResDataClass(3074465310,94704);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # __  ok fit
+r = ResDataClass(1064429605,93304,useCache=T,doSG=F);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # _/  good fit
+r = ResDataClass(1418575405,93304,useCache=T,doSG=F);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \/  good fit
+r = ResDataClass(6481381805,93304,useCache=T,doSG=F);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_/ good fit
+r = ResDataClass(6502182810,93304,useCache=T,doSG=F);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_/ good fit
+r = ResDataClass(6533703010,93304,useCache=T,doSG=F);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # WTF bad fit
+r = ResDataClass(3044473610,94704,useCache=T,doSG=F);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_  ok fit
+r = ResDataClass(3074319310,94704,useCache=T,doSG=F);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # \_  ok fit
+r = ResDataClass(3064027805,94704,useCache=T,doSG=F);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # __  bad fit
+r = ResDataClass(3074465310,94704,useCache=T,doSG=F);  plot(r,estimates=toutDoubleChangePoint(rDFA(r))) # __  ok fit
 
 
 ggplot(aes(x=cp,color=climate),data=cp1Data) + geom_density()

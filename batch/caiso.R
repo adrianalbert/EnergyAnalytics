@@ -64,6 +64,7 @@ peakCoincidentReadings = function(peakHrs=1,peakPct=NULL) {
     # then ran as.data.frame(do.call(rbind,list)) after...
     topData = rbind(topData,zipData[days %in% topDays,]) 
   }
+  print(dim(topData))
   toc('peakCoincidentReadings')
   kwMat = NULL
   if(dim(topData)[2] > 40) { # average 15 minute data into hourly.
@@ -86,22 +87,28 @@ peakCoincidentReadings = function(peakHrs=1,peakPct=NULL) {
   return(coincidentReadings)
 }
 
-test = F
+test = T
 if(test) {
+  empDir = 'C:/Users/Sam/Dropbox/writing/empirical_paper/'
   caiso = getCAISO()
+  caiso$kw[which(caiso$kw < 19000)] = NA # clean up some bad readings
   onePct = annualPctDemand(0.99)
   top10 = annualTopDemand(10)
-  plot(caiso$date,caiso$kw,type='l',main='CAISO hourly system demand',ylab='kW',xlab='date')
-  points(onePct$date,onePct$kw,col='red')
+  plot(caiso$date,caiso$kw,type='l',main='CAISO hourly system demand',ylab='kW',xlab='date',ylim=c(0,1.1*max(caiso$kw,na.rm=T)))
+  #points(onePct$date,onePct$kw,col='red')
   points(top10$date,top10$kw,col='blue')
+  grid()
+  dev.copy2pdf(file = paste(empDir,'CAISO_top_hours.pdf',sep=''))
   
-  coincidentReadings = peakCoincidentReadings(peakHrs=1)
+  coincidentReadings = peakCoincidentReadings(peakHrs=10)
   plot((1:length(coincidentReadings$kw))/length(coincidentReadings$kw)*100,
        cumsum(sort(coincidentReadings$kw,decreasing=T))/sum(coincidentReadings$kw,na.rm=T),
-       xlab='percentile',ylab='fraction of load',
-       main=paste('Cumulative load at peak hour of system demand (N=',length(unique(coincidentReadings$sp_id)),')'))
+       xlab='percentile',ylab='fraction of load',type='l',
+       main=paste('Cumulative load across peak hours of system demand (N=',length(unique(coincidentReadings$sp_id)),')'))
+  grid()
+  dev.copy2pdf(file = paste(empDir,'CAISO_top_cumsum.pdf',sep=''),width=10,height=10)
   zipContribution = dcast(coincidentReadings,zip5 ~ .,value.var='kw',fun.aggregate=mean,na.rm=T)
   names(zipContribution)[2] <- 'mean.kw'
-  calMap(df=zipContribution,plotCol='mean.kw',intervalStyle='fixed',intervalBreaks=c(0,1,2,3,4,5,10),main='Mean kW demand at peak load by zip code')
-
+  calMap(df=zipContribution,plotCol='mean.kw',intervalStyle='fixed',intervalBreaks=c(0,1.00,2.00,3.00,4.00,5.00,10.00),precis=2,main='Mean kW demand across peak load hours by zip code')
+  dev.copy2pdf(file = paste(empDir,'CAISO_top_map.pdf',sep=''),width=10,height=10)
 }
