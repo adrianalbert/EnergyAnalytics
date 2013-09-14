@@ -6,11 +6,15 @@
 # Last modified: December 2012.
 
 # define required pacakges
-reqed.packages = c('RMySQL', 'zoo', 'depmixS4', 'ggplot2', 'utils', 'multicore', 'parallel',
-                   'methods', 'lmtest', 'Amelia', 'imputation', 'timeDate', 'lubridate', 
-                   'dummies', 'linkcomm', 'useful', 'reshape', 'grid', 'profr', 'R.utils', 
-                   'proftools', 'data.table', 'igraph', 'useful', 'RColorBrewer', 'reshape2',
-                   'lubridate')
+reqed.packages = c('RMySQL', 'zoo', 'depmixS4', 'ggplot2', 'utils', 
+                   'multicore', 'parallel',
+                   'methods', 'lmtest', 'Amelia', 'imputation', 
+                   'timeDate', 'lubridate', 
+                   'dummies', 'linkcomm', 'useful', 'reshape', 
+                   'grid', 'profr', 'R.utils', 
+                   'proftools', 'data.table', 'igraph', 'useful', 
+                   'RColorBrewer', 'reshape2',
+                   'lubridate', 'ggsubplot', 'ggmap', 'pls', 'zipcode')
 
 # get already installed packages
 avail.packages = installed.packages()

@@ -1,16 +1,16 @@
-# OccupancyStatesAnalysis.r
+# test_OccupancyStatesAnalysis.r
 #
-# Class to encapsulate clustering analysis on occupancy states. 
+# Test for OccupancyStatesAnalysis.
 # 
 # Adrian Albert
-# Last modified: April 2013.
+# Last modified: September 2013.
 # -----------------------------------------------------------------------
 
 rm(list = ls())
+options(error = recover)
 
-setwd('~/Dropbox/OccupancyStates/')
-source('code/utils/timing.r')
-source('code/OccupancyStatesAnalysis.r')
+source('../utils/timing.r')
+source('classes/OccupancyStatesAnalysis.r')
 
 # populate OccupancyStatesAnalysis object
 test      = new(Class='OccupancyStatesAnalysis', path = '~/Dropbox/OccupancyStates/fits/fits_sel/')
@@ -18,14 +18,6 @@ test      = computeEffThermalResponse(test)
 
 test      = greedyThermalTargeting(test, method = 'temperature')
 test      = greedyThermalTargeting(test, method = 'random')
-
-#   # find typical states by % variance explained by components: hard clustering
-#   resK     = stateComponentClustering(test, Kmin = 3, Kmax = 30)
-#   test     = stateComponentClustering(test, Kmin = 10, Kmax = 10)
-#   
-#   # find typical states by % variance explained by components: soft clusterin
-#   resC     = stateComponentClustering(test, Kmin = 3, Kmax = 30, type = 'soft')
-#   test     = stateComponentClustering(test, Kmin = 10, Kmax = 10, type = 'soft')
 
 # ______________
 # Analysis plots

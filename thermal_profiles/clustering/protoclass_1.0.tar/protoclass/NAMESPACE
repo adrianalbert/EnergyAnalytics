@@ -1,0 +1,6 @@
+S3method(plot,protoclass)
+S3method(predict,protoclass)
+S3method(print,protoclass)
+export(dist2)
+export(predictwithd.protoclass)
+export(protoclass)

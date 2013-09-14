@@ -1,10 +1,14 @@
+# #########################################################################
+# OccupancyStateAnalysis.r
+# -------------------------
+#
 # OccupancyStatesAnalysis.r
 #
-# Class to encapsulate clustering analysis on occupancy states. 
+# Class to encapsulate post-estimation analysis on occupancy states. 
 # 
 # Adrian Albert
-# Last modified: April 2013.
-# -----------------------------------------------------------------------
+# Last modified: September 2013.
+# #########################################################################
 
 library('methods')
 library('timeDate')
@@ -18,13 +22,10 @@ library('ggmap')
 library('zipcode')
 data('zipcode')
 
-setwd('~/Dropbox/OccupancyStates/')
-source('code/clustering/clustering_wrapper.r')
-source('code/utils/plot_utils.r')
+source('../utils/viz/plot_utils.r')
 
 # clean-up previous definitions of methods for class Person
 removeClass('OccupancyStatesAnalysis')
-options(error = recover)
 
 # ________________________
 # Class definition
@@ -33,14 +34,12 @@ setClass(
   Class = "OccupancyStatesAnalysis",
   representation = representation(
     PATH_DATA        = "character",           # path to where occupancy data is stored
-    OLS_STATS        = "data.frame",          # state attributes
     STATES_ATTR      = "data.frame",          # state attributes
     BENCHMARKS       = "data.frame",          # benchmarks 
     STATES_COMP      = "data.frame",          # variance components by state
     STATES_SEAS      = "data.frame",          # seasonal breakdown of states
     OCCUP_STATS      = "data.frame",          # stats on occupancy patterns
-    COMPS_KMEAN      = 'list',                # k-means clustering results for state components
-    COMPS_CMEAN      = 'list',                # c-means (soft k-means) clustering results for state components
+    SEGMENTATION     = 'list',                # clustering results for users
     TARGETING        = 'list',                # simple targeting results
     EFF_RESPONSE     = 'data.frame',          # effective thermal response vs temperature
     TOD_RESPONSE     = 'data.frame',          # effective thermal response vs temperature
@@ -71,7 +70,6 @@ setMethod(f = "initialize",
           signature = "OccupancyStatesAnalysis",
           definition = function(.Object, 
                                 path = './', 
-                                ols_stats   = 'olscoefs',
                                 states_attr = 'response',
                                 states_comp = 'hmmcomps',
                                 states_stat = 'hmmstats',
@@ -82,14 +80,7 @@ setMethod(f = "initialize",
             if (verbose) cat('*** Reading in data ***\n')
             
             .Object@PATH_DATA = path
-                      
-            # ____________________________
-            # Format ols results
-            
-            res = read_files(path, ols_stats)
-            .Object@OLS_STATS = res[['data']]
-            if (verbose) cat(paste('OLS statistics:\tRead in', res[['noChunks']], 'chunks\n'))
-            
+                                  
             # ____________________________
             # Format state attribute data
             
@@ -127,83 +118,8 @@ setMethod(f = "initialize",
             return(.Object)
           })
 
-# ________________________________________
-# K-Means clustering on states components
-
-setGeneric(
-  name = "stateComponentClustering",
-  def = function(.Object, Kmin = 3, Kmax = 3, verbose = T, type = 'hard'){standardGeneric("stateComponentClustering")}
-)
-setMethod('stateComponentClustering',
-          signature  = 'OccupancyStatesAnalysis',
-          definition = function(.Object, Kmin = 3, Kmax = 3, verbose = T, type = 'hard'){
-            
-            if (verbose) cat('K-Means Clustering of States by Variance Explained Components:\n')
-
-            # prepare data for clustering
-            data = .Object@STATES_ATTR[,c(1,2,3)]
-            data = as.data.frame(stdize(as.matrix(data)))
-            
-            # perform clustering
-            if (type == 'hard') {
-              res = kmeans_wrapper(data, Kmin = Kmin, Kmax = Kmax)
-            } else 
-              res = cmeans_wrapper(data, Kmin = Kmin, Kmax = Kmax)
-            
-            # re-scale obtained centers
-            # TODO!
-            
-            if (Kmin == Kmax) {
-              if (type == 'hard') .Object@COMPS_KMEAN = res else .Object@COMPS_CMEAN = res
-              return(.Object)
-            } else return(res)
-          }
-)
-
-# ________________________________________
-# K-Means clustering on states attributes
-
-setGeneric(
-  name = "stateAttributeClustering",
-  def = function(.Object, Kmin = 3, Kmax = 3, thresh = 0.90, verbose = T){standardGeneric("stateAttributeClustering")}
-)
-setMethod('stateAttributeClustering',
-          signature  = 'OccupancyStatesAnalysis',
-          definition = function(.Object, Kmin = 3, Kmax = 3, thresh = 0.90, verbose = T){
-            
-            if (verbose) cat('K-Means Clustering of States by Attributes:\n')
-            
-            # prepare data for clustering
-            data         = .Object@STATES_ATTR
-            data$UID     = NULL
-            data$State   = NULL
-            data$ZIPCODE = NULL
-            names(data)[1] = 'Base'
-            
-            # take SVD of data
-            res.svd      = svd(as.matrix(data))
-            lambda       = res.svd$d^2
-            SigmaSVD     = diag(res.svd$d[1:q])
-            var_expl     = lambda / sum(lambda)
-            q            = which(round(cumsum(var_expl), digits=3) >= thresh)[1]
-            alpha        = res.svd$u[,1:q]
-            
-            # perform K-means on loadings
-            res.km       = kmeans_wrapper(alpha, Kmin = Kmin, Kmax = Kmax)
-            if (Kmin == Kmax) {
-              return(res.km)
-            }
-            
-            # project back states from eigenspace to "attribute" space
-            centers.proj = res.km$centers %*% SigmaSVD %*% res.svd$v[1:q,]
-            names(centers.proj) = names(data)
-            
-            return(list(centers = centers.proj, assign = res.km$assign))
-          }
-)
-
-# _____________________________________________
-# Compute effective thermal response for users
+# ______________________________________________________________
+# Compute effective thermal response for users (by temperature)
 
 setGeneric(
   name = "computeEffThermalResponse",
@@ -338,6 +254,23 @@ setMethod('computeEffThermalDuration',
           }
 )
 
+# ______________________________
+# Thermal segmentation for users
+
+setGeneric(
+  name = "thermalSegmentation",
+  def = function(.Object, Kmin = 3, Kmax = 3, verbose = T){standardGeneric("thermalSegmentation")}
+)
+setMethod('thermalSegmentation',
+          signature  = 'OccupancyStatesAnalysis',
+          definition = function(.Object, Kmin = 3, Kmax = 3, verbose = T){
+            
+            if (verbose) cat('Thermal Segmentation:\n')
+            
+            
+          }
+)
+
 # _____________________________________________
 # Compute thermal correlations for all users
 
@@ -351,7 +284,7 @@ setMethod('computeThermalCorrelations',
             
             if (verbose) cat('Computing effective thermal response...')
             
-            .Object@EFF_RESPONSE
+            # TODO!!
             
             # store computation
             .Object@COVMAT = df.resp
@@ -958,10 +891,7 @@ setMethod('plot',
               ggtitle("Distribution of Thermal Regimes by Zone") 
             
             return(plt)            
-          }
-            
-            
-                              
+          }                    
 })
             
   
