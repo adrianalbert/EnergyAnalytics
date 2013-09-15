@@ -24,23 +24,7 @@
 # Last modified: September 2013.
 # #########################################################################
 
-# ___________________________________
-# Distance function (chi-square)
-d_err <- function(x, sx, y, sy) {
-  p    = length(x)
-  # stat = sum((x - y)^2 /(sx + sy))
-  # d    = pchisq(stat, p)
-  d    = sum((x - y)^2 /sx)
-  return(d)
-}
-
-d_err_mat <- function(X, SX, Y, SY) {
-  D = matrix(nrow=nrow(X), ncol=nrow(Y))
-  for (x in 1:nrow(X))
-    for (y in 1:nrow(Y))
-      D[x,y] = d_err(X[x,], SX[x,], Y[y,], SY[y,])
-  return(D)
-}
+source('./clustering/d_err.r')
 
 # ___________________________________
 # Compute center of cluster

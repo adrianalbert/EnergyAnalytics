@@ -13,7 +13,7 @@ reqed.packages = c('RMySQL', 'zoo', 'depmixS4', 'ggplot2', 'utils',
                    'dummies', 'linkcomm', 'useful', 'reshape', 
                    'grid', 'profr', 'R.utils', 
                    'proftools', 'data.table', 'igraph', 'useful', 
-                   'RColorBrewer', 'reshape2',
+                   'RColorBrewer', 'reshape2', 'Rcpp', 'inline',
                    'lubridate', 'ggsubplot', 'ggmap', 'pls', 'zipcode')
 
 # get already installed packages

@@ -23,6 +23,8 @@ library('zipcode')
 data('zipcode')
 
 source('../utils/viz/plot_utils.r')
+source('./clustering/kError.r')
+source('./clustering/d_err.r')
 
 # clean-up previous definitions of methods for class Person
 removeClass('OccupancyStatesAnalysis')
@@ -43,7 +45,6 @@ setClass(
     TARGETING        = 'list',                # simple targeting results
     EFF_RESPONSE     = 'data.frame',          # effective thermal response vs temperature
     TOD_RESPONSE     = 'data.frame',          # effective thermal response vs temperature
-    EFF_DURATION     = 'data.frame',          # effective thermal duration vs temperature
     COVMAT           = 'list'                 # thermal covariance matrix of users
   )
 )
@@ -199,74 +200,44 @@ setMethod('computeEffTODResponse',
           }
 )
 
-# _____________________________________________
-# Compute effective thermal duration for users
-
-setGeneric(
-  name = "computeEffThermalDuration",
-  def = function(.Object, verbose = T){standardGeneric("computeEffThermalDuration")}
-)
-setMethod('computeEffThermalDuration',
-          signature  = 'OccupancyStatesAnalysis',
-          definition = function(.Object, verbose = T){
-            
-            if (verbose) cat('Computing effective thermal response...')
-            
-            print(bl)
-            
-            # TODO! 
-            # BROKEN FUNCTION!
-            
-            # select data
-            df.distr = subset(.Object@BENCHMARKS, variable == 'Distribution')
-            df.durat = subset(.Object@BENCHMARKS, variable == 'Duration')
-            
-            temp.sel = paste('X', 0:120, sep = '')
-            df.durat  = cbind(df.distr[,1:3], df.distr[,temp.sel] * df.durat[,temp.sel])
-            df.durat  = cbind(df.distr[,1:3], df.distr[,temp.sel] * df.durat[,temp.sel])
-            df.durat  = melt(df.durat, id.vars = c('UID', 'ZIPCODE', 'State'))
-            names(df.durat)[c(4,5)] = c('TemperatureF','Duration')
-
-            # compute average duration
-            df.resp          = merge(df.distr, df.resp)
-            df.resp$variable = NULL
-            df.resp          = melt(df.resp, id.vars = c('UID', 'ZIPCODE', 'State', 'Sigma', 'TemperatureF', 'X.Intercept.'))
-            df.resp$variable = as.numeric(gsub('X', '', df.resp$variable))
-            df.resp$AvgTempF = df.resp$TemperatureF * df.resp$value
-            df.resp$VarTempF = df.resp$TemperatureF^2 * df.resp$value
-            df.resp$value    = NULL
-            df.resp$TemperatureF = NULL
-            names(df.resp)[c(5:8)] = c('Activity.Component', 'TemperatureF', 'Thermal.Duration', 'Var.Thermal')
-            
-            
-            
-            
-            # compute aggregated response              
-            df.resp  = aggregate(data = df.resp, cbind(Thermal.Duration, Var.Thermal) ~ UID + ZIPCODE + TemperatureF, FUN = sum)              
-            df.resp$Var.Thermal = sqrt(df.resp$Var.Thermal - (df.resp$Thermal.Duration)^2)
-            df.resp$UID = as.factor(df.resp$UID)
-            
-            # store computation
-            .Object@EFF_DURATION = df.resp
-            
-            return(.Object)
-            
-          }
-)
-
 # ______________________________
 # Thermal segmentation for users
 
 setGeneric(
   name = "thermalSegmentation",
-  def = function(.Object, Kmin = 3, Kmax = 3, verbose = T){standardGeneric("thermalSegmentation")}
+  def = function(.Object, Kmin = 3, Kmax = 3, verbose = T, type = 'temperature')
+  {standardGeneric("thermalSegmentation")}
 )
 setMethod('thermalSegmentation',
           signature  = 'OccupancyStatesAnalysis',
-          definition = function(.Object, Kmin = 3, Kmax = 3, verbose = T){
+          definition = function(.Object, Kmin = 3, Kmax = 3, verbose = T, type = 'temperature'){
             
             if (verbose) cat('Thermal Segmentation:\n')
             
+            # prepare data
+            K = Kmin
+            if (type == 'temperature') {
+              # observations
+              df = subset(.Object@EFF_RESPONSE, select = c('UID', 'TemperatureF', 'Thermal.Component'))              
+              df = df[with(df, order(UID, TemperatureF)), ]
+              uid= df[,'UID']
+              df = matrix(as.matrix(df[,-1]), ncol = length(unique(df[,'TemperatureF'])))
+              df = as.data.frame(df)
+              X  = cbind(unique(uid), df)
+              # errors
+              df = subset(.Object@EFF_RESPONSE, select = c('UID', 'TemperatureF', 'Var.Thermal'))              
+              df = df[with(df, order(UID, TemperatureF)), ]
+              uid= df[,'UID']
+              df = matrix(as.matrix(df[,-1]), ncol = length(unique(df[,'TemperatureF'])))
+              df = as.data.frame(df)
+              S  = cbind(unique(uid), df)              
+            } else {
+              X = .Object@TOD_RESPONSE
+              # TODO: per-season analysis? or put both seasons together?
+            }
+            
+            res = kError(X, S, K, iter = 10)
+            return(res)
             
           }
 )

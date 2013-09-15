@@ -13,8 +13,13 @@ source('../utils/timing.r')
 source('classes/OccupancyStatesAnalysis.r')
 
 # populate OccupancyStatesAnalysis object
-test      = new(Class='OccupancyStatesAnalysis', path = '~/Dropbox/OccupancyStates/fits/fits_sel/')
+test      = new(Class='OccupancyStatesAnalysis', 
+                path = 'D:/Dropbox/OccupancyStates/fits/fits_sel/')
+
 test      = computeEffThermalResponse(test)
+test      = computeEffTODResponse(test)
+
+test      = thermalSegmentation(test, type = 'temperature')
 
 test      = greedyThermalTargeting(test, method = 'temperature')
 test      = greedyThermalTargeting(test, method = 'random')
