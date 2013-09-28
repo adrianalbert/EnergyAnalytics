@@ -128,7 +128,7 @@ solar = c('gen')
 ev    = c('CAR1')
 net   = c('Grid')
 
-runExample = T
+runExample = F
 if(runExample) {
   ppw = pecanPlusWeather()
   for(homeName in names(ppw)){
@@ -138,31 +138,33 @@ if(runExample) {
     print(dim(homeData))
     
     op <- par(no.readonly = TRUE)
+    cols = c('black','#ff9999','blue','#bbbbbb')
     m <- matrix(c(1,2,3),nrow=3,ncol=1,byrow=T)
     layout(mat = m,heights = c(0.4,0.4,0.2))
     par(oma=c(2,2,2,0),mar=c(2,4,2,1)) # Room for the title
     maxUsage = max(usage(homeData,total))
-    plot(homeData$date,usage(homeData,total),type='l',col='gray',main='minute',ylab='kW',ylim=c(0,1.1*maxUsage))
-    points(homeData$date,usage(homeData,HVAC),type='l',col='#ff9999')
-    points(homeData$date,usage(homeData,user),type='l',col='blue')
-    points(homeData$date,homeData$TemperatureF/100*maxUsage,type='l',col='#99ff99')
+    plot(homeData$date,usage(homeData,total),type='l',col=cols[1],main='minute',ylab='kW',ylim=c(0,1.1*maxUsage))
+    points(homeData$date,usage(homeData,HVAC),type='l',col=cols[2])
+    points(homeData$date,usage(homeData,user),type='l',col=cols[3])
+    points(homeData$date,homeData$TemperatureF/100*maxUsage,type='l',col=cols[4])
     grid()
     hrData = toHourly(homeData)
     maxUsage = max(usage(hrData,total))
-    plot(hrData$date,usage(hrData,total),type='l',col='gray',main='hourly',ylim=c(0,1.1*maxUsage),ylab='kW')
-    points(hrData$date,usage(hrData,HVAC),type='l',col='#ff9999')
-    points(hrData$date,usage(hrData,user),type='l',col='blue')
-    points(hrData$date,hrData$TemperatureF/100*maxUsage,type='l',col='#99ff99')
+    plot(hrData$date,usage(hrData,total),type='l',col=cols[1],main='hourly',ylim=c(0,1.1*maxUsage),ylab='kW')
+    points(hrData$date,usage(hrData,HVAC),type='l',col=cols[2])
+    points(hrData$date,usage(hrData,user),type='l',col=cols[3])
+    points(hrData$date,hrData$TemperatureF/100*maxUsage,type='l',col=cols[4])
     grid()
     mtext(paste(homeName,'kW demand'), line=0, font=2, cex=1.2, outer=TRUE)
     par(mar=c(1,4,1,1))
     plot.new()
     legend("center", lty=1,cex=1,
            legend=c('total','HVAC','user','temperature'), 
-           col=c('gray','#ff9999','blue','#99ff99'),horiz=T)
+           col=cols,horiz=T)
     par(op)
     
     dev.copy2pdf(file=file.path(getwd(),PECAN_DATA_DIR,paste(homeName,'.pdf',sep='')),width=10,height=6)
+    #dev.copy2pdf(file=file.path('c:/users/Sam/Dropbox/writing/occupancy',paste('1_minute_sample','.pdf',sep='')),width=10,height=6)
   }
 }
 

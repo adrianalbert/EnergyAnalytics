@@ -24,7 +24,7 @@ ModelDescriptor = function(name,formula,subset=NULL,preRun=NULL,cvReps=0,step=F)
     if(is.null(df)) { df = regressorDF(resData,norm=FALSE) }
     #print(paste('[ModelDescriptor.run]',obj$name,'(',names(obj$subset),'):',obj$formula))
     for(snm in names(obj$subset)) {
-      df$sub = eval(parse(text=obj$subset[[snm]]),envir=df)  # load the subset flags into the data.frame
+      df$sub    = eval(parse(text=obj$subset[[snm]]),envir=df)  # load the subset criteria as text and parse as booleans into the data.frame
       lm.result = lm(obj$formula,df,x=T,y=T,subset=sub==T,na.action=na.exclude) # run the lm on the subset indicated in the data frame
       if(step) {
         lmr = lm('kwh ~ 1',df,subset=sub==T)
@@ -66,7 +66,7 @@ print.ModelDescriptor = function(md) {
 # DescriptorGenerators generate model descriptors and additional regressor columns 
 # for custom model configurations. For example, the hourly change point model
 # returns a separate set of piecewise temerpature regressors for each hour.
-DescriptorGenerator = function(genImpl,name='',formula=NULL,subset=NULL,cvReps=0,terms=NULL){
+DescriptorGenerator = function(genImpl,name='',formula=NULL,subset=NULL,cvReps=0,terms=NULL,...){
   obj = list (
     name       = name,
     formula    = formula,
@@ -80,7 +80,7 @@ DescriptorGenerator = function(genImpl,name='',formula=NULL,subset=NULL,cvReps=0
     summaries = c()
     other     = c()
     if(is.null(df)) { df = regressorDF(r,norm=FALSE) }
-    updates = obj$genImpl(r,df,name,formula,subset=subset,cvReps=cvReps,terms=terms)
+    updates = obj$genImpl(r,df,name,formula,subset=subset,cvReps=cvReps,terms=terms,...)
     if(! empty(updates$regressors)) { 
       df = cbind(df,updates$regressors)
     }
@@ -272,14 +272,26 @@ cp24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL
 
 # toutPieces24Generator breaks temperature into piecewise segments, broken at 55,65,75F
 # and regresses these with different coefficients for every hour of the day.
-toutPieces24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL,breaks=c(55,65,75)) {
-  toutPIECES = regressor.piecewise(r$tout,breaks)
+toutPieces24Generator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms='+ HOW - 1',basics=NULL,breaks=c(55,65,75),diverge=F) {
+  toutPIECES = regressor.piecewise(r$tout,breaks,diverge=diverge)
+  if(class(subset) == 'character' & subset == 'idxSteps') {
+    step = 30*24
+    width = 3
+    steps = (1-width):(length(df$idx) %/% (step) -1)
+    #if(steps < 0) steps = 0
+    subset = list()
+    for(i in steps) {
+      subset[[paste('sub',i,sep='')]] = paste('idx > ',i*step, '& idx <= ',i*step + step*width)
+    }
+    print('Generating subsets spanning multiple steps')
+    #print(subset)
+  }
   out = list( 
     regressors   = cbind(toutPIECES),
     descriptors  = list( 
       Pieces24=ModelDescriptor( # regression with the best fit lag
         name=paste(namePrefix,'24', sep=''), 
-        formula=paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse=" + ",sep=''),'+ HOW - 1'), # TODO: maybe HOW?
+        formula=paste('kw ~',paste(colnames(toutPIECES),':HOD',collapse='+',sep=''),terms),
         subset=subset,cvReps=cvReps)
     )
   )
@@ -361,12 +373,12 @@ toutPieces24MAGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,
   return(out)
 }
 
-toutDailyFixedCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL) {
-  return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,cvReps=cvReps,basics=basics,terms=terms,forceCP=65))
+toutDailyFixedCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL,diverge=F) {
+  return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,cvReps=cvReps,basics=basics,terms=terms,diverge=diverge,forceCP=65))
 }
 
-toutDailyNPCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL) {
-  return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,cvReps=cvReps,basics=basics,terms=terms,forceCP=c(55,65,75)))
+toutDailyNPCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms=NULL,basics=NULL,diverge=F) {
+  return(toutDailyCPGenerator(r,df,namePrefix,formula,subset=subset,cvReps=cvReps,basics=basics,terms=terms,diverge=diverge,forceCP=c(55,65,75)))
 }
 
 toutDailyDivergeCPGenerator = function(...) {
@@ -407,12 +419,12 @@ toutDailyCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,ter
   return(out)
 }
 
-toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms='+ DOW - 1',basics=NULL,forceCP=NULL) {
+toutDailyFlexCPGenerator = function(r,df,namePrefix,formula,subset=NULL,cvReps=0,terms='+ DOW - 1',basics=NULL,forceCP=NULL,diverge=F) {
   # todo: test 1,2,and 3 segment change point models.
   #coolCP = 70
   bestFit = toutDoubleChangePoint(df)
   cp = bestFit[grep('^cp',names(bestFit))]
-  pieces = regressor.piecewise(df$tout.mean,cp) # get a list of daily piecewise splits for tout.mean
+  pieces = regressor.piecewise(df$tout.mean,cp,diverge=diverge) # get a list of daily piecewise splits for tout.mean
   middle = c()
   nSegs = dim(pieces)[2]
   if(nSegs > 2) middle = paste('tou.mean_middle_',1:(nSegs-2),sep='')
@@ -469,11 +481,14 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
   s$hist          <- hist(s$residuals,breaks=100,plot=F)
   s$kurtosis      <- kurtosis(s$residuals)
   s$residuals     <- residuals(s) # include NAs in the resudials
-
+  s$total         <- sum(predict(m),na.rm=T)
+  s$dates         <- df$dates[eval(parse(text=subset),envir=df)]
+  s$prediction    <- predict(m)
+  
   if(doOccModel) {
     # note that we can only assume that the length of residuals and dates 
     # are the same if the regression uses na.action=na.exclude and we call
-    # residuals(s), not s$residuals.If the lengths differ, we will report 
+    # residuals(s), not s$residuals. If the lengths differ, we will report 
     # incorrect dates
     #print('running occ models')
     dens = quantileDensities(s$residuals,df$dates)
@@ -509,8 +524,6 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
   if("x" %in% names(m)) {
     s$contribution <- colSums(t(m$coefficients * t(m$x)))
   }
-  s$total        <- sum(predict(m),na.rm=T)
-  s$prediction   <- predict(m)
   
   # k-fold prediction error
   if (cvReps > 0) {
@@ -520,6 +533,8 @@ summarizeModel = function(m,df,modelDescriptor,nm,id,zip,subnm=NULL,cv=F,cvReps=
     # this ensures consistency for the purposes of comparison 
     # (it is modded by the max integer size to ensure) it works as a seed
     s$cv.rmse   <- cvFold(df,modelDescriptor,K=5,R=cvReps,seed=(s$id %% .Machine$integer.max)) # pre-rolled function from cvTools
+    s$cv.mape   <- cvFold(df,modelDescriptor,K=5,R=cvReps,costfn=mape,seed=(s$id %% .Machine$integer.max)) # pre-rolled function from cvTools
+    
   }
   PLOT_RESUDIALS = F
   if(PLOT_RESUDIALS) {
@@ -599,7 +614,8 @@ regressor.piecewise = function(regressor,bins,diverge=F) {
     binLower = binUpper
   }
   if(diverge) {
-    mat[,1] = pmax(bins[1] - regressor,0)
+    mat[,1] = pmax(bins[1] - regressor,0) # the first column contains the distance of 
+                                          # the value from the bottom change point (rather than from 0)
   }
   colnames(mat) <- nm
   return(mat)
@@ -636,6 +652,7 @@ regressorDF = function(residence,norm=FALSE,rm.na=FALSE) {
   dStr       = paste('D',wday,sep='')
   mStr       = paste('M',residence$dates$mon,sep='')
   howStrs    = paste(dStr,hStr,sep='')
+  idx        = 1:length(residence$kw)
   MOY        = factor(mStr,levels=sort(unique(mStr)))         # month of year
   DOW        = factor(dStr,levels=sort(unique(dStr)))         # day of week
   HOD        = factor(hStr,levels=sort(unique(hStr)))         # hour of day
@@ -663,6 +680,7 @@ regressorDF = function(residence,norm=FALSE,rm.na=FALSE) {
     #tout65_d1 = diff2(tout,1)*(tout65 > 0),
     #tout_d3 = diff2(tout,3),
     #kw_min=kw_min,
+    idx=idx,
     kw=kw,
     tout=tout,
     tout65=tout65,
@@ -977,9 +995,11 @@ kFold = function(df,modelDescriptor,K=5) {
   return(rmspe)
 }
 
-cvFold = function(df,modelDescriptor,K=5,R=1,seed=NULL) {
+cvFold = function(df,modelDescriptor,K=5,R=1,costfn=rmspe,seed=NULL) {
   fmla = formula(modelDescriptor$formula)
-  cvOut = cvFit(lm,formula=fmla,data=df,K=K,R=R,foldType='random',cost=rmspe,seed=seed) #root mean squared prediction error
+  cvOut = cvFit(lm,formula=fmla,data=df,K=K,R=R,foldType='random',cost=costfn,seed=seed) #root mean squared prediction error
+  #cvMape = cvFit(lm,formula=fmla,data=df,K=K,R=R,foldType='random',cost=mape,seed=seed) #root mean squared prediction error
+  
   #print(cvOut)
   #print(names(cvOut))
   #print(cvOut$reps)

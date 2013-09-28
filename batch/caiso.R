@@ -87,7 +87,7 @@ peakCoincidentReadings = function(peakHrs=1,peakPct=NULL) {
   return(coincidentReadings)
 }
 
-test = T
+test = F
 if(test) {
   empDir = 'C:/Users/Sam/Dropbox/writing/empirical_paper/'
   caiso = getCAISO()

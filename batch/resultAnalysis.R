@@ -51,7 +51,7 @@ scalars = function(a,model.name=NULL,subset.name=NULL) {
   return(delist(b))
 }
 
-cf = function(a,model.name,subset.name=NULL,col='Estimate',cfName='coefficients') {
+cf = function(a,model.name,subset.name=NULL,col='Estimate',cfName='coefficients',fill=F) {
   sn = T
   mn = T
   #print(names(a))
@@ -62,11 +62,17 @@ cf = function(a,model.name,subset.name=NULL,col='Estimate',cfName='coefficients'
   }
   b = subset(a,mn & sn) # filter to the subset and model requested
   if(empty(b)) { return(c()) }
-  out = t(apply(b,1,function(x) return(c(id=x$id,x[cfName][[1]][,col]))))
+  print( data.frame(c(id=x$id,x[cfName][[1]][,col])) )
+  out = t( apply(b,1,function(x) return( data.frame(c(id=x$id,x[cfName][[1]][,col])) ) ) )
   if(class(out[1]) == 'list') { # this seems to happen when some regessons had fewer non-NA coefficients than others.
     print('warning. Some regressons have incomplete coefficients and are being dropped.')
     lengths = as.numeric(lapply(out,length))
-    out = do.call(rbind,out[lengths == Mode(lengths)])
+    if(fill) {
+      out = do.call(rbind.fill,out)
+    } else {
+      out = do.call(rbind,out[lengths == Mode(lengths)])
+    }
+    
   }
   return(out)
 }
@@ -124,7 +130,7 @@ loadResult = function(zip,resDir=NULL) {
   return(modelResults)
 }
 
-combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=function(x) { x },model.name=NULL,subset.name=NULL,appendZipData=F) {
+combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=function(x) { x },model.name=NULL,subset.name=NULL,appendZipData=F,fill=F,...) {
   tic('combine')
   result = c()
   rList = as.list(rep(NA,600)) # there are < 600 zips so far... 
@@ -162,9 +168,9 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
     #print(cf(modelResults[['d_summaries']],model.name=model.name,subset.name=NULL))
         
     if(is.null(model.name)) {
-      new = fun(data)
+      new = fun(data,...)
     } else {
-      new = fun(data,model.name=model.name,subset.name=subset.name)
+      new = fun(data,model.name=model.name,subset.name=subset.name,...)
     }
     
     if(length(new) == 0) { next }
@@ -183,11 +189,13 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
     new = cbind(new,zip5=zip) # ensure the zipcode is there
     newLength = length(colnames(new))
     if(prevColCount > newLength) {
-      print(colnames(new))
-      print('trouble with column length')
-      print(new)
+      print('uneven column length')
+      #print(new)
       # skip?
-      next
+      if(!fill) { 
+        print(colnames(new))
+        next 
+      }
     }
     prevColCount <- newLength
     rownames(new) <- c()
@@ -201,8 +209,12 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
   rList[nCols == 0] <- NULL # remove empty parts of the list.
   #print(do.call(rbind,lapply(rList,function(x) c(length(colnames(x)),unique(x['zip5'])))))
   #print(do.call(rbind,lapply(rList,function(x) c(colnames(x),unique(x['zip5'])))))
+  if(fill==T) {
+    result = do.call(rbind.fill,rList[!is.na(rList)]) # here we bind the results together
+  } else {
+    result = do.call(rbind,rList[!is.na(rList)]) # here we bind the results together
+  }
   
-  result = do.call(rbind,rList[!is.na(rList)]) # here we bind the results together
   if(appendZipData) { result = addZipData(result) }
   toc('combine')
   return(result)

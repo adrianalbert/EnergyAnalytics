@@ -21,6 +21,7 @@ source(file.path(getwd(),'DataClasses.R'))
 source(file.path(getwd(),'weatherFeatures.R'))
 source(file.path(getwd(),'zipMap.R'))
 source(file.path(getwd(),'census.R'))
+source(file.path(getwd(),'occupancy.R'))
 
 lm_eqn = function(m) {
   
@@ -46,6 +47,7 @@ resultsDir = 'results_daily_standard'
 resultsDir = 'results_daily_standard2'
 resultsDir = 'results_daily_nestedCP'
 resultsDir = 'w_results_occ'
+resultsDir = 'w_results_occ_segments'
 #resultsDir = 'results_daily_residuals'
 # load the results data for hte residuals
 #allRes = t(sapply(s$residuals,
@@ -101,7 +103,72 @@ if(file.exists(invalidIdsFile)) {
   colnames(invalids) = c('id','zip')
   save(list=c('invalids'),file=invalidIdsFile)
 }
-gc()
+gc() 
+
+segmentedOut = function(x,lowestCount=0) {
+  out = data.frame(c())
+  x$sid = unlist(x$id)
+  for(sp_id in unique(x$sid)) {
+    print(sp_id)
+    sub = x[x$sid == sp_id,]
+    dateCounts = overlappingOutlierDates(sub)
+    dens = eventDensities(dateCounts$dates[dateCounts$Freq >= lowestCount])
+    densRow = data.frame(t(unlist(dens))) # convert to df with sensibly named columns
+    densRow$id = sp_id
+    #print(names(densRow))
+    out = rbind(out,densRow)
+  }
+  #print(eventDensities(dateCounts$dates)) # all
+  #print(eventDensities(dateCounts$dates[dateCounts$Freq > 1])) # counts of 2 or 3
+  #print(eventDensities(dateCounts$dates[dateCounts$Freq > 2])) # counts of 2 or 3
+  #print(names(out))
+  return(out)
+}
+
+renorm = function(x) { # this fixes a normalization error made during the runs and is harmless if the data is normed properly
+  hw = dim(x)
+  width = hw[2]
+  #print(hw)
+  counts = x[,1:(width-1)] * x[,width]
+  sc = rowSums(counts)
+  x[,1:(width-1)] = counts / sc
+  x[,width] = sc
+  return(x)
+}
+# lump all the values from the sliding window regressions into a single data frame
+segmentedOutliers = combine(allZips,resultType='summaries',fun=segmentedOut,appendZipData=F,lowestCount=3)
+save(list='segmentedOutliers',file=file.path(getwd(),resultsDir,'segmentedOutliers.RData'))
+
+load(file.path(getwd(),resultsDir,'segmentedOutliers.RData'))
+
+# split the data frame into the various parts that are of interest
+occ.wkdy = renorm(segmentedOutliers[,grep('wkdy',names(segmentedOutliers))])
+occ.wknd = renorm(segmentedOutliers[,grep('wknd',names(segmentedOutliers))])
+occ.wday = renorm(segmentedOutliers[,grep('wday',names(segmentedOutliers))])
+occ.mon  = renorm(segmentedOutliers[,grep('mon' ,names(segmentedOutliers))])
+occ.how  = renorm(segmentedOutliers[,grep('how' ,names(segmentedOutliers))])
+occ.hr   = renorm(segmentedOutliers[,grep('hr'  ,names(segmentedOutliers))])
+
+toutHourlyCoeff = function(x) {
+  out = data.frame(c())
+  x$sid = unlist(x$id)
+  #print(x$coefficients[,'Estimate'])
+  b = lapply(x$coefficients,function(y){data.frame(t(y[,'Estimate']))} )
+  #print(names(b))
+  c = do.call(rbind.fill,b)
+  out = data.frame(id=x$sid,c)
+  #print(class(out))
+  #out = cf(x,unique(x$model.name),fill=T)
+  return(out)
+}
+hourlyCoeff = combine(allZips,resultType='summaries',fun=toutHourlyCoeff,appendZipData=F,fill=T)
+save(list=c('occ.wkdy','occ.wknd','occ.wday','occ.mon','occ.how','occ.hr','hourlyCoeff'),file=occupancyFile)
+
+tSlopes = hourlyCoeff[,c('id',sort(names(hourlyCoeff)[grep('tout60_70',names(hourlyCoeff))]))]
+coverage = apply(tSlopes,1,function(x) sum(! is.na(x[-1]))) # count the number of hours with slope estimates
+fullCoverage = which(coverage > 23)
+
+matplot(t(tSlopes[1:200,-1]),type='l')
 
 
 if(file.exists(resultBasicsFile)) {
@@ -109,8 +176,9 @@ if(file.exists(resultBasicsFile)) {
 } else {
   basics     = combine(allZips,resultType='features.basic',fun=as.matrix,appendZipData=T)
   basics$idZip = paste(basics$id,basics$zip5,sep='.')
+  basics$therm.heating = (basics$therm.mean - basics$therm.min) * 365
   
-  basicMeans = combine(allZips,resultType='features.basic',fun=function(x) { t(colMeans(x)) },appendZipData=T )
+  basicMeans = combine(allZips,resultType='features.basic',fun=function(x) { t(colMeans(x,na.rm=T)) },appendZipData=T )
   
   basics$kw.total = basics$kw.mean * 365 * 24
   basicMeans$kw.total = basicMeans$kw.mean * 365 * 24
@@ -136,9 +204,17 @@ basicMeansWS$rankDiff = rank(basicMeansWS$kw.total) - rank(basicMeansWS$tout)
 resType = 'd_summaries'
 if(file.exists(resultScalarsFile)) {
   load(resultScalarsFile)
+  sclrs$model.name <- factor(sclrs$model.name)
+  levels(sclrs$model.name) <- gsub('DailyFlexCP','',levels(sclrs$model.name))
+  levels(sclrs$model.name) <- gsub('DailyCP','',levels(sclrs$model.name))
+  levels(sclrs$model.name) <- gsub('_','+',levels(sclrs$model.name))
 } else {
   sclrs       = combine(allZips,resultType='d_summaries',fun=scalars,appendZipData=T)
   sclrs$idZip = paste(sclrs$id,sclrs$zip5,sep='.')
+  # fix up the naming for later display
+  levels(sclrs$model.name) <- gsub('DailyFlexCP','',levels(sclrs$model.name))
+  levels(sclrs$model.name) <- gsub('DailyCP','',levels(sclrs$model.name))
+  levels(sclrs$model.name) <- gsub('_','+',levels(sclrs$model.name))
   save(list=c('sclrs'),file=resultScalarsFile)
 }
 gc()
@@ -180,7 +256,7 @@ if(file.exists(cpDataFile)) {
 } else {
   cp1Data = combine(allZips,
                    resultType='d_others',
-                   subResultType='DOW_toutCP_DL_l1DailyCP',
+                   subResultType='DOW+toutCP+DL+l1',
                    fun=function(x) {
                      cpMatrix = t(apply(x, 1, 
                      function(y) { 
@@ -217,15 +293,15 @@ if(file.exists(cp1File)) {
   load(cp1File)
 } else {
   cp1_fit = list()
-  cp1_fit$cfs = data.frame(results.cfs$DOW_toutCP_DL_l1DailyCP)
-  cp1_fit$pvs = data.frame(results.pvs$DOW_toutCP_DL_l1DailyCP)
-  cp1_fit$pvsNW = data.frame(results.pvsNW$DOW_toutCP_DL_l1DailyCP)
+  cp1_fit$cfs = data.frame(results.cfs$'DOW+toutCP+DL+l1')
+  cp1_fit$pvs = data.frame(results.pvs$'DOW+toutCP+DL+l1')
+  cp1_fit$pvsNW = data.frame(results.pvsNW$'DOW+toutCP+DL+l1')
   
   names(cp1_fit$cfs) = c('id',paste('cf.',names(cp1_fit$cfs)[-1],sep=''))
   names(cp1_fit$pvs) = c('id',paste('pv.',names(cp1_fit$pvs)[-1],sep=''))
   names(cp1_fit$pvsNW) = c('id',paste('pvNW.',names(cp1_fit$pvsNW)[-1],sep=''))
   
-  cp1 = subset(sclrs,subset=sclrs$model.name=='DOW_toutCP_DL_l1DailyCP')
+  cp1 = subset(sclrs,subset=sclrs$model.name=='DOW+toutCP+DL+l1')
   cp1 = merge(cp1,cp1_fit$cfs,all.y=F)
   cp1 = merge(cp1,cp1_fit$pvs,all.y=F)
   cp1 = merge(cp1,cp1_fit$pvsNW,all.y=F)
@@ -259,7 +335,7 @@ ecBasics = merge(energyContribution,basics)
 ecRatio = ecBasics$tout.mean_upper / (ecBasics$nObs * ecBasics$kw.mean)
 plot(sort(ecRatio[ecBasics$tout.mean_lower > 0 & ecBasics$tout.mean_upper > 0 & ecBasics$X.Intercept. > 0]),type='l',main='Fraction of annual kWh from cooling loads')
 
-cp1 = subset(sclrs,subset=sclrs$model.name=='DOW_toutCP_DL_l1DailyCP')
+cp1 = subset(sclrs,subset=sclrs$model.name=='DOW+toutCP+DL+l1')
 cp1 = merge(energyContribution,cp1,all.y=F)
 occ.wday.m= combine( allZips,
                      resultType='summaries',
@@ -444,40 +520,65 @@ if(file.exists(bestModelDataFile)) {
 } else {
   #bestModels = do.call(rbind,by(sclrs,sclrs$id,function(df) df[which.max(df$r.squared),]))
   metrics.cv.rmse = metricArray('cv.rmse')
+  metrics.cv.mape = metricArray('cv.rmse')
   metrics.r.squared = metricArray('r.squared')
   metrics.adj.r.squared = metricArray('adj.r.squared')
   metrics.AIC = metricArray('AIC')
-  metrics.pacf.1 = metricArray('pacf.1')
+  metrics.kurtosis = metricArray('kurtosis')
+  metrics.lag1cor = metricArray('pacf.1') # this is the correlation between lag0 and lag1 errors
   metrics.DW = metricArray('DW')
   
   mNames = factor(unique(sclrs$model.name))
   best = data.frame(idZip=metrics.cv.rmse$idZip)
   best$cv.rmse =       mNames[apply(metrics.cv.rmse[,-1],1,which.min)]
+  best$cv.mape =       mNames[apply(metrics.cv.mape[,-1],1,which.min)]
   best$r.squared =     mNames[apply(metrics.r.squared[,-1],1,which.max)]
   best$adj.r.squared = mNames[apply(metrics.adj.r.squared[,-1],1,which.max)]
   best$AIC =           mNames[apply(metrics.AIC[,-1],1,which.min)]
-  best$pacf.1 =        mNames[apply(metrics.pacf.1[,-1],1,which.min)]
+  best$kurtosis =      mNames[apply(abs(metrics.kurtosis[,-1]),1,which.min)]
+  best$lag1cor =       mNames[apply(metrics.lag1cor[,-1],1,which.min)]
   best$DW =            mNames[apply(2 - abs(metrics.DW[,-1]),1,which.min)]
   
-  save(list=c('best','metrics.cv.rmse','metrics.r.squared',
-              'metrics.adj.r.squared','metrics.AIC',
-              'metrics.pacf.1','metrics.DW'),file=bestModelDataFile)
+  save(list=c('best','metrics.cv.rmse','metrics.r.squared','metrics.cv.mape',
+              'metrics.adj.r.squared','metrics.AIC','metrics.kurtosis',
+              'metrics.lag1cor','metrics.DW'),file=bestModelDataFile)
 }
 
-sapply(sclrs,function(x) return(x$id))
+#sapply(sclrs,function(x) return(x$id))
 
+jet <-
+  colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan",
+                     "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
+bestm = melt(best[,c('idZip','cv.rmse','cv.mape','r.squared','lag1cor')],id.vars='idZip',variable.name='metric',value.name='model_name')
+bestm$model_name = factor(bestm$model_name,levels = c("DOW+tout2CP+DL+l1",
+                                                       "DOW+toutCP+DL+l1",
+                                                       "DOW+toutNP+DL+l1",
+                                                       "DOW+toutCP+DL",
+                                                       "DOW+tout+DL+CP65",
+                                                       "DOW+tout+DL+65",
+                                                       "DOW+tout+DL+l1",
+                                                       "DOW+tout+DL+vac",
+                                                       "DOW+DD+DL",
+                                                       "DOW+tout.max+DL",
+                                                       "DOW+tout.min+DL",
+                                                       "DOW+tout+DL",
+                                                       "DOW+tout",
+                                                       "tout",
+                                                       "DOW",
+                                                       "WKND"))
+ggplot(bestm,aes(x=metric,color=NA,fill=model_name)) + geom_bar(position='stack') + 
+  labs(title='Count of best fit model by metric of assessment',x='metric',y='count') +
+  theme_bw() + theme(text=element_text(size=16))  + scale_fill_manual(values=jet(length(levels(bestm$model_name))))
+dev.copy2pdf(file = file.path(dailyDir,'best_fit_counts.pdf'),width=10,height=10)
 
-bestm = melt(best,id.vars='idZip',variable.name='metric',value.name='model_name')
-ggplot(bestm,aes(x=metric,color=model_name,fill=model_name)) + geom_bar(position='dodge') + 
-  labs(title='Count of best fit model by metric of assessment',x='metric',y='count')
 rm(bestm)
 
 png(file.path(getwd(),'figures','density_ar2.png'),width=800,height=600)
 ggplot(subset(sclrsBasicsWS,
               model.name %in% 
-                c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
-                  'DOW_tout.min_DL','DOW_tout.max_DL','DOW_DD_DL',
-                  'DOW_toutCP_DL_l1DailyCP')),
+                c('tout','DOW+tout','DOW+tout+DL','DOW+tout+DL+l1',
+                  'DOW+tout.min+DL','DOW+tout.max+DL','DOW+DD+DL',
+                  'DOW+toutCP+DL+l1')),
               aes(x=adj.r.squared,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
               xlim(-0.05,1.0) + 
               theme_bw() + theme(text=element_text(size=14)) + 
@@ -498,9 +599,9 @@ dev.off()
 # note that sigma^2 = 1/(n-p) Sum(w[i] R[i]^2)
 ggplot(subset(sclrsBasicsWS,
               model.name %in% 
-                c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
-                  'DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL',
-                  'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
+                c('tout','DOW+tout','DOW+tout+DL','DOW+tout+DL+l1',
+                  'DOW+tout.min+DL', 'DOW+tout.max+DL','DOW+DD+DL',
+                  'DOW+toutCP+DL+l1','DOW+tout2CP+DL+l1')),
               aes(x=cv.rmse/(kw.mean*24)*100,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
               xlim(0,120)  + 
               theme_bw() + theme(text=element_text(size=14)) + 
@@ -509,23 +610,41 @@ dev.copy2pdf(file = file.path(dailyDir,'coeff_var.pdf'),width=10,height=5)
 
 ggplot(subset(sclrsBasicsWS,
               model.name %in% 
+                c('DOW+tout+DL','DOW+tout.min+DL','DOW+tout.max+DL','DOW+DD+DL','DOW+tout+DL+CP65','DOW+toutCP+DL')),
+       aes(x=cv.rmse/(kw.mean*24)*100,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
+  xlim(0,120)  + 
+  theme_bw() + theme(text=element_text(size=14)) + 
+  labs(title='Coefficient of Variation for various thermal properties',x='Variation (%)')
+dev.copy2pdf(file = file.path(dailyDir,'coeff_var_tout_aggregation.pdf'),width=10,height=5)
+
+ggplot(subset(sclrsBasicsWS,
+              model.name %in% 
                 c(
                   #'tout',
                   'DOW',
-                  'DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
-                  'DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL',
-                  'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
+                  'DOW+tout','DOW+tout+DL','DOW+tout+DL+l1',
+                  'DOW+tout.min+DL', 'DOW+tout.max+DL','DOW+DD+DL',
+                  'DOW+toutCP+DL+l1','DOW+tout2CP+DL+l1')),
        aes(x=cv.rmse,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
   xlim(0,25)  + 
   theme_bw() + theme(text=element_text(size=14)) + 
   labs(title='Cross validated RMSE for various thermal models',x='cv.RMSE (kWh/day)')
 dev.copy2pdf(file = file.path(dailyDir,'CV_RMSE_all_models.pdf'),width=10,height=5)
 
+ggplot(subset(sclrsBasicsWS,
+              model.name %in% 
+                c('DOW+tout+DL','DOW+tout.min+DL','DOW+tout.max+DL','DOW+DD+DL','DOW+tout+DL+CP65','DOW+toutCP+DL')),
+       aes(x=adj.r.squared,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
+  xlim(-0.05,1)  + 
+  theme_bw() + theme(text=element_text(size=14)) + 
+  labs(title='Adjusted R2 for different Tout aggregation methods')
+dev.copy2pdf(file = file.path(dailyDir,'adj_R2_tout_method.pdf'),width=10,height=5)
+
 
 ggplot(subset(sclrsBasicsWS,
               model.name %in% 
-                c('DOW_tout_DL_65','DOW_tout_DL_CP65','DOW_toutNP_DL_l1DailyCP','DOW_toutCP_DLDailyCP',
-                  'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
+                c('DOW+tout+DL+65','DOW+tout+DL+CP65','DOW+toutNP+DL+l1','DOW+toutCP+DL',
+                  'DOW+toutCP+DL+l1','DOW+tout2CP+DL+l1')),
               aes(x=adj.r.squared,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
               xlim(-0.05,1)  + 
               theme_bw() + theme(text=element_text(size=14)) + 
@@ -533,7 +652,7 @@ ggplot(subset(sclrsBasicsWS,
 dev.copy2pdf(file = file.path(dailyDir,'adj_R2_CP_models.pdf'),width=10,height=5)
 
 ggplot(subset(sclrsBasicsWS,
-              model.name %in% c('DOW_toutCP_DLDailyCP')),
+              model.name %in% c('DOW+toutCP+DL')),
        aes(x=adj.r.squared,color=cecclmzn,linetype=cecclmzn)) + geom_density(size=0.7) + 
        xlim(-0.2,1)  + 
        theme_bw() + theme(text=element_text(size=14)) + 
@@ -549,9 +668,9 @@ ggplot(subset(sclrsBasicsWS,
 # kurtosis of change point model runs
 ggplot(subset(sclrs,
               model.name %in% 
-                c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
-                  'DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL',
-                  'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
+                c('tout','DOW+tout','DOW+tout+DL','DOW+tout+DL+l1',
+                  'DOW+tout.min+DL', 'DOW+tout.max+DL','DOW+DD+DL',
+                  'DOW+toutCP+DL+l1','DOW+tout2CP+DL+l1')),
        aes(x=kurtosis,color=model.name,linetype=model.name)) + geom_freqpoly(size=0.7,binwidth=0.1,fill=NA) + 
   #xlim(-2,7) + 
   coord_cartesian(xlim=c(-2, 7)) +
@@ -562,9 +681,9 @@ dev.copy2pdf(file = file.path(dailyDir,'kurtosis.pdf'),width=10,height=5)
 
 ggplot(subset(sclrs,
               model.name %in% 
-                c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
-                  'DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL',
-                  'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
+                c('tout','DOW+tout','DOW+tout+DL','DOW+tout+DL+l1',
+                  'DOW+tout.min+DL', 'DOW+tout.max+DL','DOW+DD+DL',
+                  'DOW+toutCP+DL+l1','DOW+tout2CP+DL+l1')),
        aes(x=pacf.1,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
   xlim(-0.4,1) + 
   theme_bw() + theme(text=element_text(size=14)) + 
@@ -574,30 +693,30 @@ dev.copy2pdf(file = file.path(dailyDir,'correlation_t_t-1.pdf'),width=10,height=
 
 ggplot(subset(sclrs,
               model.name %in% 
-                c('DOW_toutCP_DL_l1DailyCP')),aes(y=r.squared,x=tout)) + 
+                c('DOW+toutCP+DL+l1')),aes(y=r.squared,x=tout)) + 
   geom_point(alpha = 0.03) + labs(title='R2 vs. Tout',x='Tout',y='r.squared')
 
 
 ggplot(subset(sclrsBasicsWS,
               model.name %in% 
-                c('DOW_toutCP_DL_l1DailyCP')),aes(y=r.squared,x=kw.mean)) + 
+                c('DOW+toutCP+DL+l1')),aes(y=r.squared,x=kw.mean)) + 
   geom_point(alpha = 0.1) + labs(title='R2 vs. kwh',x='kwh',y='r.squared')
 
 ggplot(subset(sclrs,
               model.name %in% 
-                c('DOW_toutCP_DL_l1DailyCP')),aes(y=pacf.1,x=tout)) + 
+                c('DOW+toutCP+DL+l1')),aes(y=pacf.1,x=tout)) + 
   geom_point(alpha = 0.03) + labs(title='pacf.1 vs. Tout',x='Tout',y='pacf.1')
 
 ggplot(subset(sclrs,
               model.name %in% 
-                c('DOW_toutCP_DL_l1DailyCP')),aes(y=pacf.1,x=r.squared)) + 
+                c('DOW+toutCP+DL+l1')),aes(y=pacf.1,x=r.squared)) + 
   geom_point(alpha = 0.05) + labs(title='pacf.1 vs. r2',x='R2',y='pacf.1')
 
 ggplot(subset(sclrs,
               model.name %in% 
-                c('tout','DOW_tout','DOW_tout_DL','DOW_tout_DL_l1',
-                  'DOW_tout.min_DL', 'DOW_tout.max_DL','DOW_DD_DL',
-                  'DOW_toutCP_DL_l1DailyCP','DOW_tout2CP_DL_l1DailyFlexCP')),
+                c('tout','DOW+tout','DOW+tout+DL','DOW+tout+DL+l1',
+                  'DOW+tout.min+DL', 'DOW+tout.max+DL','DOW+DD+DL',
+                  'DOW+toutCP+DL+l1','DOW+tout2CP+DL+l1')),
        aes(x=DW,color=model.name,linetype=model.name)) + geom_density(size=0.7) + 
   theme_bw() + theme(text=element_text(size=14)) + 
   labs(title='Durbin-Watson test statistic across model runs by model type',
@@ -613,7 +732,7 @@ ggplot(basics,aes(x=therm.min)) + geom_histogram(binwidth=0.1) + xlim(0,6) +
   labs(x='base therms per day',y='household count',title='Mean base therms per day')
 dev.copy2pdf(file = file.path(empDir,'base_therms.pdf'),width=6,height=6)
 
-basics$therm.heating = (basics$therm.mean - basics$therm.min) * 365
+#basics$therm.heating = (basics$therm.mean - basics$therm.min) * 365
 
 ggplot(basics,aes(x=therm.heating)) + geom_histogram(binwidth=10) + xlim(-200,1000) + 
   labs(x='Heating therms per year',y='household count',title='Estimated heating therms per year')
@@ -623,6 +742,14 @@ dev.copy2pdf(file = file.path(empDir,'heating_therms.pdf'),width=6,height=6)
 ggplot(basics,aes(x=therm.heating,color=climate)) + geom_density() + xlim(-200,1000) + 
   labs(x='Heating therms per year',y='density',title='Estimated heating therms per year')
 dev.copy2pdf(file = file.path(empDir,'heating_therms_by_CZ.pdf'),width=6,height=6)
+
+
+ngCounts = aggregate(therm.mean ~ zip5,basics,FUN=function(x) {sum(!is.na(x))}) # count non-null NG usage by zip
+heating  = aggregate(therm.heating ~ zip5,basics,FUN=function(x) {mean(x,na.rm=T)})
+calMap(ngCounts,'therm.mean')
+
+calMap(basicMeans,'therm.mean') # all NG
+calMap(heating,'therm.heating')
 
 # heating cumsum
 ord = order(cp1Data$lower)
@@ -745,9 +872,9 @@ do.call(grid.arrange,arg.list)
 
 
 
-sclrs2 = subset(sclrs,model.name=='DOW_tout2CP_DL_l1DailyFlexCP') # 2 change points
-sclrs1 = subset(sclrs,model.name=='DOW_toutCP_DL_l1DailyCP')     # 1 change point
-sclrs0 = subset(sclrs,model.name=='DOW_tout_DL_l1')          # no change point 
+sclrs2 = subset(sclrs,model.name=='DOW+tout2CP+DL+l1') # 2 change points
+sclrs1 = subset(sclrs,model.name=='DOW+toutCP+DL+l1')     # 1 change point
+sclrs0 = subset(sclrs,model.name=='DOW+tout+DL+l1')          # no change point 
 
 trueCP1 = cp1Data$upper > 0 & cp1Data$lower <= 0 & cp1Data$pval.upper < 0.01
 trueCP2 = cp2Data$upper > 0 & cp2Data$lower <= 0 & cp2Data$pval.upper < 0.01 & cp2Data$middle_1 > -0.6 & cp2Data$middle_1 < 0.6
@@ -779,13 +906,13 @@ ggplot(cpCool,aes(x=cp1)) +
        x='change points (lower and upper)')
 
 # for daylight duration model, plot the impacts of a marginal hour of daylight
-ggplot(data.frame(results.cfs$DOW_toutCP_DL_l1DailyCP),aes(x=day.length*1000)) + 
+ggplot(data.frame(results.cfs$'DOW+toutCP+DL+l1'),aes(x=day.length*1000)) + 
     #geom_histogram(binwidth=50) + 
     geom_density() + 
     labs(title='Impact of hours of daylight on power consumption',
          x='delta W during daylight', y='density') + 
     scale_x_continuous(limits=c(-4000,3000),breaks=seq(-4000,3000,by = 500))
-mean(results.cfs$DOW_tout_DL_l1[,'day.length'])
+mean(results.cfs$'DOW+tout+DL+l1'[,'day.length'])
 
 zipData = DATA_SOURCE$getZipData()
 calMap(zipData,'counts','zip5',main='Meter count by zip code',colorMap=brewer.pal(9,"Blues"),legend.title='# per zip code',nIntervals=7,intervalStyle='fixed',intervalBreaks=c(0,5,40,80,120,160,200,240,302 ))
@@ -1241,9 +1368,9 @@ sbcp = subset(bestCP,subset=bestCP$pval.upper < 0.1)
 ggplot(sbcp,aes(x=cp,color=model.name)) + geom_density()
 
 hists(   sclrs,metric='r.squared',zip='all data (200k homes)')
-zipHists(sclrs,metric='r.squared',model.name='toutDailyCP')
+zipHists(sclrs,metric='r.squared',model.name='tout')
 hists(   sclrs,metric='sigma',xlim=c(0,20),zip='all data (200k homes)')
-zipHists(sclrs,metric='sigma',model.name='toutDailyCP',xlim=c(0,20))
+zipHists(sclrs,metric='sigma',model.name='tout',xlim=c(0,20))
 
 zip='94923'
 #d_summary = modelResults$d_summary #combineSummaries(zips,'d_summaries')
