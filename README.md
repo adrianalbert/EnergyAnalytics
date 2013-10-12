@@ -1,7 +1,4 @@
 EnergyAnalytics
 ===============
-Hi. Sam checking in.
-Hi. Sam checking in.
-Hi. Sam checking in.
-Again.
-Energy Analytics
+
+Repository for tools & algorithm development for energy analytics. 

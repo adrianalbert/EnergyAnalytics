@@ -1,0 +1,10 @@
+5ed93db093c523a39813e023c0dfdffa *DESCRIPTION
+7ebf8a5a4d4d592e19faed70d566c182 *NAMESPACE
+7c5b273c4f302b7f5989284d5a999fc5 *R/protoclass-package.r
+ffc061b6a9db9f0842a9c3454bdab82f *R/protoclass.r
+272055c9c8f94554dc75588875316411 *man/dist2.Rd
+6ea7bddc785713a6f17e8deb58f71f63 *man/plot.protoclass.Rd
+f879eb42ce8ce7884a3870bfe0269767 *man/predict.protoclass.Rd
+6ef2f7da47e07728d6a85089c09418d6 *man/predictwithd.protoclass.Rd
+6b134229f2aa4934f1ebd5373af1bd7a *man/print.protoclass.Rd
+6d79a9e7fee09226cbe36425735925d7 *man/protoclass.Rd

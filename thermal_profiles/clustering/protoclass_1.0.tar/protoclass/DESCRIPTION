@@ -1,0 +1,16 @@
+Package: protoclass
+Maintainer: Jacob Bien <jbien@cornell.edu>
+Author: Jacob Bien and Robert Tibshirani
+Version: 1.0
+License: GPL-3
+Title: Interpretable classification with prototypes
+Description: Greedy algorithm described in Bien and Tibshirani (2011)
+        Prototype Selection for Interpretable Classification. Annals of
+        Applied Statistics. 5(4). 2403-2424
+Depends: class
+Suggests: testthat, roxygen2
+Collate: 'protoclass.r' 'protoclass-package.r'
+Packaged: 2013-05-31 08:12:01 UTC; jbien
+NeedsCompilation: no
+Repository: CRAN
+Date/Publication: 2013-05-31 11:11:41
