@@ -109,7 +109,7 @@ pecanPlusWeather = function(forceReload=F) {
   if(file.exists(PECAN_COMBINED_FILE) && ! forceReload) {
     load(PECAN_COMBINED_FILE)
   } else {
-    pecanData = pecan()
+    pecanData = pecan(forceReload)
     # append matching weather data to each pecan data.frame
     source('wunderground.R')
     pecanWeat = pecanWeatherData(forceReload)
