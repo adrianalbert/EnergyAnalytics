@@ -56,23 +56,22 @@ cf = function(a,model.name,subset.name=NULL,col='Estimate',cfName='coefficients'
   mn = T
   #print(names(a))
   if(is.null(cfName)) { cfName='coefficients' }
-  mn = unlist(a[,'model.name'])==model.name
+  mn = fixNames(unlist(a[,'model.name']))==model.name
   if (! is.null(subset.name)) { 
     sn = unlist(a[,'subset.name'])==subset.name
   }
   b = subset(a,mn & sn) # filter to the subset and model requested
   if(empty(b)) { return(c()) }
-  print( data.frame(c(id=x$id,x[cfName][[1]][,col])) )
-  out = t( apply(b,1,function(x) return( data.frame(c(id=x$id,x[cfName][[1]][,col])) ) ) )
+  out = apply(b,1,function(x) return( data.frame(t(c(id=x$id,x[cfName][[1]][,col])) )))
   if(class(out[1]) == 'list') { # this seems to happen when some regessons had fewer non-NA coefficients than others.
-    print('warning. Some regressons have incomplete coefficients and are being dropped.')
+    #print(out[1])
+    #print('warning. Some regressons have incomplete coefficients and are being dropped.')
     lengths = as.numeric(lapply(out,length))
     if(fill) {
       out = do.call(rbind.fill,out)
     } else {
       out = do.call(rbind,out[lengths == Mode(lengths)])
     }
-    
   }
   return(out)
 }
@@ -154,7 +153,9 @@ combine = function(ziplist,resultType='summaries',subResultType=NULL,fun=functio
     }
     data = modelResults[[resultType]]
     if(! is.null(subResultType)) {
+      #print(names(data))
       data = data[[subResultType]]
+      
       if(is.null(data)) {
         print(paste('WARNING. No data found under subResultType',subResultType))
       }

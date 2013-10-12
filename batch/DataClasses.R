@@ -516,7 +516,9 @@ plot.ResDataClass = function(r,colorMap=NA,main=NULL,issueTxt='',type='summary',
           if (fit['AIC_0'] < fit['AIC_cp']) color = 'gray'
           if (fit['nullModelTest'] > 0.1)   color = 'red'
           par(new=T)
-          qe = quickEst(fit['cp'],fit['(Intercept)'],fit['lower'],fit['upper'],
+          print(fit)
+          #cp,const,b,tlim=c(0,100)
+          qe = quickEst(fit['cp'],fit['(Intercept)'],c(fit['lower'],fit['upper']),
                    c(min(subset(r$tout,sub),na.rm=T),max(subset(r$tout,sub),na.rm=T)))
           #print(qe[,1])
           plot(qe[,1],qe[,2],

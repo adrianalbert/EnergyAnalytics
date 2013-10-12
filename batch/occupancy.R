@@ -4,14 +4,14 @@ quantileOutlierDates = function(e,dates,q=0.95) {
   }
   threshold = quantile(e,q,na.rm=T)
   outliers = which(e > threshold) # which strips NAs
-  return(dates[outliers])
+  return(data.frame(d=dates[outliers],e=e[outliers]))
 }
 
 monthlyQuantileOutlierDates = function(e,dates,q=0.95) {
   if(length(e) != length(dates)) {
     stop(paste('[occupancy.monthlyQuantileOutlierDates] Errors and dates have different lengths:',length(e),length(dates)))
   }
-  outDates = data.frame(c())
+  outDates  = data.frame(c())
   #monthProfiles = c()
   if('POSIXct' %in% class(dates)) { dates = as.POSIXlt(dates) }
   for(m in sort(unique(dates$mon))) {
@@ -20,56 +20,60 @@ monthlyQuantileOutlierDates = function(e,dates,q=0.95) {
     outliers = which(e[mnth] > threshold) # which strips NAs
     odts = as.POSIXct(dates[mnth][outliers])
     #monthProfiles = rbind(monthProfiles,eventDensities(odts)$hr)
-    outDates = rbind(outDates,data.frame(d=odts))
+    outDates = rbind(outDates,data.frame(d=odts,e=e[mnth][outliers]))
   }
   #matplot(t(as.matrix(monthProfiles[,1:24])))
-  return(outDates$d)
+  return(outDates)
 }
 
 # this supports combining the dates from several runs by adding a count for each matching date
 overlappingOutlierDates = function(summariesDF) { # find the date of outliers from multiple model runs and count the overlapping dates
   if(! 'data.frame' %in% class(summariesDF)) { summariesDF = data.frame(summariesDF) }
-  outDates = data.frame(c())
+  outliers = data.frame(c())
   residualsL = summariesDF$residuals
   datesL     = summariesDF$dates
   for(i in 1:length(residualsL)) {
     residuals = residualsL[[i]]
     dates     = datesL[[i]]
-    outDates = rbind(outDates,data.frame(dates=quantileOutlierDates(residuals,dates,q=0.95)))
+    qod = quantileOutlierDates(residuals,dates,q=0.95)
+    outliers = rbind(outliers,qod)
   }
   #print(sort(outDates$dates))
-  dateCounts = data.frame(table(outDates)) # names will be outDates, Freq
+  dateCounts = data.frame(table(outliers$d)) # names will be outDates, Freq
   names(dateCounts)[1] <- 'dates'
   #print(names(dateCounts))
   #print(levels(dateCounts$dates))
   dateCounts$dates = as.POSIXct(levels(dateCounts$dates))[dateCounts$dates]
-  
-  return(dateCounts)
+  return(list(dateCounts=dateCounts,meane=mean(outliers$e,na.rm=T)))
 }
 
-eventDensities = function(outDates) {
+eventDensities = function(outliers) {
+  outDates = outliers$d
   if('POSIXct' %in% class(outDates)) {
     outDates = as.POSIXlt(outDates)
   }
+  #print(class(outliers$e))
+  #print(outliers$e)
+  meane = mean(outliers$e,na.rm=T)
   wday = as.array(table(factor(outDates$wday,levels=0:6)))
   names(wday) = c('Su','Mo','Tu','We','Th','Fr','Sa')[as.numeric(names(wday))+1]
-  wday = c(wday/sc,scale=sum(wday))
+  wday = c(wday/sum(wday),scale=sum(wday),meane=meane)
   
   hr= as.array(table(factor(outDates$hour,levels=0:23)))
-  hr = c(hr/sc,scale=sum(hr))
+  hr = c(hr/sum(hr),scale=sum(hr),meane=meane)
   
   wknd= as.array(table(factor(outDates[outDates$wday %in% c(0,6)]$hour,levels=0:23)))
-  wknd = c(wknd/sc*7/2,scale=sum(wknd))
+  wknd = c(wknd/sum(wknd)*7/2,scale=sum(wknd),meane=meane)
   
   wkdy= as.array(table(factor(outDates[outDates$wday %in% c(1:5)]$hour,levels=0:23)))
-  wkdy = c(wkdy/sc*7/5,scale=sum(wkdy))
+  wkdy = c(wkdy/sum(wkdy)*7/5,scale=sum(wkdy),meane=meane)
   
   mon = as.array(table(factor(outDates$mon,levels=0:11)))
   names(mon) = month.abb
-  mon = c(mon/sc,scale=sum(mon))
+  mon = c(mon/sum(mon),scale=sum(mon),meane=meane)
   
   how = as.array(table(factor(outDates$wday*24+outDates$hour,levels=0:(24*7-1))))
-  how = c(how/sc,scale=sum(how))
+  how = c(how/sum(how),scale=sum(how),meane=meane)
   
   return(list(wday=wday,hr=hr,wknd=wknd,wkdy=wkdy,mon=mon,how=how))
 }
@@ -152,26 +156,31 @@ if(test) {
 doFigures = F
 if(doFigures) {
   occupancyDir = 'C:/Users/Sam/Dropbox/writing/occupancy_paper/'
-  load(file.path(getwd(),'w_results_occ','occupancy.RData'))
+  #load(file.path(getwd(),'w_results_occ','occupancy.RData'))
+  load(file.path(getwd(),'w_results_occ_segments','occupancy.RData'))
   #dg = DescriptorGenerator(name='toutPieces',genImpl=toutPieces24Generator,subset=list(all="TRUE"),terms='+ HOW - 1',breaks=c(65),diverge=T)
   #dg = DescriptorGenerator(name='toutPieces',genImpl=toutPieces24Generator,subset=list(all="TRUE"),terms='+ HOD + DOW - 1',breaks=c(65),diverge=T)
   #dg = DescriptorGenerator(name='toutPieces',genImpl=toutPieces24Generator,subset=list(all="TRUE"),terms='+ WKND:HOD - 1',breaks=c(65),diverge=T)
-  dgWindow = DescriptorGenerator(name='toutPieces',genImpl=toutPieces24Generator,subset='idxSteps',terms='+ HOW - 1',breaks=c(60,70),diverge=T)
-  dg       = DescriptorGenerator(name='toutPieces',genImpl=toutPieces24Generator,subset=list(all="TRUE"),terms='+ HOW - 1',breaks=c(60,70),diverge=T)
-  
+  dg         = DescriptorGenerator(name='toutPieces',genImpl=toutPieces24Generator,subset=list(all="TRUE"),terms='+ HOW - 1',breaks=c(60,70),diverge=T,keepResiduals=T)
+  dgWindow   = DescriptorGenerator(name='toutPieces',genImpl=toutPieces24Generator,subset='idxSteps',terms='+ HOW - 1',breaks=c(60,70),diverge=T,keepResiduals=T)
+  cp24       = DescriptorGenerator(name='cp24',genImpl=cp24Generator,subset=list(all="TRUE"),diverge=T,keepResiduals=T)
+  cp24Window = DescriptorGenerator(name='cp24',genImpl=cp24Generator,subset='idxSteps',diverge=T,keepResiduals=T)
   # warning...this uses a Stanford home, but the rest is baed on Wharton data
   r = ResDataClass(553991005,93304,useCache=T,doSG=F)
   #r = ResDataClass(554622151,93304,useCache=T,doSG=F)
   #r = ResDataClass(1064423310,93304,useCache=T,doSG=F)
   reg = dg$run(r)$summaries # standards regression model run with piecewise temeprature interacted with HOD and HOW fixed effects
+  reg = cp24$run(r)$summaries # standards regression model run with piecewise temeprature interacted with HOD and HOW fixed effects
+  
   edReg = data.frame(data.frame(e=reg[[1,'residuals']], d=reg[[1,'dates']], p=reg[[1,'prediction']])) # same regression over sliding window
   
   window = dgWindow$run(r)$summaries
+  window = cp24Window$run(r)$summaries
   ed = data.frame(c())
   for(i in 1:dim(window)[1]){
     ed = rbind(ed,data.frame(e=window[[i,'residuals']], d=window[[i,'dates']], p=window[[i,'prediction']]))
   }
-  outliers = overlappingOutlierDates(window) # dates, Freq
+  outliers = overlappingOutlierDates(window)$dateCounts # dates, Freq
   
   
   #plot(ed$d,ed$e)
@@ -215,8 +224,8 @@ if(doFigures) {
   points(dens1$mon[1:12],type='l',col='green')
   plot(dens3$wkdy[1:24]/meankw)
   
-  qod  = edReg$d %in% quantileOutlierDates(edReg$e,edReg$d)
-  mqod = edReg$d %in% monthlyQuantileOutlierDates(edReg$e,edReg$d)
+  qod  = edReg$d %in% quantileOutlierDates(edReg$e,edReg$d)$d
+  mqod = edReg$d %in% monthlyQuantileOutlierDates(edReg$e,edReg$d)$d
   op <- par(no.readonly = TRUE)
   par( mfrow=c(2,1), oma=c(2,2,1,0),mar=c(2,4,2,2))
   plot(r$dates,r$kw,col='#444444',main='Observations (grey) & model (green)',ylab='kW')
@@ -243,7 +252,7 @@ if(doFigures) {
   meane = c()
   for(h in sort(unique(r$dates$hour))) {
     hr = which(r$dates$hour == h)
-    meane = c(meane,mean(e[hr],na.rm=T))
+    meane = c(meane,mean(edReg$e[hr],na.rm=T))
   }
   meane = meane / sum(meane)
   
@@ -252,9 +261,9 @@ if(doFigures) {
   plot(densM$hr[1:24]*densM$hr[25],type='o',main='Count of occupancy events by hour',ylab='count',xlab='Hour of day',pch=16,col='red',xaxt='n',ylim=c(0,max(densM$hr[1:24]*densM$hr[25])))
   #points(densM$hr[1:24]*densM$hr[25],type='o',col='blue')
   points(meankw*dens$hr[25],col='#999999',type='l',lty=2)
-  points(dens3$hr[1:24]*densM$hr[25],col='blue',type='o')
-  points(dens2$hr[1:24]*densM$hr[25],col='#6666ff',type='o')
-  points(dens1$hr[1:24]*densM$hr[25],col='#aaaaff',type='o')
+  #points(dens3$hr[1:24]*densM$hr[25],col='blue',type='o')
+  #points(dens2$hr[1:24]*densM$hr[25],col='#6666ff',type='o')
+  #points(dens1$hr[1:24]*densM$hr[25],col='#aaaaff',type='o')
   grid()
   legend('topleft',inset=c(0.01,0.03),c('Count of top 5%','Rescaled mean load'),lty=c(1,2),pch=c(16,-1),cex=0.8,col=c('red','#999999'))
   xlabs=0:23
@@ -262,18 +271,18 @@ if(doFigures) {
   #points(meane,col='green')
   dev.copy2pdf(file = paste(occupancyDir,'p_occ_event.pdf',sep=''),width=12,height=6)
     
-  fits = clusterSumOfSquares(as.matrix(occ.hr.m[,2:25]),seq(2,60,4),20)
+  fits = clusterSumOfSquares(as.matrix(occ.hr[,1:24]),seq(2,60,4),20)
   vals = which(! is.na(fits))
-  plot(vals,fits[vals],type='o',ylab='error',xlab='# of clusters',main='Fit error vs. number of clusters')
+  plot(vals,fits[vals],type='o',ylab='error',xlab='# of clusters',main='Fit error vs. number of clusters (hour of day)')
   dev.copy2pdf(file = paste(occupancyDir,'clutser_err.pdf',sep=''))
   
-  fits = clusterSumOfSquares(as.matrix(occ.wday.m[,2:8]),seq(2,20,1),20)
+  fits = clusterSumOfSquares(as.matrix(occ.wday[,1:7]),seq(2,20,1),20)
   vals = which(! is.na(fits))
-  plot(vals[-1],fits[vals][-1],type='o',ylab='error',xlab='# of clusters',main='Fit error vs. number of clusters')
+  plot(vals[-1],fits[vals][-1],type='o',ylab='error',xlab='# of clusters',main='Fit error vs. number of clusters (day of week)')
   dev.copy2pdf(file = paste(occupancyDir,'wday_clutser_err.pdf',sep=''))
   
-  kwd = kmeans(as.matrix(occ.wday.m[,2:8],ncol=7),12,iter.max=20)
-  showClusters(kwd,occ.wday.m[,2:8],ncol=4,xlabs=c('Su','Mo','Tu','We','Th','Fr','Sa'),main='Members of HOD occupant event clusters',ylab='members',xlab='Day of week')
+  kwd = kmeans(as.matrix(occ.wday[,1:7],ncol=7),12,iter.max=20)
+  showClusters(kwd,occ.wday[,1:7],ncol=4,xlabs=c('Su','Mo','Tu','We','Th','Fr','Sa'),main='Members of HOD occupant event clusters',ylab='members',xlab='Day of week')
   dev.copy2pdf(file = paste(occupancyDir,'wday_clutser_members.pdf',sep=''))
   
   matplot(t(kwd$centers),type='l',main='Day of week K-means cluster centers',ylab='probability density',xlab='Day of week',xaxt='n')
@@ -281,8 +290,8 @@ if(doFigures) {
   axis(1, at=1:length(xlabs), labels=xlabs)
   dev.copy2pdf(file = paste(occupancyDir,'wday_clutser_centers.pdf',sep=''))
   
-  km = kmeans(as.matrix(occ.hr.m[,2:25],ncol=24),12,iter.max=20)
-  showClusters(km,occ.hr.m[,2:25],ncol=4,xlabs=c(0:23),main='Members of hour of day occupant event clusters',ylab='members',xlab='Hour of day')
+  km = kmeans(as.matrix(occ.hr[,1:24],ncol=24),12,iter.max=20)
+  showClusters(km,occ.hr[,1:24],ncol=4,xlabs=c(0:23),main='Members of hour of day occupant event clusters',ylab='members',xlab='Hour of day')
   dev.copy2pdf(file = paste(occupancyDir,'clutser_members.pdf',sep=''))
   
   #op <- par(no.readonly = TRUE)
@@ -293,14 +302,17 @@ if(doFigures) {
   #par(op)
   #dev.copy2pdf(file = paste(occupancyDir,'clutser_centers_orig.pdf',sep=''))
 
+  # bug fix - the values can contain NAs
+  occ.wknd[is.na(occ.wknd)] = 0
+  
   op <- par(no.readonly = TRUE)
   par( mfrow=c(2,1), oma=c(2,3,1,0),mar=c(2,1,2,1)) # Room for the title
-  kmwd = kmeans(as.matrix(occ.wkdy.m[,2:25],ncol=24),10,iter.max=20)
-  matplot(t(kmwd$centers),type='l',main='Weekday K-means cluster centers (by monthly percentile)',ylab='density',xlab='hour of day',xaxt='n')  
+  kmwd = kmeans(as.matrix(occ.wkdy[,1:24],ncol=24),12,iter.max=20)
+  matplot(t(kmwd$centers),type='l',main='Weekday K-means cluster centers',ylab='density',xlab='hour of day',xaxt='n')  
   axis(1, at=(1:length(xlabs)), labels=xlabs,cex=0.6)
   grid()
-  kmnd = kmeans(as.matrix(occ.wknd.m[,2:25],ncol=24),10,iter.max=20)
-  matplot(t(kmnd$centers),type='l',main='Weekend K-means cluster centers (by monthly percentile)',ylab='density',xlab='hour of day',xaxt='n')
+  kmnd = kmeans(as.matrix(occ.wknd[,1:24],ncol=24),12,iter.max=20)
+  matplot(t(kmnd$centers),type='l',main='Weekend K-means cluster centers',ylab='density',xlab='hour of day',xaxt='n')
   xlabs = 0:23
   axis(1, at=(1:length(xlabs)), labels=xlabs,cex=0.6)
   grid()
