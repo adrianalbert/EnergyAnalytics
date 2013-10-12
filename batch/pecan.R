@@ -92,7 +92,7 @@ toHourly = function(data,dateCol='date'){
 
 # get all weather in the range of the pecan street data
 # yes, there is a lot of hard coded stuff in here that could be more parameterized
-pecanWeatherData = function(forceReload = F) {
+pecanWeatherData = function(forceReload=F) {
   pecanWeather = c()
   if(file.exists(PECAN_WEATHER_FILE) && ! forceReload) {
     load(PECAN_WEATHER_FILE)
@@ -112,7 +112,7 @@ pecanPlusWeather = function(forceReload=F) {
     pecanData = pecan()
     # append matching weather data to each pecan data.frame
     source('wunderground.R')
-    pecanWeat = pecanWeatherData()
+    pecanWeat = pecanWeatherData(forceReload)
     for(homeName in names(pecanData)) {
       print(homeName)
       homeData       = pecanData[[homeName]]
