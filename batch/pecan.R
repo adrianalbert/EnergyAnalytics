@@ -16,15 +16,16 @@
 # setwd('/path/to/working/directory')
 #
 # See the example at the bottom of this file for more on usage.
+require('reshape2')
+require('stringr')
+require('xlsx') # R packages that uses Java's POI xls interface to read files
+
+source(file.path(getwd(),'wunderground.R'))
 
 PECAN_DATA_DIR = 'pecan/1-minute interval data'
 PECAN_DATA_FILE = file.path(PECAN_DATA_DIR,'pecan.RData')
 PECAN_WEATHER_FILE = file.path(PECAN_DATA_DIR,'weather.RData')
 PECAN_COMBINED_FILE = file.path(PECAN_DATA_DIR,'pecan_plus_weather.RData')
-
-require('reshape2')
-require('stringr')
-require('xlsx') # R packages that uses Java's POI xls interface to read files
 
 # default station selected by hand for decent weather history Bouldin-South Austin, Austin, TX
 zip5 = 78723 # Autsin Tx for weather data...
