@@ -140,7 +140,7 @@ solar   = c('gen')
 ev      = c('CAR1')
 net     = c('Grid')
 
-runExample = T
+runExample = F
 if(runExample) {
   ppw = pecanPlusWeather()
   for(homeName in names(ppw)){
