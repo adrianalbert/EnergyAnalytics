@@ -5,26 +5,44 @@ rm(list = ls())
 
 options(error = recover)
 
-setwd('~/Dropbox/OccupancyStates/')
-source('code/OccupancyStates.r')
-source('code/occupancyAnalysis.r')
+source('classes/DataFormatter.r')
+source('classes/StateDecoder.r')
 library(utils)
 
-load('data/selection_consumption.RData')
+load('~/Dropbox/OccupancyStates/data/selection_consumption.RData')
 
 # get test data
 UID       = as.character(20854) # unique(consumption.ok$UID)[1]
-raw_data  = subset(consumption.ok, UID == UID)
+raw_data  = subset(consumption.ok, UID == UID)[,-c(1:4)]
 ZIP       = as.character(93301)# as.character(raw_data$ZIP5[1])
 wthr_data = weather.ok[[ZIP]]
 names(wthr_data)[1] = 'date'
+timesteps = wthr_data$date
+wthr_data = wthr_data[,-which(names(wthr_data) == 'date')]
 
 Rprof(filename = 'Rprof.out', interval = 0.02, memory.profiling = F)
-res = occupancyAnalysis(raw_data, wthr_data, UID, ZIP, NOBS_THRESH = 90, 
-                        verbose = T, plots_path = './', dump_path = './',
-                        resp.vars = c('(Intercept)', 'TemperatureF'),
-                        tran.vars = c('(Intercept)', 'TemperatureF'),
-                        addl.vars = c(),
-                        Kmin = 3, Kmax = 5)
+
+# construct DataFormatter object
+formatter = new(Class='DataFormatter', raw_data, UID)  
+formatter = addCovariates(formatter, timesteps, wthr_data)    
+good.data = extractFormattedData(formatter)    
+
+# define model learning controls
+controls = list(
+  Kmin = 2, Kmax = 4, 
+  maxit = 100, nRestarts = 5,
+  thresh.R2 = 0.85, thresh.MAPE = 0.15,
+  test.periods = 12)
+
+# initialize model
+decoder   = new(Class='StateDecoder', 
+                good.data$data, good.data$timestamps, good.data$UID,
+                train.frac = 0.9, tran.vars = c('TemperatureF'), resp.vars = c('TemperatureF'),
+                controls = controls)  
+# HMM analysis
+decoder   = learnStateDecoder(decoder, verbose = T)
+decoder   = computePredictionAccuracy(decoder, verbose = T)
+show(decoder)
+
 Rprof(NULL)
 profiled = summaryRprof(filename='Rprof.out', memory = 'none')

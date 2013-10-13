@@ -3,7 +3,7 @@
 # Install required packages for analysis on PGE data.
 # 
 # Adrian Albert
-# Last modified: December 2012.
+# Last modified: October 2013.
 
 # define required pacakges
 reqed.packages = c('RMySQL', 'zoo', 'depmixS4', 'ggplot2', 'utils', 

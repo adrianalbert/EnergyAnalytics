@@ -39,8 +39,8 @@ options(error = recover)
 setClass(
   Class = "OccupancyStates",
   representation = representation(
-    UID        = "character",           # unique person ID
-    ZIPCODE    = "character",           # current premise zipcode
+    UID        = "character",         # unique person ID
+    ZIPCODE    = "character",         # current premise zipcode
     timestamps = "character",         # vector of timestamps
     weather    = "data.frame",        # weather covariates
     kWh        = "numeric",           # hourly kWh 
