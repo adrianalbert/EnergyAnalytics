@@ -64,7 +64,7 @@ kError <- function(X, S, K, iter = 10, verbose = T) {
       CS[k,] = res$CS
     }
     # E-step
-    D   = d_err_mat(X, S, CX, CS)
+    D   = d_err_mat_c(X, S, CX, CS)
     ASS = apply(D, 1, which.min) 
     
     # check convergence

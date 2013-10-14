@@ -14,12 +14,13 @@ source('classes/OccupancyStatesAnalysis.r')
 
 # populate OccupancyStatesAnalysis object
 test      = new(Class='OccupancyStatesAnalysis', 
-                path = 'D:/Dropbox/OccupancyStates/fits/fits_sel/')
+                #path = 'D:/Dropbox/OccupancyStates/fits/fits_sel/')
+                path = '~/Dropbox/OccupancyStates/fits/fits_sel/')
 
 test      = computeEffThermalResponse(test)
 test      = computeEffTODResponse(test)
 
-test      = thermalSegmentation(test, type = 'temperature')
+test      = thermalSegmentation(test, type = 'temperature', Kmin = 9, iter = 100)
 
 test      = greedyThermalTargeting(test, method = 'temperature')
 test      = greedyThermalTargeting(test, method = 'random')
@@ -49,16 +50,11 @@ png(filename = 'predictability_population.png', width = 800, height = 400, res =
 print(plot(test, type = 'predictability'))
 dev.off()
 
-#   # typical states by components (hard clustering)
-#   png(filename = 'states_comp_types_kmeans.png', width = 1800, height = 600, res = 100)
-#   print(plot(test, type = 'states_comp_types_hard'))
-#   dev.off()
-#   
-#   # typical states by components (soft clustering)
-#   png(filename = 'states_comp_types_cmeans.png', width = 1800, height = 600, res = 100)
-#   print(plot(test, type = 'states_comp_types_soft'))
-#   dev.off()
-
+# typical states by components (hard clustering)
+png(filename = 'thermal_centers.png', width = 1800, height = 800, res = 100)
+print(plot(test, type = 'thermal-centers'))
+dev.off()
+   
 # classification of response per zipcode
 png(filename = 'response_zipcode.png', width = 1200, height = 600, res = 100)
 print(plot(test, type = 'response'))

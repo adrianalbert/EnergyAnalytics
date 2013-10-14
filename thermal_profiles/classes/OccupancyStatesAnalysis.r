@@ -24,7 +24,6 @@ data('zipcode')
 
 source('../utils/viz/plot_utils.r')
 source('./clustering/kError.r')
-source('./clustering/d_err.r')
 
 # clean-up previous definitions of methods for class Person
 removeClass('OccupancyStatesAnalysis')
@@ -205,12 +204,12 @@ setMethod('computeEffTODResponse',
 
 setGeneric(
   name = "thermalSegmentation",
-  def = function(.Object, Kmin = 3, Kmax = 3, verbose = T, type = 'temperature')
+  def = function(.Object, Kmin = 3, Kmax = 3, verbose = T, type = 'temperature', iter = 10)
   {standardGeneric("thermalSegmentation")}
 )
 setMethod('thermalSegmentation',
           signature  = 'OccupancyStatesAnalysis',
-          definition = function(.Object, Kmin = 3, Kmax = 3, verbose = T, type = 'temperature'){
+          definition = function(.Object, Kmin = 3, Kmax = 3, verbose = T, type = 'temperature', iter = 10){
             
             if (verbose) cat('Thermal Segmentation:\n')
             
@@ -221,24 +220,26 @@ setMethod('thermalSegmentation',
               df = subset(.Object@EFF_RESPONSE, select = c('UID', 'TemperatureF', 'Thermal.Component'))              
               df = df[with(df, order(UID, TemperatureF)), ]
               uid= df[,'UID']
-              df = matrix(as.matrix(df[,-1]), ncol = length(unique(df[,'TemperatureF'])))
+              df = matrix(as.matrix(df[,-c(1,2)]), ncol = length(unique(df[,'TemperatureF'])), , byrow=T)
               df = as.data.frame(df)
-              X  = cbind(unique(uid), df)
+              X  = cbind(unique(uid), df[,-c(1:10, 110:121)])
               # errors
               df = subset(.Object@EFF_RESPONSE, select = c('UID', 'TemperatureF', 'Var.Thermal'))              
               df = df[with(df, order(UID, TemperatureF)), ]
               uid= df[,'UID']
-              df = matrix(as.matrix(df[,-1]), ncol = length(unique(df[,'TemperatureF'])))
+              df = matrix(as.matrix(df[,-c(1,2)]), ncol = length(unique(df[,'TemperatureF'])), byrow=T)
               df = as.data.frame(df)
-              S  = cbind(unique(uid), df)              
+              S  = cbind(unique(uid), df[,-c(1:10, 110:121)])              
             } else {
               X = .Object@TOD_RESPONSE
               # TODO: per-season analysis? or put both seasons together?
             }
+            X   = as.matrix(X[,-1])
+            S   = as.matrix(S[,-1])
             
-            res = kError(X, S, K, iter = 10)
-            return(res)
+            .Object@SEGMENTATION =  kError(X, S, K, iter = iter)
             
+            return(.Object)
           }
 )
 
@@ -562,81 +563,115 @@ setMethod('plot',
                 ggtitle("Distribution of Thermal Regimes") + xlab('Effective Thermal Response Rate [kWh/F]') + ylab('Effective Standard Error [kWh]')
               
               return(plt)            
-          }                        
-          
-          # segmentation by thermal and activity responses
-          if (type == 'thermal-duration-segmentation') {
+            }                        
             
-            # prepare data 
-            df.distr = subset(x@BENCHMARKS, variable == 'Distribution')
-            df.durat = subset(x@BENCHMARKS, variable == 'Duration')
-            df.resp  = x@STATES_ATTR[, c('UID', 'ZIPCODE', 'State', 'TemperatureF')]
-            temp.sel = paste('X', c(45, 60, 75, 95), sep = '')
-            df.distr = df.distr[, c('UID', 'ZIPCODE', 'State', temp.sel)]
-            df.durat = df.durat[, c('UID', 'ZIPCODE', 'State', temp.sel)]
-            df.durat[,temp.sel] = apply(df.durat[,temp.sel], 2, function(x) {x[which(x>24)] = 24; x[which(x<1)] = 1; return(x)})
+            # segmentation by thermal and activity responses
+            if (type == 'thermal-centers') {
+              
+              # prepare data 
+              dx        = as.data.frame(x@SEGMENTATION$centers)
+              dx$Obs    = as.factor(1:nrow(dx))
+              dx        = melt(dx, id.vars = 'Obs')
+              ds        = as.data.frame(x@SEGMENTATION$errors)
+              ds$Obs    = as.factor(1:nrow(ds))
+              ds        = melt(ds, id.vars = 'Obs')
+              names(ds)[3] = 'se'
+              df        = merge(dx, ds, by = c('Obs', 'variable'))
+              p         = ggplot(df, aes(variable, value, color = Obs, group = Obs))
+              p         = p + facet_wrap(~Obs, ncol = 3)
+              p         = p + geom_point() + geom_line()
+              p         = p + geom_ribbon(aes(ymin=value-se, ymax=value+se), width=.1, color = 'gray', alpha = 0.1)
+              
+              p = p + theme_bw() + 
+                theme(panel.grid.major = element_blank(),
+                      panel.grid.minor = element_blank(),
+                      panel.background = element_blank(),
+                      strip.text.x     = element_text(size=18),
+                      axis.text.y      = element_text(size=18), 
+                      axis.text.x      = element_text(size=18),
+                      axis.title.y     = element_text(size=18),
+                      axis.title.x     = element_text(size=18),
+                      plot.title       = element_text(size=20),            
+                      legend.text      = element_text(size=18),
+                      axis.ticks = element_blank()) + 
+                ylab('Effective Response [kWh/T]') + ggtitle("Segmentation by Thermal Response") + xlab('Temperature [F]')
+              
+              return(p)            
+            } 
             
-            # compute average response
-            df.resp  = merge(df.distr, df.resp)
-            df.resp$variable = NULL
-            df.resp  = melt(df.resp, id.vars = c('UID', 'ZIPCODE', 'State', 'TemperatureF'))
-            df.resp$TemperatureF = df.resp$TemperatureF * df.resp$value
-            df.resp$value = NULL
-            names(df.resp)[c(4,5)] = c('Thermal.Component', 'TemperatureF')
-            df.resp$TemperatureF = gsub('X', 'T', df.resp$TemperatureF)
-            
-            # compute average duration
-            df.durat  = cbind(df.distr[,1:3], df.distr[,temp.sel] * df.durat[,temp.sel])
-            df.durat  = melt(df.durat, id.vars = c('UID', 'ZIPCODE', 'State'))
-            names(df.durat)[c(4,5)] = c('TemperatureF','Duration')
-            df.durat$TemperatureF = gsub('X', 'T', df.durat$TemperatureF)
-            
-            # compute user averages
-            df = merge(df.durat, df.resp)
-            df$UID = as.factor(df$UID)
-            df$ZIPCODE = as.factor(df$ZIPCODE)
-            df$TemperatureF = as.factor(df$TemperatureF)
-            df$State = as.factor(df$State)
-            df = aggregate(data = df, cbind(Thermal.Component, Duration) ~ UID + ZIPCODE + TemperatureF, FUN = sum)
-            
-            # classify states into low/medium/high by thermal response
-            seg = subset(df, select = c('Thermal.Component', 'Duration'))
-            seg$Thermal.Type  = 'cooling'
-            seg$Thermal.Type[seg$Thermal.Component < 0] = 'heating'
-            qnt.resp = quantile(abs(seg$Thermal.Component), probs = c(0,0.25,0.75, 1))
-            type     = c('none', 'low', 'high')[findInterval(abs(seg$Thermal.Component), qnt.resp, all.inside = T)]
-            seg$Thermal.Type[type == 'none'] = ''
-            seg$Thermal.Type  = paste(type, seg$Thermal.Type, sep='-')  
-
-            # segmentation by duration
-            qnt.time = quantile(abs(seg$Duration), probs = c(0,0.25,0.75, 1))
-            type     = c('short', 'medium', 'long')[findInterval(abs(seg$Duration), qnt.time, all.inside = T)]
-            seg$Duration.Type = type            
-            df = cbind(df, seg[,c('Thermal.Type', 'Duration.Type')])
-            
-            # construct plot
-            plt = ggplot(df, aes(x = Thermal.Component, y = Duration, color = Thermal.Type, shape = Thermal.Type)) + 
-              #stat_density2d(aes(fill = ..level..))
-              geom_point(size=2)
-            plt = plt + facet_wrap(~TemperatureF, ncol = 2)
-            plt = plt + geom_vline(xintercept = qnt.resp[c(2,3)], color = 'blue', size = 1.5)
-            plt = plt + geom_hline(yintercept = qnt.time[c(2,3)], color = 'red', size = 1.5)
-            plt = plt + theme_bw() + 
-              theme(panel.grid.major = element_blank(),
-                    panel.grid.minor = element_blank(),
-                    panel.background = element_blank(),
-                    strip.text.x     = element_text(size=18),
-                    axis.text.y      = element_text(size=18), 
-                    axis.text.x      = element_text(size=18),
-                    axis.title.y     = element_text(size=18),
-                    axis.title.x     = element_text(size=18),
-                    plot.title       = element_text(size=20),            
-                    legend.text      = element_text(size=18),
-                    axis.ticks = element_blank()) + 
-              ylab('Avg. Duration [hrs]') + ggtitle("Segmentation by Thermal Response and Duration") + xlab('Avg. Thermal Response [kWh/F]')
-            
-            return(plt)            
-          } 
+            # segmentation by thermal and activity responses
+            if (type == 'thermal-duration-segmentation') {
+              
+              # prepare data 
+              df.distr = subset(x@BENCHMARKS, variable == 'Distribution')
+              df.durat = subset(x@BENCHMARKS, variable == 'Duration')
+              df.resp  = x@STATES_ATTR[, c('UID', 'ZIPCODE', 'State', 'TemperatureF')]
+              temp.sel = paste('X', c(45, 60, 75, 95), sep = '')
+              df.distr = df.distr[, c('UID', 'ZIPCODE', 'State', temp.sel)]
+              df.durat = df.durat[, c('UID', 'ZIPCODE', 'State', temp.sel)]
+              df.durat[,temp.sel] = apply(df.durat[,temp.sel], 2, function(x) {x[which(x>24)] = 24; x[which(x<1)] = 1; return(x)})
+              
+              # compute average response
+              df.resp  = merge(df.distr, df.resp)
+              df.resp$variable = NULL
+              df.resp  = melt(df.resp, id.vars = c('UID', 'ZIPCODE', 'State', 'TemperatureF'))
+              df.resp$TemperatureF = df.resp$TemperatureF * df.resp$value
+              df.resp$value = NULL
+              names(df.resp)[c(4,5)] = c('Thermal.Component', 'TemperatureF')
+              df.resp$TemperatureF = gsub('X', 'T', df.resp$TemperatureF)
+              
+              # compute average duration
+              df.durat  = cbind(df.distr[,1:3], df.distr[,temp.sel] * df.durat[,temp.sel])
+              df.durat  = melt(df.durat, id.vars = c('UID', 'ZIPCODE', 'State'))
+              names(df.durat)[c(4,5)] = c('TemperatureF','Duration')
+              df.durat$TemperatureF = gsub('X', 'T', df.durat$TemperatureF)
+              
+              # compute user averages
+              df = merge(df.durat, df.resp)
+              df$UID = as.factor(df$UID)
+              df$ZIPCODE = as.factor(df$ZIPCODE)
+              df$TemperatureF = as.factor(df$TemperatureF)
+              df$State = as.factor(df$State)
+              df = aggregate(data = df, cbind(Thermal.Component, Duration) ~ UID + ZIPCODE + TemperatureF, FUN = sum)
+              
+              # classify states into low/medium/high by thermal response
+              seg = subset(df, select = c('Thermal.Component', 'Duration'))
+              seg$Thermal.Type  = 'cooling'
+              seg$Thermal.Type[seg$Thermal.Component < 0] = 'heating'
+              qnt.resp = quantile(abs(seg$Thermal.Component), probs = c(0,0.25,0.75, 1))
+              type     = c('none', 'low', 'high')[findInterval(abs(seg$Thermal.Component), qnt.resp, all.inside = T)]
+              seg$Thermal.Type[type == 'none'] = ''
+              seg$Thermal.Type  = paste(type, seg$Thermal.Type, sep='-')  
+              
+              # segmentation by duration
+              qnt.time = quantile(abs(seg$Duration), probs = c(0,0.25,0.75, 1))
+              type     = c('short', 'medium', 'long')[findInterval(abs(seg$Duration), qnt.time, all.inside = T)]
+              seg$Duration.Type = type            
+              df = cbind(df, seg[,c('Thermal.Type', 'Duration.Type')])
+              
+              # construct plot
+              plt = ggplot(df, aes(x = Thermal.Component, y = Duration, color = Thermal.Type, shape = Thermal.Type)) + 
+                #stat_density2d(aes(fill = ..level..))
+                geom_point(size=2)
+              plt = plt + facet_wrap(~TemperatureF, ncol = 2)
+              plt = plt + geom_vline(xintercept = qnt.resp[c(2,3)], color = 'blue', size = 1.5)
+              plt = plt + geom_hline(yintercept = qnt.time[c(2,3)], color = 'red', size = 1.5)
+              plt = plt + theme_bw() + 
+                theme(panel.grid.major = element_blank(),
+                      panel.grid.minor = element_blank(),
+                      panel.background = element_blank(),
+                      strip.text.x     = element_text(size=18),
+                      axis.text.y      = element_text(size=18), 
+                      axis.text.x      = element_text(size=18),
+                      axis.title.y     = element_text(size=18),
+                      axis.title.x     = element_text(size=18),
+                      plot.title       = element_text(size=20),            
+                      legend.text      = element_text(size=18),
+                      axis.ticks = element_blank()) + 
+                ylab('Avg. Duration [hrs]') + ggtitle("Segmentation by Thermal Response and Duration") + xlab('Avg. Thermal Response [kWh/F]')
+              
+              return(plt)            
+            } 
             
           # density heatmap of average response by temperature
           if (type == 'greedy-targeting') {

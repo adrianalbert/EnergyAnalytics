@@ -36,35 +36,67 @@ d_err_mat <- function(X, SX, Y, SY) {
 # C implementation to speed up calculation
 # ------------------------------------------
 
+init_d_err = function() {
+  
+  # compute KS statistic given a, b
+  src_d_err_c <- '
+  using namespace Rcpp;
+  Rcpp::NumericVector cx(x);
+  Rcpp::NumericVector cy(y);
+  Rcpp::NumericVector csx(sx);
+  Rcpp::NumericVector csy(sy);
+  
+  Rcpp::NumericVector d = (cx - cy)*(cx - cy) / csx;
+  double s = std::accumulate(d.begin(), d.end(), 0.0);
+  
+  return wrap(s);'
+  
+  fun <- cxxfunction(signature(x = "numeric",  sx = "numeric", 
+                               y = "numeric",  sy= "numeric"),
+                     body = src_d_err_c, 
+                     plugin = "Rcpp")  
+  return (fun)  
+}
+
+
 init_d_err_mat = function() {
   
   # compute KS statistic given a, b
   src_d_err_c <- '
   using namespace Rcpp;
-  float d_err_c(NumericVector cx, NumericVector cy, NumericVector csx, NumericVector csy) {
+  double d_err_c(NumericVector cx, NumericVector csx, NumericVector cy, NumericVector csy) {
+  
+    using namespace Rcpp;    
+    NumericVector d = (cx - cy)*(cx - cy) / csx;
+    double s = std::accumulate(d.begin(), d.end(), 0.0);
     
-    int p = cx.size();
-    float d = 0;
-    for (int i = 0; i++; i<p) d = d + (x[i] - y[i])^2 / csx[i];    
-    return d;
+    return s;
   }'
   
   src_d_mat = '   
-   using namespace Rcpp;
-   // input
-   Rcpp::NumericMatrix cX(X);
-   Rcpp::NumericMatrix cY(Y);
-   Rcpp::NumericMatrix cSX(SX);
-   Rcpp::NumericMatrix cSY(SX);
+  using namespace Rcpp;
+  // input
+  
+  Rcpp::NumericMatrix cX(X);
+  Rcpp::NumericMatrix cY(Y);
+  Rcpp::NumericMatrix cSX(SX);
+  Rcpp::NumericMatrix cSY(SY);
+  
+  int N1 = cX.nrow();
+  int N2 = cY.nrow();
+  NumericMatrix D(N1, N2);
 
-   return 1;
-  '
+  for (int x = 0; x<N1; x++){
+    for (int y = 0; y<N2; y++) {
+      D(x,y) = d_err_c(cX(x,_), cSX(x,_), cY(y,_), cSY(y,_));
+    };
+  };
   
-  fun <- cxxfunction(signature(X = "numeric",  Y = "numeric", 
-                               SC = "numeric",  SY = "numeric"),
+  return wrap(D);'  
+  fun <- cxxfunction(signature(X = "numeric",  SX = "numeric", 
+                               Y = "numeric",  SY = "numeric"),
                      body = src_d_mat, includes = src_d_err_c, 
-                     plugin = "Rcpp")
-  
+                     plugin = "Rcpp")  
   return (fun)
 
 }
@@ -72,40 +104,7 @@ init_d_err_mat = function() {
 # _______________________
 # Initialize C functions
 
-
-src <- '
-     Rcpp::NumericMatrix Am(A);
-     int nrows = Am.nrow();
-     int ncolumns = Am.ncol();
-     for (int i = 0; i < ncolumns; i++) {
-         for (int j = 1; j < nrows; j++) {
-             Am(j,i) = Am(j,i) + Am(j-1,i);
-         }
-     }
-     return Am;
- '
-fun <- cxxfunction(signature(A = "numeric"), body = src, plugin="Rcpp")
-fun(matrix(1,4,4))
-
 cat('Initializing C functions...\n')
-d_err_mat_c     = init_d_err_mat()
+#d_err_c     = init_d_err()
+d_err_mat_c = init_d_err_mat()
 
-# /*   int N = cX.nrow();
-# int p = cX.nrow();
-# Rcpp::NumericMatrix D(N, p, v.begin());
-# Rcpp::NumericVector vx(p);
-# Rcpp::NumericVector vy(p);
-# 
-# for (int x = 0; x++; x<N){
-#   vx  = cX(x,_);
-#   vsx = cSX(x,_);
-#   for (int y = 0; y++; y<N) {
-#     vy  = cX(y,_);
-#     vsy = cSX(y,_);
-#     D(x,y) = d_err_c(vx, vy, vsx, vsy)
-#   }
-# }
-# 
-# return wrap(D);
-# */
-#   
