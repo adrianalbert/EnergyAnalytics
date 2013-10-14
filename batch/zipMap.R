@@ -27,7 +27,7 @@ append.spdf <- function(sp.df,sp.df.col,df.only,df.col){
 }
 
 # PLOT: Simple function that plots a column of continuous values on a color scale
-calZipPlot <- function (calzip,color.column,main=NULL,precis=0,colorMap=NULL,intervalStyle='quantile',nIntervals=7,intervalBreaks=NULL,legend.cex=0.8,legend.title=NULL,legend.bg=NULL){
+calZipPlot <- function (calzip,color.column,main=NULL,precis=0,colorMap=NULL,intervalStyle='quantile',nIntervals=7,intervalBreaks=NULL,legend.cex=0.8,legend.title=NULL,legend.bg=NULL,...){
   # calzip is the california zipcodes SPDF
   # color.column is the column of the dataframe to be colorcoded
   # main is an optional plot title
@@ -46,13 +46,13 @@ calZipPlot <- function (calzip,color.column,main=NULL,precis=0,colorMap=NULL,int
   
   
   # make a special color for NAN entries
-  col[is.na(colorval)] <- 'grey80'
-  col[grepl(c('XX'),calzip$NAME)] <- 'grey85' # XX means "large land areas such as national parks"
+  col[is.na(colorval)] <- 'grey70'
+  col[grepl(c('XX'),calzip$NAME)] <- 'grey70' # XX means "large land areas such as national parks"
   col[grepl(c('HH'),calzip$NAME)] <- 'grey60'   # HH means body of water
   
   # this is the part that actually plots
   op = par(mgp=c(2.2,0.45,0), tcl=-0.4, mar=c(1.1,1.1,1.1,1.1))
-  plot(calzip,col=col,border=col)
+  plot(calzip,col=col,border=col,...)
   map("county",region="california",add=TRUE)
   if(is.factor(colorval)) {
     #colorval = factor(colorval[colorval != '']) # kill blank assignments
@@ -81,14 +81,14 @@ getCalSPDF = function() {
 }
 
 # Interval style is one of "fixed", "sd", "equal", "pretty", "quantile", "kmeans", "hclust", "bclust", "fisher", or "jenks"
-calMap = function(df,plotCol,zipCol=NULL,calZipData=NULL,main=NULL,colorMap=NULL,precis=0,intervalStyle='quantile',nIntervals=7,intervalBreaks=NULL,legend.cex=0.8,legend.title=NULL) {
+calMap = function(df,plotCol,zipCol=NULL,calZipData=NULL,main=NULL,colorMap=NULL,precis=0,intervalStyle='quantile',nIntervals=7,intervalBreaks=NULL,legend.cex=0.8,legend.title=NULL,...) {
   if(is.null(colorMap))   { colorMap   <- brewer.pal(7,"Reds") }
   if(is.null(calZipData)) { calZipData <- getCalSPDF()         }
   if(is.null(zipCol)) {
     zipCol = grep('^zip',colnames(df),value=T)[1]
   }
   calZipData@data<-append.spdf(calZipData,'NAME',df,zipCol)
-  calZipPlot(calZipData,plotCol,main,colorMap=colorMap,intervalStyle=intervalStyle,nIntervals=nIntervals,intervalBreaks=intervalBreaks,precis=precis,legend.cex=legend.cex,legend.title=legend.title)
+  calZipPlot(calZipData,plotCol,main,colorMap=colorMap,intervalStyle=intervalStyle,nIntervals=nIntervals,intervalBreaks=intervalBreaks,precis=precis,legend.cex=legend.cex,legend.title=legend.title,...)
 }
 
 ggCalMap = function(df,zipCol,plotCol,calZipData=NULL,main=NULL) {

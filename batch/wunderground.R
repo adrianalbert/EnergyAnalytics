@@ -1,7 +1,22 @@
+# wunderground.R
+# R functions for working with Weather Underground station data in R
+# Given a stantion and date range, this code will download and parse
+# hourly weather data into a data.frame for use in R.
+#
+# Adapted from Dylan Beaudette's blog post on using R to retrieve WU data: 
+# http://casoilresource.lawr.ucdavis.edu/drupal/node/991
+#
+# Written by Sam Borgeson (sborgeson@berkeley.edu)
+# 
+# You are free to re-use and modify for non-commercial purposes.
+# Contact Sam with questions.
+# Last modified 10/7/2013
+#
+# See test code example at the bottom of this file for more on usage.
+require(plyr)
 
-
-# adapted from blog post: http://casoilresource.lawr.ucdavis.edu/drupal/node/991
-wuWeatherDay <- function(station, dateStr) {
+# i.e. wuWeatherDay('KTXAUSTI90','2012-10-01',tz='CST6CDT')
+wuWeatherDay <- function(station, dateStr,tz=NULL) {
   base_url <- 'http://www.wunderground.com/weatherstation/WXDailyHistory.asp?'
   
   day = as.POSIXlt(dateStr)
@@ -12,20 +27,20 @@ wuWeatherDay <- function(station, dateStr) {
   
   # compose final url
   final_url <- paste(base_url,
-                     'ID=', station,
+                     'ID=',     station,
                      '&month=', m,
-                     '&day=', d,
-                     '&year=', y,
+                     '&day=',   d,
+                     '&year=',  y,
                      '&format=1', sep='')
   
-  
+  #print(final_url)
   u <- url(final_url)
   urlData <- readLines(u)   # reading in as raw lines from the web server
   close(u)                  # contains <br> tags on every other line
-  
   # only keep records with more than 5 rows of data
   if(length(urlData) <= 5 ) {
-    print('No usable data found.')
+    print('[wuWeatherDay]:No usable data found.')
+    print(urlData)
   } else {
     # remove the first and last lines
     urlData <- urlData[-c(1, length(urlData))]
@@ -49,7 +64,11 @@ wuWeatherDay <- function(station, dateStr) {
     names(weatherData) <- head
     
     # convert Time column into properly encoded date time
-    weatherData$Time <- as.POSIXct(strptime(weatherData$Time, format='%Y-%m-%d %H:%M:%S'))
+    if(!is.null(tz)) {
+      weatherData$Time <- as.POSIXct(strptime(weatherData$Time, format='%Y-%m-%d %H:%M:%S'),tz=tz)
+    } else { 
+      weatherData$Time <- as.POSIXct(strptime(weatherData$Time, format='%Y-%m-%d %H:%M:%S'))
+    }
     
     # remove UTC and software type columns
     weatherData$DateUTC.br. <- NULL
@@ -64,13 +83,11 @@ wuWeatherDay <- function(station, dateStr) {
   }
 }
 
-
-
 # be sure to load the function from above
 # get a single day's worth of (hourly) data
-#w <- wuWeatherDay(station, as.Date('2012-09-05'))
+#w <- wuWeather(station, as.Date('2012-09-05'))
 
-wuWeather = function(station,startDate,endDate=NULL) {
+wuWeather = function(station,startDate,endDate=NULL,tz=NULL) {
   if(is.null(endDate)){endDate = startDate}
   # get data for a range of dates
   library(plyr)
@@ -82,17 +99,23 @@ wuWeather = function(station,startDate,endDate=NULL) {
   for(i in seq_along(date.range))
   {
     print(date.range[i])
-    l[[i]] <- wuWeatherDay(station, date.range[i])
+    l[[i]] <- wuWeatherDay(station, date.range[i],tz=tz)
   }
   
   # stack elements of list into DF, filling missing columns with NA
-  df <- ldply(l)
+  df <- ldply(l) # from plyr
   return(df)
 }
 
 interpolateTime = function(data,newTimes,dateCol='Time') {
-  weatherCols = c('TemperatureF','DewpointF','PressureIn','Humidity','SolarRadiationWatts.m.2','WindSpeedMPH')
+  weatherCols = c(  'TemperatureF',
+		    'DewpointF',
+		    'PressureIn',
+		    'Humidity',
+		    'SolarRadiationWatts.m.2',
+		    'WindSpeedMPH' )
   t = data$Time
+  # run approx of the data to interpolate values for the times passed in
   newData = data.frame(sapply(weatherCols,function(x) approx(t,data[,x],xout=newTimes,rule=2)$y))
   newData[[dateCol]] = newTimes
   return(newData)
@@ -105,14 +128,41 @@ if(test){
   # get single day
   #wuWeather(station,'2009-01-25')
   
-  weather = wuWeather(station,'2012-08-01','2012-10-01')
+  weather = wuWeather(station,'2012-08-01','2012-9-01',tz='CST6CDT')
+  # useful to save the weather data at this point:
+  # save(weather,file=paste(station,'data.RData',sep='')
   
   # interpolate data to arbitrary times
-  t = pecanWeather$Time
+  t = weather$Time
   minuteTimes = seq.POSIXt(from=trunc(t[1],'day'),to=round(t[length(t)],'day'),by='min')  
-  minuteData = interpolateTime(pecanWeather,minuteTimes)
+  minuteData = interpolateTime(weather,minuteTimes)
   
-  # average data to hourly intervals
-  hourly = toHourly(pecanWeather[,c('Time',weatherCols)],'Time')
+  # time average to hourly data
+  minuteData$dayhr = strftime(minuteData[,'Time'],'%Y-%m-%d.%H',tz='CST6CDT')
+  hourData = aggregate(. ~ dayhr,data=minuteData, mean, na.rm=T )
+  hourData$date = strptime(hourData$dayhr,'%Y-%m-%d.%H')
+  print(names(hourData))
+  dt = hourData$date
+  plot(dt,hourData$TemperatureF,type='l',
+       ylim=c(50,185),
+       main=paste('Weather data for',station,dt[1],'to',dt[length(time)]),
+       xlab='Date',ylab='deg F + arbitrary other units')
+  abline(v=as.POSIXct(dt)[c(1,which(dt$hour==0))],lty=3,col='#dddddd') # label day starts
+  points(dt,
+         105 +(hourData$WindSpeedMPH / max(hourData$WindSpeedMPH))*20,
+         type='l',lty=1,col='#cccccc')
+  points(dt,
+         125 +(hourData$Humidity / max(hourData$Humidity))*20,
+         type='l',lty=1,col='#ffcccc')
+  points(dt,
+         145 +(hourData$SolarRadiationWatts.m.2 / max(hourData$SolarRadiationWatts.m.2))*20,
+         type='l',lty=1,col='#ccffcc')
+  points(dt,
+         165 +(hourData$PressureIn / max(hourData$PressureIn))*20,
+         type='l',lty=1,col='#ccccff')
+  points(dt,
+         hourData$DewpointF,
+         type='l',lty=1,col='#ffccff')
+  
 }
 
