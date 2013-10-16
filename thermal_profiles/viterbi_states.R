@@ -56,14 +56,16 @@ function(object, new.data.x, new.data.y, na.allow=TRUE) {
 		if(object@ntimes[case]>1) {
 			for(tt in ((bt[case]+1):et[case])) {
 				for(j in 1:ns) {
-					if(!object@stationary) {
-						delta[tt,j] <- max(delta[tt-1,]*(A[tt,j,]))*B[tt,j]
-						k <- which.max(delta[tt-1,]*A[tt,j,])
-					} else {
-						delta[tt,j] <- max(delta[tt-1,]*(A[1,j,]))*B[tt,j]
-						k <- which.max(delta[tt-1,]*A[1,j,])
-					}
-					if(length(k) == 0) k <- 0 # what's this doing here??? can this ever occur? FIX ME
+				  #   				if(!object@stationary) {
+				  # 						delta[tt,j] <- max(delta[tt-1,]*(A[tt,j,]))*B[tt,j]
+				  # 						k <- which.max(delta[tt-1,]*A[tt,j,])
+				  # 					} else {
+				  # 						delta[tt,j] <- max(delta[tt-1,]*(A[1,j,]))*B[tt,j]
+				  # 						k <- which.max(delta[tt-1,]*A[1,j,])
+				  # 					}
+					delta[tt,j] <- max(delta[tt-1,]*(A[tt,j,]))*B[tt,j]
+					k <- which.max(delta[tt-1,]*A[tt,j,])
+				  if(length(k) == 0) k <- 0 # what's this doing here??? can this ever occur? FIX ME
 					psi[tt,j] <- k
 				}
 				delta[tt,] <- delta[tt,]/(sum(delta[tt,]))

@@ -35,14 +35,20 @@ controls = list(
   test.periods = 12)
 
 # initialize model
+source('classes/StateDecoder.r')
 decoder   = new(Class='StateDecoder', 
                 good.data$data, good.data$timestamps, good.data$UID,
-                train.frac = 0.9, tran.vars = c('TemperatureF'), resp.vars = c('TemperatureF'),
+                train.frac = 0.9, 
+                tran.vars = c('(Intercept)', 'TemperatureF'), 
+                resp.vars = c('(Intercept)', 'TemperatureF'),
                 controls = controls)  
 # HMM analysis
 decoder   = learnStateDecoder(decoder, verbose = T)
-decoder   = computePredictionAccuracy(decoder, verbose = T)
 show(decoder)
+
+# perform interpretation and feature extraction
+interpreter  = new(class = "Interpreter", decoder)
+features     = extractClassificationFeatures(interpreter)
 
 Rprof(NULL)
 profiled = summaryRprof(filename='Rprof.out', memory = 'none')

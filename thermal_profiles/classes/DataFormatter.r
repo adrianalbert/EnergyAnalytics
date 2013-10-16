@@ -37,9 +37,11 @@ setMethod(f = "initialize",
           definition = function(.Object, raw_data, UID, verbose = T) {
             
             .Object@UID     = as.character(UID)
-            
-            if (verbose) 
+                        
+            if (verbose) {
               cat(paste('*** Initializing DataFormatter (', .Object@UID,') ***\n', sep=''))
+              t0 = proc.time()
+            }
                         
             # ______________________________________________
             # Format observation data to timeseries format
@@ -82,6 +84,11 @@ setMethod(f = "initialize",
             # initialize default weather object
             .Object@covariates  = data.frame()
             
+            if (verbose) {
+              dt = proc.time() - t0;
+              print(dt)
+            }
+            
             return(.Object)
           })
 
@@ -96,8 +103,10 @@ setGeneric(
 setMethod('addCovariates',
           signature  = 'DataFormatter',
           definition = function(.Object, covar_times, covar_data, verbose=T){
-            if (verbose) 
+            if (verbose) {
               cat(paste('*** Adding covariates data for DataFormatter', .Object@UID,' ***\n',sep=''))
+              t0 = proc.time()
+            }
             
             covar_names = names(covar_data)
             
@@ -134,6 +143,11 @@ setMethod('addCovariates',
             .Object@timestamps  = as.character(covar_times)
             .Object@obs         = .Object@obs[idx_ok_cons]
 
+            if (verbose) {
+              dt = proc.time() - t0;
+              print(dt)
+            }
+            
             return(.Object)
           }
 )

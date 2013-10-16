@@ -6,12 +6,8 @@
 # Last modified: October 2013.
 # -----------------------------------------------------------------------
 
-library('methods')
 library('timeDate')
-library('zoo')
 require('lmtest')
-library('segmented')
-library('dummies')
 library('depmixS4')
 library('R.utils')
 library('MASS')
@@ -55,8 +51,10 @@ setMethod(f = "initialize",
             
             .Object@UID = UID
             
-            if (verbose) 
+            if (verbose) {
               cat(paste('*** Initializing StateDecoder (', .Object@UID, ') ***\n', sep=''))
+              t0 = proc.time()
+            }
                         
             # retain only interesting data
             data = subset(data, select = c('obs', setdiff(resp.vars, '(Intercept)'), setdiff(tran.vars, '(Intercept)')))
@@ -82,6 +80,11 @@ setMethod(f = "initialize",
             
             .Object@HMM = list()
             
+            if (verbose){
+              dt = proc.time() - t0
+              print(dt)
+            }
+            
             return(.Object)
           })
 
@@ -98,6 +101,10 @@ setMethod('show',
             if (length(object@HMM) > 0) {
       	      cat(sprintf('HMM States:\t%d\n', object@HMM$nStates))
       	      cat(sprintf('HMM MAPE =\t%f; R2 =\t%f; GR2 =\t%f\n', object@HMM$MAPE, object@HMM$R2, object@HMM$GR2))
+      	      cat("Response\n")
+      	      print(object@HMM$response)
+      	      cat("Transition\n")
+      	      print(object@HMM$transition)
             }
             
             cat('*** END: StateDecoder Object ***\n')
@@ -107,8 +114,8 @@ setMethod('show',
 # Define HMM model for depmixS4 package
 
 defineHMM = function(data.train, K = 3, type = 'default', 
-                     response.vars = NULL, transitn.vars = NULL, 
-                     respstart = NULL, trstart = NULL) {
+                               response.vars = NULL, transitn.vars = NULL, 
+                               respstart = NULL, trstart = NULL) {
   
   intercept_resp = '(Intercept)' %in% response.vars
   intercept_tran = '(Intercept)' %in% transitn.vars
@@ -138,7 +145,21 @@ defineHMM = function(data.train, K = 3, type = 'default',
   } else {
     mod = makeModelSelect(data.train, fmla_response, fmla_transitn, K = K)    
   }
+  
   return(mod)
+}
+
+
+# ______________________________________
+# Wrapper to fit model
+
+fit.model = function(mod, maxit = 100, cur_tol = 1e-3){ 
+  print(class(mod))
+  if (class(mod) == 'depmix')
+    mod.fit = fit(mod, verbose = T, useC = T, emcontrol = em.control(maxit = maxit, tol = cur_tol))
+  if (class(mod) == 'HMM')
+    mod.fit = NULL # TODO: replace with actual model
+  return(mod.fit)
 }
 
 # ______________________________________
@@ -154,7 +175,7 @@ fitHMM = function(mod, nRestarts = 1, verbose = T, maxit = 100){
   cur_tol = 1e-3
   while (!ok & it <= nRestarts) {
     
-    out <- capture.output(fm  <- try(fit(mod, verbose = T, useC = T, emcontrol = em.control(maxit = maxit, tol = cur_tol))))                
+    out <- capture.output(fm  <- try(fit.model(mod, maxit = maxit, cur_tol = cur_tol)))                
     nlines = length(out)
     
     if (class(fm) != 'try-error') {
@@ -226,7 +247,8 @@ learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(),
       done   = F
       while (k <= Kmax & !done) {
         result[[as.character(k)]] = fitHMM.cv(data.train, K = k, 
-                                              response.vars = response_vars, transitn.vars = transitn_vars, 
+                                              response.vars = resp.vars,
+                                              transitn.vars = tran.vars, 
                                               respstart = NULL, trstart = NULL, 
                                               nRestarts = nRestarts, verbose = verbose, maxit = maxit)
         R2.cv   = result[[as.character(k)]]$metrics['R2.cv']
@@ -259,8 +281,8 @@ learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(),
 
     # fit model to full data 
     mod    = defineHMM(data.train, K = K_opt, 
-                       response.vars = response_vars, 
-                       transitn.vars = transitn_vars, 
+                       response.vars = resp.vars, 
+                       transitn.vars = tran.vars, 
                        respstart = NULL, 
                        trstart = trstart)
     fm     = fitHMM(mod, nRestarts = nRestarts, verbose = verbose, maxit = maxit)
@@ -268,7 +290,7 @@ learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(),
     # ______________________
     # Save computation
     
-    rm(list = c('result', 'fm'))
+    rm(list = c('result'))
     gc()
     return(list(model = fm, size = K_opt, metrics = metric))
 }           
@@ -325,105 +347,116 @@ R2 = function(y, yfit) {
   r2 = 1 - sum((y - yfit)^2) / sum((y-mean(y))^2)
 }
 
-# _______________________________________________
-# Compute decoding performance statistics
+# ________________________________________________
+# Extract useful parameters out of depmixS4 model
 
-computeDecodingStats = function(fm_opt, K_opt){
+extractParameters.depmixS4 = function(fm_opt){
               
-  HMM = list()
-
+  HMM   = list()
+  K_opt = length(fm_opt@response)
+  HMM[['nStates']] = K_opt
+  
   # ________________________________
   # Response parameters
   
   resp_vars  = colnames(fm_opt@response[[1]][[1]]@x)
-  .Object@HMM[['response']] = list()
+  HMM[['response']] = list()
   stddev     = sapply(1:K_opt, function(j) fm_opt@response[[j]][[1]]@parameters$sd)
   names(stddev) = 1:K_opt
-  .Object@HMM[['response']][['stdev']] = stddev
+  HMM[['response']][['stdev']] = stddev
   params = sapply(1:K_opt, function(j) fm_opt@response[[j]][[1]]@parameters$coefficients)
   if (class(params) == 'numeric') params = data.frame(params) else params = data.frame(t(params))
   rownames(params) = 1:K_opt
   colnames(params) = resp_vars
-  .Object@HMM[['response']][['means']]  = as.data.frame(t(params))
-  
-  # instead of pruneStates
-  .Object@HMM$response$sd    = stddev            
+  HMM[['response']][['means']]  = as.data.frame(t(params))
   
   # ______________________________
   # Transition parameters
-  
+
   # format into matrix for output 
   transitn_vars  = colnames(fm_opt@transition[[1]]@x)          
   params = lapply(1:K_opt, function(j) {
     tmp = fm_opt@transition[[j]]@parameters$coefficients
     rownames(tmp) = transitn_vars              
-    if (class(tmp) != 'numeric') return(data.frame(tmp)) else return(data.frame(t(tmp)))
+    if (class(tmp) != 'numeric') return(data.frame(t(tmp))) else return(data.frame(tmp))
   })                          
-  params = do.call(cbind, lapply(params, data.frame, stringsAsFactors=FALSE))            
-  if (!is.null(ncol(params))) {
-    colnames(params) = as.vector(sapply(1:K_opt, function(x) paste(x, '->',1:K_opt,sep='')))
-  } else {
-    names(params) = as.vector(sapply(1:K_opt, function(x) paste(x, '->',1:K_opt,sep='')))
-  }
-  if (!is.null(nrow(params))) rownames(params) = transitn_vars
-  .Object@HMM[['transition']] = params
+  params = do.call(rbind, lapply(params, data.frame, stringsAsFactors=FALSE))     
+  params$From = rep(1:K_opt, each = K_opt)
+  params$To   = rep(1:K_opt, times = K_opt)
+  if (!is.null(ncol(params))) colnames(params) = c(transitn_vars, 'From', 'To')
+  HMM[['transition']] = params
   
   # Viterbi states
-  .Object@HMM[['states']] = posterior(fm_opt)
+  HMM[['states']] = posterior(fm_opt)
   
   # ________________________________________
   # Perform preliminary analysis of errors
   
   # Predicted state means
   fit = sapply(1:K_opt, function(k) predict(fm_opt@response[[k]][[1]])) 
-  .Object@HMM[['fit.max']] = sapply(1:nrow(fit), function(j) fit[j,.Object@HMM[['states']][j,1]])
-  .Object@HMM[['fit']]     = sapply(1:nrow(fit), function(j) sum(fit[j,] * .Object@HMM[['states']][j,-1]))
-  
-  # Standard deviation of most likely state
-  hmm.sigma = .Object@HMM$response$stdev[.Object@HMM[['states']][,1]]  
-  
+  HMM[['fit.max']] = sapply(1:nrow(fit), function(j) fit[j,HMM[['states']][j,1]])
+  HMM[['fit']]     = sapply(1:nrow(fit), function(j) sum(fit[j,] * HMM[['states']][j,-1]))
+    
   # model fit (penalized likelihood)
-  .Object@HMM[['BIC']]    = BIC(fm_opt)
-  
-  # residuals for each state
-  residuals = .Object@data.train$kWh - .Object@HMM$fit                          
-  .Object@HMM[['residual']] = residuals
-  
-  # test normality of residuals in each state
-  is_normal = sapply(1:.Object@HMM[['nStates']], function(j) {
-    idx = which(.Object@HMM[['states']][,1] == j)
-    if (length(na.omit(residuals[idx]))>3 & length(na.omit(residuals[idx]))<5000)
-      res = shapiro.test(na.omit(residuals[idx])) else res = list(p.value=NA)
-    pval= res$p.value
-    return(pval)
-  })
-  .Object@HMM$sw_test = is_normal
-  
-  # in-sample fit performance metrics
-  .Object@HMM[['MAPE']]    = mean(abs(residuals / .Object@HMM$fit))
-  .Object@HMM[['GR2']]     = GR2(.Object@OLS[['LL0']], as.numeric(logLik(fm_opt)), nrow(.Object@data.train))
-  .Object@HMM[['R2']]      = R2(.Object@data.train$kWh, .Object@HMM$fit)
+  HMM[['BIC']]    = BIC(fm_opt)  
               
   rm(list = c('fm_opt'))
   gc()
-  return(.Object)
+  return(HMM)
 }
 
+# ________________________________________
+# Compute decoding performance statistics 
+
+setGeneric(
+  name = "computeDecodingStats",
+  def = function(.Object, verbose = T){standardGeneric("computeDecodingStats")}
+)
+setMethod('computeDecodingStats',
+          signature  = 'StateDecoder',
+          definition = function(.Object, verbose = T){
+            
+            # residuals for each state
+            residuals = .Object@data.train$obs - .Object@HMM$fit                          
+            .Object@HMM[['residual']] = residuals
+            
+            # test normality of residuals in each state
+            is_normal = sapply(1:.Object@HMM[['nStates']], function(j) {
+              idx = which(.Object@HMM[['states']][,1] == j)
+              if (length(na.omit(residuals[idx]))>3 & length(na.omit(residuals[idx]))<5000)
+                res = shapiro.test(na.omit(residuals[idx])) else res = list(p.value=NA)
+              pval= res$p.value
+              return(pval)
+            })
+            .Object@HMM$sw_test = is_normal
+            
+            # in-sample fit performance metrics
+            .Object@HMM[['MAPE']]    = mean(abs(residuals / .Object@HMM$fit))
+            .Object@HMM[['R2']]      = R2(.Object@data.train$obs, .Object@HMM$fit)
+            
+            return(.Object)
+          })
 
 # _______________________________________________
 # Populate StateDecoder object
 
 setGeneric(
   name = "learnStateDecoder",
-  def = function(.Object){standardGeneric("learnStateDecoder")}
+  def = function(.Object, verbose = T){standardGeneric("learnStateDecoder")}
 )
 setMethod('learnStateDecoder',
           signature  = 'StateDecoder',
-          definition = function(.Object){
+          definition = function(.Object, verbose = T){
+            
+            if (verbose) {
+              cat(paste('*** HMM analysis for StateDecoder UID: (', .Object@UID, ')***\n', sep=''))
+              t0 = proc.time()
+            }
             
             # learn model 
             controls = .Object@controls
-            model = learnModelSize(.Object@data.train, resp.vars = .Object@resp.vars, tran.vars = .Object@tran.vars, 
+            model = learnModelSize(.Object@data.train, 
+                                   resp.vars = .Object@resp.vars, tran.vars = .Object@tran.vars, 
                                    verbose = T, 
                                    Kmin = controls$Kmin, Kmax = controls$Kmax, 
                                    nRestarts = controls$nRestarts, maxit = controls$maxit, 
@@ -433,10 +466,18 @@ setMethod('learnStateDecoder',
             accuracy = computePredictionAccuracy(model$model, .Object@data.test, test.periods = 5)
                             
             # compute decoding performance stats
-            stats = computeDecodingStats(model$model, model$size)
+            stats = extractParameters.depmixS4(model$model)
                             
             # format results for later analysis
-            .Object@HMM$size   = model$size
+            .Object@HMM = stats
+            
+            # compute some stats
+            .Object = computeDecodingStats(.Object)
+            
+            if (verbose) {
+              dt = proc.time() - t0;
+              print(dt)
+            }
             
             return(.Object)
               
