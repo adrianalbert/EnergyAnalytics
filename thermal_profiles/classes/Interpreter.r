@@ -21,9 +21,11 @@ options(error = recover)
 
 setClass(
   Class = "Interpreter",
-  representation = representation(
-    UID        = "character",         # unique person ID
-    decoder    = "StateDecoder"
+  representation  = representation(
+    UID           = "character",         # unique person ID
+    benchmarks    = "list",
+    temporalStats = "list",
+    contributions = "list"
     )
 )
 
@@ -32,54 +34,52 @@ setClass(
 
 computeBenchmarks = function(decoder){
             
-            # access model parameters
-            K_opt  = decoder@HMM$nStates
-            stdev  = decoder@HMM$response$stdev
-            respm  = decoder@HMM$response$means
-            trans  = decoder@HMM$transition
-            covar  = rownames(respm)[2]
-                          
-            # compute "stationary" probabilities given dependent variable (temperature)
-            # x_var  = decoder@HMM$model@transition[[1]]@x
-            x_var  = cbind(rep(1,121), seq(0, 120, by=1))
-            idx.rm = c(length(colnames(trans))-1, length(colnames(trans)))
-            colnames(x_var) = colnames(trans)[-idx.rm]
-            dep    = lapply(1:K_opt, function(s) {
-              c = as.matrix(subset(trans, From == s)[,-idx.rm])
-              y = x_var %*% t(c)
-              y = exp(y) / rowSums(exp(y))
-              return(y)
-            })
-            dep = do.call('cbind', dep)
-            dis = lapply(1:nrow(dep), function(i) {
-              M = matrix(dep[i,], ncol = sqrt(ncol(dep)), byrow=T)
-              p = abs(as.double(eigen(t(M))$vectors[,1]))
-              p = p / sum(p)
-              return(p)              
-            })
-            dis = do.call('rbind', dis)
-            distr.covar = data.frame(x_var[,2], dis)
-            names(distr.covar)[1] = covar
-                      
-            # compute characteristic time as function of temperature
-            x_var  = cbind(rep(1,121), seq(0, 120, by=1))
-            colnames(x_var) = colnames(trans)[-idx.rm]
-            tau = lapply(1:nrow(x_var), function(i) {
-              t = c()
-              for (j in 1:K_opt) {
-                c = as.matrix(subset(trans, From == s)[,-idx.rm])
-                y = x_var[i,] %*% t(c)
-                y = exp(y) / sum(exp(y))
-                t[j] = 1 / (1 - y[j])
-              }
-              return(t)
-            })     
-            tau = do.call('rbind', tau)                      
-                        
-            return(list(steadyDistr = dis, duration = tau))
-          }
-)
+  # access model parameters
+  K_opt  = decoder@HMM$nStates
+  stdev  = decoder@HMM$response$stdev
+  respm  = decoder@HMM$response$means
+  trans  = decoder@HMM$transition
+  covar  = rownames(respm)[2]
+                
+  # compute "stationary" probabilities given dependent variable (temperature)
+  # x_var  = decoder@HMM$model@transition[[1]]@x
+  x_var  = cbind(rep(1,121), seq(0, 120, by=1))
+  idx.rm = c(length(colnames(trans))-1, length(colnames(trans)))
+  colnames(x_var) = colnames(trans)[-idx.rm]
+  dep    = lapply(1:K_opt, function(s) {
+    c = as.matrix(subset(trans, From == s)[,-idx.rm])
+    y = x_var %*% t(c)
+    y = exp(y) / rowSums(exp(y))
+    return(y)
+  })
+  dep = do.call('cbind', dep)
+  dis = lapply(1:nrow(dep), function(i) {
+    M = matrix(dep[i,], ncol = sqrt(ncol(dep)), byrow=T)
+    p = abs(as.double(eigen(t(M))$vectors[,1]))
+    p = p / sum(p)
+    return(p)              
+  })
+  dis = do.call('rbind', dis)
+  distr.covar = data.frame(x_var[,2], dis)
+  names(distr.covar)[1] = covar
             
+  # compute characteristic time as function of temperature
+  x_var  = cbind(rep(1,121), seq(0, 120, by=1))
+  colnames(x_var) = colnames(trans)[-idx.rm]
+  tau = lapply(1:nrow(x_var), function(i) {
+    t = c()
+    for (j in 1:K_opt) {
+      c = as.matrix(subset(trans, From == j)[,-idx.rm])
+      y = x_var[i,] %*% t(c)
+      y = exp(y) / sum(exp(y))
+      t[j] = 1 / (1 - y[j])
+    }
+    return(t)
+  })     
+  tau = do.call('rbind', tau)                      
+              
+  return(list(steadyDistr = dis, duration = tau))
+}            
 
 # _____________________________________
 # Temporal statistics (time of day etc)
@@ -118,7 +118,7 @@ computeTemporalStats = function(decoder){
 # _____________________________________________________
 # Computes covariate contribution to predicted HMM fit
 
-computeContributionsHMM = function(decoder, verbose=T, covar = 'TemperatureF') {
+computeContributions = function(decoder, verbose=T) {
   	          
       # format covariates
 	    v = rownames(decoder@HMM$response$means)
@@ -133,54 +133,27 @@ computeContributionsHMM = function(decoder, verbose=T, covar = 'TemperatureF') {
         X = data.frame(X)
         names(X) = v
 	    }
-
-      # aggregate contribution by variable
-      vars = setdiff(c(decoder@resp.vars, decoder@addl.vars), '(Intercept)')
-      vars.levels   = lapply(vars, function(v) levels(decoder@data.train[,v])[-1])
-      comp = lapply(1:length(vars.levels), function(l) {
-        cur.vars = paste(vars[l], vars.levels[[l]], sep='')
-        if (length(cur.vars)>1) res = rowSums(X[,cur.vars]) else res = X[,cur.vars]
-        return(res)
-      })
-      comp = as.data.frame(do.call('cbind', comp))
-      names(comp) = vars
     	    
-	    comp$state= decoder@HMM$states[,1]
-      if ('(Intercept)' %in% decoder@resp.vars) comp$Intercept = X[,'(Intercept)']
-      names(comp)[which(names(comp) == 'Intercept')] = 'Activity'
-      
       # compute seasonal effects
-	    df.season = data.frame(date = decoder@data.train$timestamps,
-                             Soft.Estimate = soft.resp,
-                             Activity      = comp$Activity,
-                             Hard.Estimate = hard.resp)
-      months    = month(df.season$date)
-      df.season$Season = 'Summer'
-	    df.season$Day    = wday(df.season$date, label=T)
-	    df.season$Hour   = hour(df.season$date)
-	    df.season$Season[months %in% c(1:4,10:12)] = 'Winter'
-      agg              = aggregate(data = df.season, 
-                                   cbind(Soft.Estimate, Hard.Estimate, Activity)~Season + Day + Hour,
-                                   FUN = mean)
-# 	    agg.summer       = aggregate(data = subset(df.season, Season == 'Summer'), 
-# 	                                 cbind(Soft.Estimate, Hard.Estimate, Activity)~Day + Hour,
-# 	                                 FUN = mean)
-# 	    agg.winter       = aggregate(data = subset(df.season, Season == 'Winter'), 
-# 	                                 cbind(Soft.Estimate, Hard.Estimate, Activity)~Day + Hour,
-# 	                                 FUN = mean)
-#       agg.diff         = agg.summer[,-c(1,2)] - agg.winter[,-c(1,2)]
-#       agg.diff         = cbind(agg.summer[,c(1,2)], agg.diff)
+	    df.season = as.data.frame(X)
+      if ('(Intercept)' %in% names(df.season)) names(df.season) = c('Baseload', names(df.season)[-1])
+	    fmla             = as.formula(paste('cbind(', paste(names(df.season), collapse = ','), ') ~ Season + Day + Hour'))
+	    fmla.seas        = as.formula(paste('cbind(', paste(names(df.season), collapse = ','), ') ~ Day + Hour'))
 	    
-      # store for later	    
-	    components           = list()
-	    components$stat      = aggregate(data = comp, . ~ state, FUN = mean)
-	    components$soft.resp = soft.resp
-	    components$agg.tod   = agg
-	    components$ts        = comp	    
-	    components$ts$fit    = decoder@HMM$fit
-	    components$ts$kWh    = decoder@data.train$kWh	
+      date             = decoder@data.train$timestamps
+      months           = month(date)
+      df.season$Season = 'Summer'
+	    df.season$Day    = wday(date, label=T)
+	    df.season$Hour   = hour(date)
+	    df.season$Season[months %in% c(1:4,10:12)] = 'Winter'
+      
+      agg              = aggregate(data = df.season, fmla, FUN = mean)
+	    agg.summer       = aggregate(data = subset(df.season, Season == 'Summer'), fmla.seas, FUN = mean)
+	    agg.winter       = aggregate(data = subset(df.season, Season == 'Winter'), fmla.seas, FUN = mean)
+      agg.diff         = agg.summer[,-c(1,2)] - agg.winter[,-c(1,2)]
+      agg.diff         = cbind(agg.summer[,c(1,2)], agg.diff)	    
 		
-	    return(decoder)
+	    return(agg)
 }
 
 
@@ -189,17 +162,65 @@ computeContributionsHMM = function(decoder, verbose=T, covar = 'TemperatureF') {
 
 setMethod(f = "initialize", 
           signature = "Interpreter",
-          definition = function(.Object, UID, decoder, verbose = T) {
+          definition = function(.Object, decoder, verbose = T) {
             
-            .Object@UID     = as.character(UID)
+            if (verbose) {
+              cat(paste('*** Initializing Interpreter (', .Object@UID, ') ***\n', sep=''))
+              t0 = proc.time()
+            }
+            
+            .Object@UID     = as.character(decoder@UID)
             
             # compute stationary metrics
             .Object@benchmarks     = computeBenchmarks(decoder)
             
+            if (verbose){
+              dt = proc.time() - t0
+              print(dt)
+            }            
+
             # compute temporal breakdown of states
             .Object@temporalStats  = computeTemporalStats(decoder)
             
+            if (verbose){
+              dt = proc.time() - t0
+              print(dt)
+            }            
+            
+            # compute temporal breakdown of states
+            .Object@contributions  = computeContributions(decoder)
+            
+            if (verbose){
+              dt = proc.time() - t0
+              print(dt)
+            }            
+            
             return(.Object)
+          })
+
+# ______________________________________
+# Method to dump Interpreter model data
+
+setGeneric(
+  name = "dumpInterpretedData",
+  def = function(.Object, verbose = T, path = NULL){standardGeneric("dumpInterpretedData")}
+)
+setMethod('dumpInterpretedData',
+          signature  = 'Interpreter',
+          definition = function(.Object, verbose = T, path = NULL){
+            if (verbose) 
+              cat(paste('*** Dumping interpreted data (', .Object@UID, ')***\n', sep=''))
+            
+            data               = list()
+            data$UID           = .Object@UID
+            data$benchmarks    = .Object@benchmarks
+            data$temporalStats = .Object@temporalStats
+            data$contributions = .Object@contributions
+            
+            if (is.null(path)) return(data) else {
+              save(list = c('data'), file = paste(path, .Object@UID, '.RData', sep=''))
+              return(NULL)
+            }
           })
 
 

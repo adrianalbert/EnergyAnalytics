@@ -12,6 +12,7 @@ library('depmixS4')
 library('R.utils')
 library('MASS')
 library('lubridate')
+library('dummies')
 
 source('viterbi_states.R')
 
@@ -31,7 +32,8 @@ setClass(
     resp.vars  = 'character',         # covariates for analysis (response)
     tran.vars  = 'character',         # covariates for analysis (transition)
     controls   = 'list',              # controls for fitting the model
-    HMM        = "list"               # summary of HMM model
+    HMM        = "list",               # summary of HMM model
+    performance= "list"
     )
 )
 
@@ -100,7 +102,7 @@ setMethod('show',
             cat(sprintf('UID:         %s\n', object@UID))            
             if (length(object@HMM) > 0) {
       	      cat(sprintf('HMM States:\t%d\n', object@HMM$nStates))
-      	      cat(sprintf('HMM MAPE =\t%f; R2 =\t%f; GR2 =\t%f\n', object@HMM$MAPE, object@HMM$R2, object@HMM$GR2))
+      	      cat(sprintf('HMM MAPE =\t%f; R2 =\t%f\n', object@HMM$MAPE, object@HMM$R2))
       	      cat("Response\n")
       	      print(object@HMM$response)
       	      cat("Transition\n")
@@ -235,9 +237,7 @@ learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(),
                              Kmin = 3, Kmax = 3, 
                              nRestarts = 1, maxit = 100, 
                              thresh.R2 = 0.8, thresh.MAPE = 0.15) { 
-    if (verbose)
-      cat(paste('*** HMM analysis for StateDecoder UID: (', .Object@UID, ')***\n', sep=''))
-    
+
     # _______________________________________________
     # choose model size K (number of states)
 
@@ -394,8 +394,8 @@ extractParameters.depmixS4 = function(fm_opt){
   
   # Predicted state means
   fit = sapply(1:K_opt, function(k) predict(fm_opt@response[[k]][[1]])) 
-  HMM[['fit.max']] = sapply(1:nrow(fit), function(j) fit[j,HMM[['states']][j,1]])
-  HMM[['fit']]     = sapply(1:nrow(fit), function(j) sum(fit[j,] * HMM[['states']][j,-1]))
+  HMM[['fit']] = sapply(1:nrow(fit), function(j) fit[j,HMM[['states']][j,1]])
+  HMM[['fit.avg']]     = sapply(1:nrow(fit), function(j) sum(fit[j,] * HMM[['states']][j,-1]))
     
   # model fit (penalized likelihood)
   HMM[['BIC']]    = BIC(fm_opt)  
@@ -463,14 +463,14 @@ setMethod('learnStateDecoder',
                                    thresh.R2 = controls$thresh.R2, thresh.MAPE = controls$thresh.MAPE)
             
             # compute prediction accuracy out-of-sample
-            accuracy = computePredictionAccuracy(model$model, .Object@data.test, test.periods = 5)
+            performance          = list()            
+            performance$accuracy = computePredictionAccuracy(model$model, .Object@data.test, test.periods = 5)
+            performance$cv.stats = model$metrics
+            .Object@performance  = performance
                             
             # compute decoding performance stats
-            stats = extractParameters.depmixS4(model$model)
-                            
-            # format results for later analysis
-            .Object@HMM = stats
-            
+            .Object@HMM = extractParameters.depmixS4(model$model)
+                                        
             # compute some stats
             .Object = computeDecodingStats(.Object)
             
@@ -482,3 +482,29 @@ setMethod('learnStateDecoder',
             return(.Object)
               
           })
+
+# ______________________________________
+# Method to dump StateDecoder model data
+
+setGeneric(
+  name = "dumpDecodedData",
+  def = function(.Object, verbose = T, path = NULL){standardGeneric("dumpDecodedData")}
+)
+setMethod('dumpDecodedData',
+          signature  = 'StateDecoder',
+          definition = function(.Object, verbose = T, path = NULL){
+            if (verbose) 
+              cat(paste('*** Dumping decoded data (', .Object@UID, ')***\n', sep=''))
+            
+            data          = .Object@HMM
+            data$states   = data$states[,1]
+            data$fit      = NULL
+            data$residual = NULL
+            data$fit.avg  = NULL
+            
+            if (is.null(path)) return(data) else {
+              save(list = c('data'), file = paste(path, .Object@UID, '.RData', sep=''))
+              return(NULL)
+            }
+          })
+

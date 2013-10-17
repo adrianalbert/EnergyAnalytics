@@ -1,16 +1,16 @@
 # plot_utils.r
 #
-# Plots for HMM/OLS analysis.
+# Plots for HMM analysis.
 # 
 # Adrian Albert
-# Last modified: December 2012.
+# Last modified: October 2013.
 # -----------------------------------------------------------------------
 
-library(igraph)
 library('useful')
 library('grid')
 library('reshape2')
 library('RColorBrewer')
+library('ggsubplot')
 
 # __________________________________________
 # Plots time series HMM color-coded by state
@@ -270,7 +270,6 @@ plot_state_heatmap2 = function(myMat, timestamps, title = 'State Heatmap') {
 # _________________________________________________________
 # Plot underlying MC of a HMM using ggplot: covariates case
 
-library('ggsubplot')
 plot_HMM_MC_cov = function(P, pi, contrib, title = 'HMM Structure', P.thresh = 0.05) {
 
   nStates = nrow(P)
