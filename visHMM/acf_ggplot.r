@@ -1,7 +1,17 @@
-# acf_ggplot.r
-# 
-# Produces an ACF plot using ggplot.
-# Can compare theoretical vs empirical correlations.
+# #########################################################
+#' acf_ggplot
+#' Produces an ACF plot using ggplot.
+#'
+#' @param x Input time series
+#' @param x.ref Reference (model) time series
+#' @param conf.level Confidence level for lags>0
+#' @param min.lag Minimum lag displayed
+#' @param max.lag Maximum lag displayed
+#' @param title Title to display
+#' @param PACF Is the PACF (instead of the ACF) requested?
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
 acf_ggplot <- function(x, x.ref = NULL, conf.level = 0.95, 
                  max.lag = NULL, min.lag = 0, title = "", PACF = F) {
@@ -58,6 +68,19 @@ acf_ggplot <- function(x, x.ref = NULL, conf.level = 0.95,
                            breaks = c('acf', 'acf.ref'), labels = labels)
    return(q)
 }
+
+# #########################################################
+#' pacf_ggplot_single
+#' Produces a simple PACF plot using ggplot.
+#'
+#' @param x Input time series
+#' @param conf.level Confidence level for lags>0
+#' @param min.lag Minimum lag displayed
+#' @param max.lag Maximum lag displayed
+#' @param title Title to display
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
 pacf_ggplot_single <- function(x, conf.level = 0.95, 
                               max.lag = NULL, min.lag = 0, title = "") {

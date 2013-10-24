@@ -1,20 +1,17 @@
-# plot_utils.r
-#
-# Plots for HMM analysis.
-# 
-# Adrian Albert
-# Last modified: October 2013.
-# -----------------------------------------------------------------------
-
-library('useful')
-library('ggplot2')
-library('grid')
-library('reshape2')
-library('RColorBrewer')
-# library('ggsubplot')
-
-# __________________________________________
-# Plots time series HMM color-coded by state
+# #########################################################
+#' plot_hmm_ts
+#' Plots time series HMM color-coded by state
+#'
+#' @param hmm.means Fitted values (means) of HMM
+#' @param hmm.sigma Standard deviation time series for HMM
+#' @param states Time series of states for HMM
+#' @param timestamps Time series of time stamps 
+#' @param observed Time series of original data
+#' @param y.lab Label for y-axis
+#' @param title Plot title
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
 plot_hmm_ts = function(hmm.means, hmm.sigma, states, timestamps, observed, y.lab = 'observed', title = 'HMM-ts') {
 	# construct plotting data frames
@@ -66,9 +63,18 @@ plot_hmm_ts = function(hmm.means, hmm.sigma, states, timestamps, observed, y.lab
 	return(plt)
 }
 
-# _________________________________________________________________________________
-# Plots time series HMM color-coded by state w/ coefficients for additional covars
-
+# #########################################################
+#' plot_hmm_coefs_ts
+#' Plots time series HMM color-coded by state w/ coefficients for additional covars.
+#'
+#' @param covar_state Data frame containing covariates that influence the HMM.
+#' @param states Time series of decoded states in the HMM.
+#' @param timestamps Time series of time stamps 
+#' @param observed Time series of original data
+#' @param title Plot title
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 plot_hmm_coefs_ts = function(covar_state, states, observed, timestamps, 
                              title = 'HMM-coefs-ts') {
   # construct plotting data frames
@@ -115,8 +121,18 @@ plot_hmm_coefs_ts = function(covar_state, states, observed, timestamps,
   return(plt)
 }
 
-# ________________________________________
-# Plot underlying MC of a HMM using ggplot
+
+# #########################################################
+#' plot_HMM_MC
+#' Visualize the underlying structure of Markov Chain in HMM.
+#'
+#' @param hmm.means Fitted values (means) of HMM
+#' @param hmm.sigma Standard deviation time series for HMM
+#' @param transition Transition matrix parameters for HMM
+#' @param title Plot title
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
 plot_HMM_MC = function(hmm.means, hmm.sigma, transition, title = 'HMM MC Structure') {
 	nStates = length(hmm.means)
@@ -162,16 +178,23 @@ plot_HMM_MC = function(hmm.means, hmm.sigma, transition, title = 'HMM MC Structu
 	return(plt)
 }
 
-# ___________________________________________________
-# Plot breakdown of tod/dow occupancy state profiles
+# #########################################################
+#' plot_state_breakdown
+#' Plot breakdown of tod/dow occupancy state profiles.
+#'
+#' @param states Time series of decoded states in the HMM.
+#' @param timestamps Time series of time stamps 
+#' @param state.type Labels for states (strings)
+#' @param title Plot title
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
-library('timeDate')
-library('lubridate')
-plot_state_breakdown = function(myMat, timestamps, state.type = NULL, 
+plot_state_breakdown = function(states, timestamps, state.type = NULL, 
                                 title = 'States Breakdown') {
   
   # create categories for time of day and day of week
-  df = data.frame(State   = as.factor(myMat), 
+  df = data.frame(State   = as.factor(states), 
                   Hour    = hour(timestamps), 
                   Day     = weekdays(timestamps), 
                   Weekend = isHoliday(timeDate(timestamps)))
@@ -212,8 +235,17 @@ plot_state_breakdown = function(myMat, timestamps, state.type = NULL,
   return(p)
 }
 
-# _______________________________________________
-# Plot heatmap of yearly occupancy state profiles
+
+# #########################################################
+#' plot_state_heatmap
+#' Plot heatmap of yearly occupancy state profiles.
+#'
+#' @param myMat Time series of (hourly) observations.
+#' @param timestamps Time series of time stamps 
+#' @param title Plot title
+#' @return heatmap plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
 plot_state_heatmap = function(myMat, timestamps, title = 'State Heatmap') {
   
@@ -238,13 +270,18 @@ plot_state_heatmap = function(myMat, timestamps, title = 'State Heatmap') {
           cexRow = 1.5, cexCol = 1.3, col = hmcol, main = title)
 }
 
-# __________________________________________________________________
-# Plot heatmap of yearly state profiles (ggplot version)
+# #########################################################
+#' plot_state_heatmap2
+#' Plot heatmap of yearly state profiles (ggplot version).
+#'
+#' @param myMat Time series of (hourly) observations.
+#' @param timestamps Time series of time stamps 
+#' @param title Plot title
+#' @return heatmap plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
 plot_state_heatmap2 = function(myMat, timestamps, title = 'State Heatmap') {
-  # select appropriate color palette
-  if (is.factor(myMat)) hmcol<-brewer.pal(length(unique(myMat)),'Paired') else 
-    hmcol<-brewer.pal(8,'RdBu')
   
   # convert long profile to wide profile
   profile.mat = data.frame(State = as.factor(myMat), Hour = hour(timestamps), 
@@ -325,8 +362,16 @@ plot_state_heatmap2 = function(myMat, timestamps, title = 'State Heatmap') {
 #   return(plt)
 # }
 
-# ______________________________________
-# Plot MC structure of HMM using igraph
+# #########################################################
+#' plot_HMM_MC_NET
+#' Plot MC structure of HMM using igraph.
+#'
+#' @param hmm.means Fitted values (means) of HMM
+#' @param hmm.sigma Standard deviation time series for HMM
+#' @param transition Transition matrix parameters for HMM
+#' @return igraph plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
 plot_HMM_MC_NET = function(hmm.means, hmm.sigma, transition) {
 
@@ -361,10 +406,19 @@ plot_HMM_MC_NET = function(hmm.means, hmm.sigma, transition) {
       return(g)             
 }
 
-# ________________________________
-# Residual analysis for HMM
+# #########################################################
+#' plot_HMM_res
+#' Residual analysis for HMM.
+#'
+#' @param hmm.residual Residuals time series for HMM.
+#' @param states Time series of states for HMM
+#' @param hmm.sigma Standard deviation time series for HMM
+#' @param title Plot title
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
-plot_HMM_res = function(hmm.residual, states, hmm.sigma, sw_test = NULL) {
+plot_HMM_res = function(hmm.residual, states, hmm.sigma) {
 
       # densities of residuals
       df = data.frame(State = factor(states), Residual = hmm.residual)
@@ -389,9 +443,18 @@ plot_HMM_res = function(hmm.residual, states, hmm.sigma, sw_test = NULL) {
 }
 
 
-
-# _______________________________________
-# Contributions plot: time series
+# #########################################################
+#' plot_components_ts
+#' Plot emissions components (by covariates) of HMM fit. 
+#'
+#' @param df Data frame containing components calculations. 
+#' @param timestamps Time stamps of time series. 
+#' @param states (optional) Add scale to indicate states
+#' @param covars (optional) Add panel with time series of responses to covariates in emissions. 
+#' @param title Plot title. 
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
 plot_components_ts = function(df, timestamps, 
                               states = NULL, covars = NULL,
@@ -501,8 +564,15 @@ plot_components_ts = function(df, timestamps,
   return(NULL)
 }
 
-# ____________________________________________
-# Dotplot tornado for covariate contributions 
+# #########################################################
+#' plot_tornado
+#' Dotplot tornado for covariate contributions.
+#'
+#' @param df Data frame containing components calculations. 
+#' @param title Plot title
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
 plot_tornado = function(df, title = 'Components', nrow = 1) {
 
@@ -527,8 +597,22 @@ plot_tornado = function(df, title = 'Components', nrow = 1) {
   return(p)
 }
 
-# ____________________________________________________________________
-# Plots dependence of dependent variable on given covariate by state
+# #########################################################
+#' plot_dep_covar
+#' Plots dependence of dependent variable on given covariate by state.
+#'
+#' @param x Covariate
+#' @param y Response
+#' @param state State of each response
+#' @param title Plot title
+#' @param x.lab Title of x-axis
+#' @param y.lab Title of y-axis
+#' @param separate Separate plot into panels for each state
+#' @param highlight Assign each state a different symbol
+#' @param markers Add in vertical markers at each of the elements in the vector. 
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
 plot_dep_covar = function(x, y, state, title = 'HMM-dep-covar', 
                           y.lab = '', x.lab = '', highlight = T, markers = c(), separate = F, ...) {
@@ -568,8 +652,19 @@ plot_dep_covar = function(x, y, state, title = 'HMM-dep-covar',
   return(plt)
 }
 
-# ____________________________________________________________________
-# Plots dependence of transition probability on given covariate
+# #########################################################
+#' plot_tran_covar
+#' Plots dependence of transition probability on given covariate.
+#'
+#' @param x_var Covariate grid.
+#' @param dep List of distributions dependence on covariate for each state.
+#' @param title Plot title
+#' @param x.lab Title of x-axis
+#' @param y.lab Title of y-axis
+#' @param markers Add in vertical markers at each of the elements in the vector. 
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
 
 plot_tran_covar = function(x_var, dep, title = 'HMM-dep-covar', 
                           y.lab = '', x.lab = '', markers = c()) {
@@ -614,17 +709,21 @@ plot_tran_covar = function(x_var, dep, title = 'HMM-dep-covar',
   return(plt)
 }
 
-# Multiple plot function
-#
-# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
-# - cols:   Number of columns in layout
-# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
-#
-# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
-# then plot 1 will go in the upper left, 2 will go in the upper right, and
-# 3 will go all the way across the bottom.
-#
-multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+# #########################################################
+#' multiplot
+#' Multiple plots on a page for ggplot objects. 
+#' If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+#' then plot 1 will go in the upper left, 2 will go in the upper right, and
+#' 3 will go all the way across the bottom.
+#'
+#' @param plotlist (optional) a list of ggplot objects
+#' @param cols number of columns for page
+#' @param layout A matrix specifying the layout. If present, 'cols' is ignored.
+#' @return ggplot plot object
+#' @author Adrian Albert \email{adalbert -at- stanford.edu}
+# #########################################################
+
+multiplot <- function(..., plotlist=NULL, cols=1, layout=NULL) {
   require(grid)
   
   # Make a list from the ... arguments and plotlist

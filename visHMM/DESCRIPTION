@@ -1,0 +1,12 @@
+Package: ggHMM
+Type: Package
+Title: Visualization for HMM models.
+Version: 1.0
+Date: 2013-10-24
+Author: Adrian Albert
+Maintainer: Adrian Albert <adalbert@stanford.edu>
+Description: Routines for static visualization of HMM models using ggplot2.
+License: GPL-2
+Collate:
+    'acf_ggplot.r'
+    'plot_utils.r'
