@@ -22,7 +22,7 @@ library('ggmap')
 library('zipcode')
 data('zipcode')
 
-source('../utils/viz/plot_utils.r')
+source('./visualization/plot_utils.r')
 source('./clustering/kError.r')
 
 # clean-up previous definitions of methods for class Person
