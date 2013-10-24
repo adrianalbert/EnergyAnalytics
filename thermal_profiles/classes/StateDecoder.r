@@ -16,6 +16,12 @@ library('dummies')
 
 source('viterbi_states.R')
 
+### Remove !!! 
+# Hack into the depmix direct likelihood maximization
+# source('depmixS4/R/depmixfit.R')
+# source('classes/responseTruncNORM.R')
+### Remove !!! 
+
 # clean-up previous definitions of methods for class StateDecoder
 removeClass('StateDecoder')
 
@@ -115,7 +121,7 @@ setMethod('show',
 # ______________________________________
 # Define HMM model for depmixS4 package
 
-defineHMM = function(data.train, K = 3, type = 'default', 
+defineHMM.depmix = function(data.train, K = 3, type = 'default', 
                                response.vars = NULL, transitn.vars = NULL, 
                                respstart = NULL, trstart = NULL) {
   
@@ -132,11 +138,14 @@ defineHMM = function(data.train, K = 3, type = 'default',
   # define transition model
   if (intercept_tran) fmla_transitn = 'obs ~ 1' else fmla_transitn = 'obs ~ -1'
   if (length(transitn.vars)>0) fmla_transitn = paste(fmla_transitn, paste(transitn.vars, collapse = '+'), sep='+')
-  fmla_transitn = as.formula(fmla_transitn)            
-  
+  fmla_transitn = as.formula(fmla_transitn)   
+      
   # set up model for depmixS4
   if (type == 'default') {
-    mod <- depmix(response  = fmla_response, 
+      
+#     mod <- makeModelTruncNORM(data.train, fmla_response, fmla_transitn, K = K)
+      
+      mod <- depmix(response  = fmla_response, 
                   transition= fmla_transitn,
                   data      = data.train, 
                   nstates   = K, 
@@ -152,13 +161,50 @@ defineHMM = function(data.train, K = 3, type = 'default',
 }
 
 
+
+# ______________________________________
+# Define constraints on the model
+
+defineConstraints = function(mod) {
+  
+  pars  = c(unlist(getpars(mod)))
+  K_opt = nstates(mod) 
+  nResp = length(mod@response[[1]][[1]]@parameters$coefficients)
+#   print(setpars(mod, value = 1:npar(mod)))
+  conMat= matrix(0, ncol = npar(mod), nrow=K_opt)
+  bl    = rep(0, K_opt)
+  bu    = rep(Inf, K_opt)
+  for (j in 1:K_opt) {
+    idx.base = K_opt + K_opt^2 * nResp + (nResp + 1) * (j-1) + 1
+    idx.stdv = K_opt + K_opt^2 * nResp + (nResp + 1) * j
+    conMat[j,idx.base] = 1
+  }
+
+  return(list(conMat = conMat, lower = bl, upper = bu))  
+}
+
 # ______________________________________
 # Wrapper to fit model
 
 fit.model = function(mod, maxit = 100, cur_tol = 1e-3){ 
-  print(class(mod))
+  
+    constr = defineConstraints(mod)
+#   contrl = donlp2Control()
+#   contrl$epsx = 1e-4
+#   contrl$epsfcn = 1e-8
+#   contrl$silent = F
+#   contrl$te1 <- contrl$te2 <- contrl$te3 <- T  
+#   contrl$nreset.multiplier = 2
+  
   if (class(mod) == 'depmix')
-    mod.fit = fit(mod, verbose = T, useC = T, emcontrol = em.control(maxit = maxit, tol = cur_tol))
+    mod.fit = fit(mod, useC=T, verbose = T, emcontrol = em.control(maxit = maxit, tol = cur_tol))
+#                   conrows = constr$conMat, 
+#                   conrows.lower = constr$lower, 
+#                   conrows.upper = constr$upper, 
+#                   method = 'rsolnp',
+#                   solnpcntrl=list(rho = 1, outer.iter = 400, inner.iter = 800, delta = 1e-6, tol = 1e-7, trace=1))
+#                  donlpcntrl=contrl)
+
   if (class(mod) == 'HMM')
     mod.fit = NULL # TODO: replace with actual model
   return(mod.fit)
@@ -175,10 +221,13 @@ fitHMM = function(mod, nRestarts = 1, verbose = T, maxit = 100){
   ok = FALSE
   it = 0
   cur_tol = 1e-3
+  
   while (!ok & it <= nRestarts) {
     
-    out <- capture.output(fm  <- try(fit.model(mod, maxit = maxit, cur_tol = cur_tol)))                
-    nlines = length(out)
+#     out <- capture.output(fm  <- try(fit.model(mod, maxit = maxit, cur_tol = cur_tol)))                
+#     nlines = length(out)
+    fm  <- fit.model(mod, maxit = maxit, cur_tol = cur_tol)
+    nlines = 3
     
     if (class(fm) != 'try-error') {
       ok = nlines > 2                                   
@@ -206,7 +255,7 @@ fitHMM.cv = function(data, K = 3,
   
   # fit HMM on 1/2 of data
   data_1  = data[seq(1, nrow(data)-1, by=2),]
-  mod     = defineHMM(data_1, K = K, 
+  mod     = defineHMM.depmix(data_1, K = K, 
                       response.vars = response.vars, 
                       transitn.vars = transitn.vars, 
                       respstart     = respstart,
@@ -280,7 +329,7 @@ learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(),
     trstart = NULL
 
     # fit model to full data 
-    mod    = defineHMM(data.train, K = K_opt, 
+    mod    = defineHMM.depmix(data.train, K = K_opt, 
                        response.vars = resp.vars, 
                        transitn.vars = tran.vars, 
                        respstart = NULL, 
@@ -507,4 +556,3 @@ setMethod('dumpDecodedData',
               return(NULL)
             }
           })
-

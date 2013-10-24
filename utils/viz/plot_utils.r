@@ -10,7 +10,7 @@ library('useful')
 library('grid')
 library('reshape2')
 library('RColorBrewer')
-library('ggsubplot')
+# library('ggsubplot')
 
 # __________________________________________
 # Plots time series HMM color-coded by state
@@ -71,10 +71,11 @@ plot_hmm_ts = function(hmm.means, hmm.sigma, states, timestamps, observed, y.lab
 plot_hmm_coefs_ts = function(covar_state, states, observed, timestamps, 
                              title = 'HMM-coefs-ts') {
   # construct plotting data frames
-  df = data.frame(kWh    = observed, 
+  df = data.frame(obs    = observed, 
                   State  = as.factor(states),      
                   Index  = 1:length(states),				                              
                   Time   = format(timestamps, "%a,%m/%d %H:00"))   
+
   if (ncol(covar_state)>1) tmp = covar_state[states,] else {
     tmp = data.frame(covar_state[states,])
     names(tmp) = names(covar_state)
@@ -267,61 +268,61 @@ plot_state_heatmap2 = function(myMat, timestamps, title = 'State Heatmap') {
   return(plt)
 }
 
-# _________________________________________________________
-# Plot underlying MC of a HMM using ggplot: covariates case
-
-plot_HMM_MC_cov = function(P, pi, contrib, title = 'HMM Structure', P.thresh = 0.05) {
-
-  nStates = nrow(P)
-  state.grid = expand.grid(State.i = as.factor(1:1:nStates), 
-                           State.j = as.factor(1:1:nStates))
-  hmm.means = contrib$mu
-  hmm.sigma = contrib$sigma
-  df.P      = state.grid
-  df.P$P    = as.numeric(t(P))
-  df.P$Mean.i = hmm.means[df.P$State.i]
-  df.P$Mean.j = hmm.means[df.P$State.j]
-  
-  df.S      = data.frame(State = 1:nStates, mu = hmm.means, sigma = hmm.sigma, Characteristic.Time = pi)
-
-  # states characteristics
-  contrib <- contrib[,colSums(is.na(contrib))<nrow(contrib)]
-  df = melt(contrib, id.vars = c('mu', 'sigma2', 'state'))
-    
-  # add (mu, sigma) canvass
-  plt = ggplot(df) + 
-    geom_subplot(aes(x = state, y = mu, group = state,
-                     subplot = geom_bar(aes(x = variable, y = value, fill = variable), width = 0.95,
-                                        stat = 'identity', position = 'dodge')))
-
-  # add in links
-  plt = plt +     
-    geom_segment(aes(y = Mean.i, yend = Mean.j, 
-                     x = State.i, xend = State.j, 
-                     alpha=P), data=df.P, size = 3) +
-#     scale_size(range = c(0.5, 5)) +     
-    theme_bw() +
-    theme(panel.grid.major = element_blank(),
-          panel.grid.minor = element_blank(),
-          panel.background = element_blank(),
-          axis.text.y      = element_text(size=18), 
-          axis.text.x      = element_text(size=18),
-          axis.title.y     = element_text(size=18),
-          axis.title.x     = element_text(size=18),
-          plot.title       = element_text(size=20),            
-          legend.text      = element_text(size=18),
-          axis.ticks = element_blank()) + 
-    ylab('Mean') + xlab('State') + 
-    ggtitle(title)
-
-  # add state label
-  plt = plt + geom_point(data = df.S, aes(x = State, y = mu, size = Characteristic.Time, color = Characteristic.Time), show_guide = FALSE) + 
-    scale_size(range = c(4, 16)) + 
-    geom_text(data = df.S, aes(x = State, y = mu, label = State, size = Characteristic.Time), color = 'white', show_guide = FALSE) +
-    geom_text(data = df.S, aes(x = State, y = mu, label = paste('s=',round(sigma, digits=2))), hjust = 1, vjust = 4, show_guide = FALSE)
-    
-  return(plt)
-}
+# # _________________________________________________________
+# # Plot underlying MC of a HMM using ggplot: covariates case
+# 
+# plot_HMM_MC_cov = function(P, pi, contrib, title = 'HMM Structure', P.thresh = 0.05) {
+# 
+#   nStates = nrow(P)
+#   state.grid = expand.grid(State.i = as.factor(1:1:nStates), 
+#                            State.j = as.factor(1:1:nStates))
+#   hmm.means = contrib$mu
+#   hmm.sigma = contrib$sigma
+#   df.P      = state.grid
+#   df.P$P    = as.numeric(t(P))
+#   df.P$Mean.i = hmm.means[df.P$State.i]
+#   df.P$Mean.j = hmm.means[df.P$State.j]
+#   
+#   df.S      = data.frame(State = 1:nStates, mu = hmm.means, sigma = hmm.sigma, Characteristic.Time = pi)
+# 
+#   # states characteristics
+#   contrib <- contrib[,colSums(is.na(contrib))<nrow(contrib)]
+#   df = melt(contrib, id.vars = c('mu', 'sigma2', 'state'))
+#     
+#   # add (mu, sigma) canvass
+#   plt = ggplot(df) + 
+#     geom_subplot(aes(x = state, y = mu, group = state,
+#                      subplot = geom_bar(aes(x = variable, y = value, fill = variable), width = 0.95,
+#                                         stat = 'identity', position = 'dodge')))
+# 
+#   # add in links
+#   plt = plt +     
+#     geom_segment(aes(y = Mean.i, yend = Mean.j, 
+#                      x = State.i, xend = State.j, 
+#                      alpha=P), data=df.P, size = 3) +
+# #     scale_size(range = c(0.5, 5)) +     
+#     theme_bw() +
+#     theme(panel.grid.major = element_blank(),
+#           panel.grid.minor = element_blank(),
+#           panel.background = element_blank(),
+#           axis.text.y      = element_text(size=18), 
+#           axis.text.x      = element_text(size=18),
+#           axis.title.y     = element_text(size=18),
+#           axis.title.x     = element_text(size=18),
+#           plot.title       = element_text(size=20),            
+#           legend.text      = element_text(size=18),
+#           axis.ticks = element_blank()) + 
+#     ylab('Mean') + xlab('State') + 
+#     ggtitle(title)
+# 
+#   # add state label
+#   plt = plt + geom_point(data = df.S, aes(x = State, y = mu, size = Characteristic.Time, color = Characteristic.Time), show_guide = FALSE) + 
+#     scale_size(range = c(4, 16)) + 
+#     geom_text(data = df.S, aes(x = State, y = mu, label = State, size = Characteristic.Time), color = 'white', show_guide = FALSE) +
+#     geom_text(data = df.S, aes(x = State, y = mu, label = paste('s=',round(sigma, digits=2))), hjust = 1, vjust = 4, show_guide = FALSE)
+#     
+#   return(plt)
+# }
 
 # ______________________________________
 # Plot MC structure of HMM using igraph
@@ -398,14 +399,12 @@ plot_components_ts = function(df, timestamps,
   # ______________________________
   # Main components plot
   
-  print(summary(df))
-  
 	myTime   = format(timestamps, "%a,%m/%d %H:00")
 	df$Index = 1:nrow(df)
-	df.obs   = subset(df, select = c('fit', 'kWh', 'Index'))
+	df.obs   = subset(df, select = c('fit', 'obs', 'Index'))
   df$state = NULL
   df$fit   = NULL
-  df$kWh   = NULL
+  df$obs   = NULL
 	df.mlt   = melt(df, id.vars = c('Index'))
 	lev.var  = levels(df.mlt$variable)
 	lev.var.n= c('(Intercept)', setdiff(lev.var, '(Intercept)'))
@@ -423,8 +422,8 @@ plot_components_ts = function(df, timestamps,
   # add in states color bar
   if (!is.null(states)) {
     y_pos =  max(df.obs$fit)*1.5
-    df_state = data.frame(Index = 1:length(states), State = as.factor(states), kWh = y_pos)
-  	p <- p + geom_point(data = df_state, aes(x = Index, y = kWh, colour = State), size = 6, shape = 15)
+    df_state = data.frame(Index = 1:length(states), State = as.factor(states), obs = y_pos)
+  	p <- p + geom_point(data = df_state, aes(x = Index, y = obs, colour = State), size = 6, shape = 15)
     p <- p + scale_color_grey()
   }	
   
@@ -433,8 +432,8 @@ plot_components_ts = function(df, timestamps,
 		 geom_line(data = df.obs, aes(x = Index, y = fit), alpha = I(0.7), color='red') 
 
   # add in reference time series
-	p <- p + geom_point(data = df.obs, aes(x = Index, y = kWh), alpha = 0.6, size = 2) + 
-		 geom_line(data = df.obs, aes(x = Index, y = kWh), alpha = 0.8) 
+	p <- p + geom_point(data = df.obs, aes(x = Index, y = obs), alpha = 0.6, size = 2) + 
+		 geom_line(data = df.obs, aes(x = Index, y = obs), alpha = 0.8) 
   
   # x axis time labels
 	p <- p + scale_x_continuous(breaks = seq(1,length(myTime), length.out=10), 
@@ -452,14 +451,14 @@ plot_components_ts = function(df, timestamps,
                legend.text      = element_text(size=18),              
                plot.margin      = unit(c(0,0,0,0), "cm"),
                axis.ticks       = element_blank() ) + 
-        ylab("kWh [%]") + 
+        ylab("obs [%]") + 
         theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
         ggtitle( title )
 
   # _____________________
   # Auxiliary covariates
   
-  if (!is.null(covars)) {
+    if (!is.null(covars)) {
     df2    = data.frame(Index = 1:length(myTime), state = states)
     if (length(covars) >= 2) {
       df2  = cbind(df2, covars[df2$state,])
@@ -576,21 +575,18 @@ plot_tran_covar = function(x_var, dep, title = 'HMM-dep-covar',
   
   df       = as.data.frame(do.call('rbind', dep))
   names(df)= paste('State', 1:ncol(df), sep='.')
-  if (is.null(names(dep))) {
-    df$State = rep(1:length(dep), each = nrow(x_var)) 
-  } else {
-    df$State = rep(names(dep), each = nrow(x_var)) 
-  }
-  df       = cbind(x_var, df)
+  df$From  = rep(1:length(dep), each = nrow(dep[[1]]))  
   covar    = names(x_var)
-  df.mlt   = melt(df, id.vars = c(covar, 'State'))
-  df.mlt$State = as.factor(df.mlt$State)
+  df       = cbind(rep(x_var[,covar], length(dep)), df)
+  names(df)[1] = covar
+  df.mlt   = melt(df, id.vars = c(covar, 'From'))
+  df.mlt$From = as.factor(df.mlt$From)
   
   # plot 
   plt = ggplot(df.mlt, aes_string(x = covar, y = 'value'))
   plt = plt + geom_point(aes(color = variable, shape = variable))
-  nx = sqrt(length(unique(df$State)))  
-  if (length(dep)>1) plt = plt + facet_wrap(~State, ncol = nx)
+  nx = sqrt(length(unique(df$From)))  
+  if (length(dep)>1) plt = plt + facet_wrap(~From, ncol = nx)
   
   # add in vertical markers
   if (length(markers)>0)

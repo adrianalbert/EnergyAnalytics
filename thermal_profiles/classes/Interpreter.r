@@ -40,7 +40,7 @@ computeBenchmarks = function(decoder){
   respm  = decoder@HMM$response$means
   trans  = decoder@HMM$transition
   covar  = rownames(respm)[2]
-                
+  
   # compute "stationary" probabilities given dependent variable (temperature)
   # x_var  = decoder@HMM$model@transition[[1]]@x
   x_var  = cbind(rep(1,121), seq(0, 120, by=1))
@@ -52,6 +52,8 @@ computeBenchmarks = function(decoder){
     y = exp(y) / rowSums(exp(y))
     return(y)
   })
+  prob= dep
+
   dep = do.call('cbind', dep)
   dis = lapply(1:nrow(dep), function(i) {
     M = matrix(dep[i,], ncol = sqrt(ncol(dep)), byrow=T)
@@ -78,7 +80,7 @@ computeBenchmarks = function(decoder){
   })     
   tau = do.call('rbind', tau)                      
               
-  return(list(steadyDistr = dis, duration = tau))
+  return(list(probProfile = prob, steadyDistr = dis, duration = tau))
 }            
 
 # _____________________________________
@@ -153,7 +155,7 @@ computeContributions = function(decoder, verbose=T) {
       agg.diff         = agg.summer[,-c(1,2)] - agg.winter[,-c(1,2)]
       agg.diff         = cbind(agg.summer[,c(1,2)], agg.diff)	    
 		
-	    return(agg)
+	    return(list(ts = X, agg = agg))
 }
 
 

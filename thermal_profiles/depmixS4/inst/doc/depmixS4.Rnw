@@ -28,7 +28,7 @@
 	(slightly) modified version of \cite{Visser+Speekenbrink:2010},
 	published in the \emph{Journal of Statistical Software}.  Please
 	refer to that article when using \pkg{depmixS4}.  The current
-	version is 1.2-0; the version history and changes can be found in
+	version is 1.3-0; the version history and changes can be found in
 	the NEWS file of the package. Below, the major versions are listed 
 	along with the most noteworthy changes. 
 
@@ -75,12 +75,24 @@ library("depmixS4")
 
 \section*{Version history}
 
+See the NEWS file for complete listings of changes; here only the 
+major changes are mentioned. 
+
 \begin{description}
+		
+		\item[1.3-0] Added option `classification' likelihood to EM; 
+		model output is now pretty-printed and parameters are given 
+		proper names; the fit function has gained arguments for fine 
+		control of using Rsolnp and Rdonlp2. 
+		
 		\item[1.2-0] Added support for missing data, see 
 		section~\ref{sec:missingdata}.
+		
 		\item[1.1-0] Speed improvements due to writing the main loop in C code.
+		
 		\item[1.0-0] First release with this vignette, a modified version 
 		of the paper in the Journal of Statistical Software. 
+		
 		\item[0.1-0] First version on CRAN. 
 \end{description}
 
@@ -272,11 +284,11 @@ To compute the log-likelihood, \cite{Lystig2002} define the following
 	\phi_{1}(j) &:= \Prob(\vc{O}_{1}, S_{1}=j) = \pi_{j} \vc{b}_{j}(\vc{O}_{1}) 
 	\label{eq:fwd1} \\
 	\phi_{t}(j) &:= \Prob(\vc{O}_{t}, S_{t}=j|\vc{O}_{1:(t-1)}) %\\
-	= \sum_{i=1}^{N} [\phi_{t-1}(i)a_{ij} \vc{b}_{j}(\vc{O}_{t})] \times 
+	= \sum_{i=1}^{n} [\phi_{t-1}(i)a_{ij} \vc{b}_{j}(\vc{O}_{t})] \times 
 (\Phi_{t-1})^{-1},
 	\label{eq:fwdt} 
 \end{align}
-where $\Phi_{t}=\sum_{i=1}^{N} \phi_{t}(i)$. Combining 
+where $\Phi_{t}=\sum_{i=1}^{n} \phi_{t}(i)$. Combining 
 $\Phi_{t}=\Prob(\vc{O}_{t}|\vc{O}_{1:(t-1)})$, and 
 equation~(\ref{eq:condLogl}) gives the following expression for the 
 log-likelihood:
@@ -364,7 +376,7 @@ computed as:
 %
 \begin{align}
 	\phi_t(i) &= \Prob(S_{t} = i|\vc{O}_{1:(t-1)}) 
-	\\ &=  \sum_{j=1}^N \phi_{t-1}(j) \Prob(S_t = i|S_{t-1}=j).
+	\\ &=  \sum_{j=1}^n \phi_{t-1}(j) \Prob(S_t = i|S_{t-1}=j).
 \end{align}
 %
 For later observations, we can then use this latter equation again,
@@ -599,8 +611,8 @@ summary(fm, which = "response")
 @
 
 As can be seen, state 1 has fast response times and accuracy is
-approximately at chance level (.474), whereas state 2 corresponds with
-slower responding at higher accuracy levels (.904).
+approximately at chance level (.4747), whereas state 2 corresponds with
+slower responding at higher accuracy levels (.9021).
 
 Note that by specifying multivariate observations in terms of a list,
 the variables are considered conditionally independent (given the
@@ -1049,7 +1061,7 @@ Finally, we put everything together using \code{makeDepmix} and fit
 the model: 
 <<>>=
 mod <- makeDepmix(response = rModels, transition = transition,
-  prior = inMod, stat = FALSE)
+  prior = inMod, homogeneous = FALSE)
 fm <- fit(mod, verbose = FALSE, emc=em.control(rand=FALSE))
 @
 
