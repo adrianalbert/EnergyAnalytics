@@ -7,6 +7,7 @@
 # -----------------------------------------------------------------------
 
 library('useful')
+library('ggplot2')
 library('grid')
 library('reshape2')
 library('RColorBrewer')
@@ -238,7 +239,7 @@ plot_state_heatmap = function(myMat, timestamps, title = 'State Heatmap') {
 }
 
 # __________________________________________________________________
-# Plot heatmap of yearly occupancy state profiles (ggplot version)
+# Plot heatmap of yearly state profiles (ggplot version)
 
 plot_state_heatmap2 = function(myMat, timestamps, title = 'State Heatmap') {
   # select appropriate color palette

@@ -14,7 +14,7 @@ library('MASS')
 library('lubridate')
 library('dummies')
 
-source('viterbi_states.R')
+# source('./viterbi_states.R')
 
 ### Remove !!! 
 # Hack into the depmix direct likelihood maximization
@@ -387,9 +387,9 @@ computePredictionAccuracy = function(model, data.test, test.periods = 5) {
 # Compute statistics for HMM fit
 
 # function to compute Generalized R2
-GR2 = function(LL0, LL, N) {
-  gr2 = 1 - exp(2*(LL0 - LL) / N)
-}
+# GR2 = function(LL0, LL, N) {
+#   gr2 = 1 - exp(2*(LL0 - LL) / N)
+# }
 
 # function to compute R2
 R2 = function(y, yfit) {
