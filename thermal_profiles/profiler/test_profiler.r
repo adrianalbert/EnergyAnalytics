@@ -1,5 +1,5 @@
-# _______________________________________
-# Test methods for class OccupancyStates
+# _________________________
+# Test methods for profiler
 
 rm(list = ls())
 
