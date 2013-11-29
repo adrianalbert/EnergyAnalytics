@@ -13,6 +13,10 @@
 #' @author Adrian Albert \email{adalbert -at- stanford.edu}
 # #########################################################
 
+library('reshape2')
+library('ggplot2')
+library('RColorBrewer')
+
 plot_hmm_ts = function(hmm.means, hmm.sigma, states, timestamps, observed, y.lab = 'observed', title = 'HMM-ts') {
 	# construct plotting data frames
 	df.hmm = data.frame(Mean   = hmm.means, 
@@ -757,4 +761,14 @@ multiplot <- function(..., plotlist=NULL, cols=1, layout=NULL) {
                                       layout.pos.col = matchidx$col))
     }
   }
+}
+
+hmap = function(data,colorMap=NULL,yvals=NA,xvals=NA,xlabs=NULL,ylabs=NULL,cex.axis=1,...) {
+  n = dim(data)[1]
+  m = dim(data)[2]
+  # defailt values
+  if(is.null(colorMap)) { colorMap = rev(colorRampPalette(brewer.pal(11,"RdBu"))(100)) }
+  image(t(data),col=colorMap,axes=F,...)
+  if(!is.null(xlabs)){ axis(1, at=(1:length(xlabs) - 1)/(length(xlabs)-1), labels=xlabs, cex.axis=cex.axis) }
+  if(!is.null(ylabs)){ axis(2, at=(1:length(ylabs) - 1)/(length(ylabs)-1), labels=ylabs, cex.axis=cex.axis) }    
 }

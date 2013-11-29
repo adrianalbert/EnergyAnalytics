@@ -7,8 +7,8 @@
 # -----------------------------------------------------------------------
 
 
-# source('./visualization/plot_utils.r')
-# source('./visualization/acf_ggplot.r')
+source('../../visHMM/plot_utils.r')
+source('../../visHMM/acf_ggplot.r')
 
 # ________________________
 # Class definition
@@ -146,7 +146,7 @@ setMethod('plot',
             }
             
             if (type == 'HMM-res') { 
-              plt = plot_HMM_res(x@HMM$residual, x@HMM$states, x@HMM$response$stdev, sw_test = NULL)
+              plt = plot_HMM_res(x@HMM$residual, x@HMM$states, x@HMM$response$stdev)
               plt
             }             
             

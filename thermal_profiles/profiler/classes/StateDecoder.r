@@ -14,7 +14,7 @@ library('MASS')
 library('lubridate')
 library('dummies')
 
-# source('./viterbi_states.R')
+source('./estimation/viterbi_states.R')
 
 ### Remove !!! 
 # Hack into the depmix direct likelihood maximization
