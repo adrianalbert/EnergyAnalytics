@@ -5,7 +5,7 @@
 # Interface to implement scheduling problems for thermally-sensitive users.
 # 
 # Adrian Albert
-# Last modified: October 2013.
+# Last modified: February 2014.
 # #########################################################################
 
 library('timeDate')
@@ -36,14 +36,14 @@ setClass(
 
 setMethod(f = "initialize", 
           signature = "Scheduler",
-          definition = function(.Object, importer, profile=NULL, target = NULL, DT = 5, budget = 5, verbose = T,  cvx.setup.dir = "/usr/local/MATLAB/cvx/") {
+          definition = function(.Object, importer, profile=NULL, target = NULL, setup = list(), verbose = T) {
             
             if (verbose) cat('*** Initializing Scheduler ***\n')
             
             # inputs
             .Object@INPUTS$HORIZON    = nrow(profile)
-            .Object@INPUTS$DT         = DT
-            .Object@INPUTS$BUDGET     = budget            
+            .Object@INPUTS$DT         = setup$DT
+            .Object@INPUTS$BUDGET     = setup$budget            
             .Object@INPUTS$PROFILE    = profile            
             .Object@INPUTS$TARGET     = target       
             
@@ -57,7 +57,7 @@ setMethod(f = "initialize",
             .Object@SETUP             = setupProblem(.Object)
             
             # solver parameters
-            .Object@SOLVER$cvx.setup.dir = cvx.setup.dir          
+            .Object@SOLVER$cvx.setup.dir = setup$cvx.setup.dir          
             
             return(.Object)
           })

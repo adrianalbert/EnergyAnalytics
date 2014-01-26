@@ -1,9 +1,17 @@
-# _________________________
-# Test methods for profiler
+# test_profiler.r
+#
+# Test for Scheduler class.
+# 
+# Adrian Albert
+# Last modified: February 2014.
+# -----------------------------------------------------------------------
 
 rm(list = ls())
-
 options(error = recover)
+setwd('~/EnergyAnalytics/thermal_profiles/profiler/')
+
+# _________________________
+# Initializations....
 
 source('classes/DataFormatter.r')
 source('classes/StateDecoder.r')
@@ -13,12 +21,14 @@ source('classes/Visualizer.r')
 library(utils)
 library('segmented')
 
-setwd('~/Dropbox/EnergyAnalytics/thermal_profiles/profiler/')
 source('stateProcessorWrapper.r')
 source('stateVisualizerWrapper.r')
 
-PLOTS_PATH = './'
+# set plots directory
+PLOTS_PATH = '~/Dropbox/OccupancyStates/plots/bakersfield/'
+dir.create(file.path(PLOTS_PATH))
 
+# load consumption and weather data
 load('~/Dropbox/OccupancyStates/data/selection_consumption.RData')
 
 # get test data
@@ -31,16 +41,11 @@ wthr_data = weather.ok[[ZIP]]
 names(wthr_data)[1] = 'date'
 timesteps = wthr_data$date
 wthr_data = wthr_data[,c('date', 'TemperatureF')]
+wthr_data$TemperatureD = wthr_data$TemperatureF - 65
+
 #wthr_data$date = NULL
 
 # Rprof(filename = 'Rprof.out', interval = 0.02, memory.profiling = F)
-
-# estimate a "breakpoint" indoors temperature
-# fit  = lm('use ~ TemperatureF', data = cbind(obs = rawwthr_data)    
-# fmla = as.formula(paste('~', 'TemperatureF'))
-# fit.seg <- try(segmented(fit, seg.Z = fmla, psi = 75))
-# psi  = fit.seg$psi[1,2]        
-wthr_data$TemperatureD = wthr_data$TemperatureF - 75
 
 # define model learning controls
 controls = list(
@@ -51,6 +56,7 @@ controls = list(
 
 dir.create(file.path(PLOTS_PATH, UID))
 # learn model
+source('stateProcessorWrapper.r')
 res = stateProcessorWrapper(raw_data, wthr_data, 'Bob', 
                             controls = controls,
                             train.frac = 0.95, 

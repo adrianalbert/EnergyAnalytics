@@ -7,7 +7,7 @@
 
 # define required pacakges
 reqed.packages = c('RMySQL', 'zoo', 'depmixS4', 'ggplot2', 'utils', 
-                   'multicore', 'parallel',
+                   'multicore', 'parallel', 'segmented', 
                    'methods', 'lmtest', 'Amelia', 'imputation', 
                    'timeDate', 'lubridate', 
                    'dummies', 'linkcomm', 'useful', 'reshape', 
