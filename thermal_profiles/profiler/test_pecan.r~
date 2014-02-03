@@ -1,0 +1,156 @@
+# test_pecan.r
+#
+# Applies HMM decoding on Pecan Street data. 
+#
+# Adrian Albert
+# Last modified: December 2013.
+# ---------------------------------------------------------
+
+rm(list = ls())
+options(error = recover)
+
+# __________________________________________________
+# Initializations...
+
+setwd('~/Dropbox/EnergyAnalytics/thermal_profiles/profiler/')
+source('stateProcessorWrapper.r')
+
+load('~/energy-data/pecan_street/pecan_plus_weather.RData')
+
+PLOTS_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street'
+dir.create(PLOTS_PATH)
+
+# __________________________________________________
+# Helper functions
+
+usage = function(data,labels) {
+  sub = match(labels,names(data))
+  sub = sub[!is.na(sub)]
+  return(apply(as.matrix(data[,sub]),1,sum))
+}
+
+toHourly = function(data,dateCol='date'){
+  data$dayhr = strftime(data[,dateCol],'%Y-%m-%d.%H',tz='CST6CDT')
+  hourly = aggregate(. ~ dayhr,data=data, sum, na.rm=T )
+  hourly$date = strptime(hourly$dayhr,'%Y-%m-%d.%H')
+  return(hourly)
+}
+
+to10min = function(data,dateCol='date'){
+  data$dayhr = strftime(data[,dateCol],'%Y-%m-%d.%H',tz='CST6CDT')
+  data$minute= as.numeric(strftime(data[,dateCol],'%M',tz='CST6CDT'))
+  data$minute = data$minute / 10
+  data$dayhr10m = paste(data$dayhr, data$minute)
+  to10min = aggregate(. ~ dayhr10m,data=data, sum, na.rm=T )
+  to10min$date = strptime(hourly$dayhr10min,'%Y-%m-%d.%H%M')
+  return(to10min)
+}
+
+# __________________________________________________
+# Select appliances of interest
+
+HVAC   = c('AIR1','AIR2','FURNACE1','FURNACE2')
+HV     = c('FURNACE1','FURNACE2')
+AC     = c('AIR1','AIR2')
+fridge = c('REFRIGERATOR1')
+dhw    = c('WATERHEATER1')
+aux    = c('SPRINKLER1')
+user   = c('DININGROOM1','DISHWASHER1','DRYG1','KITCHEN1','KITCHEN2','KSAC1','KSAC2','SECURITY1',
+           'LIGHTING_PLUGS1','LIGHTING_PLUGS2','LIGHTING_PLUGS3','LIGHTING_PLUGS4',
+           'LIVINGROOM1','MASTERBATH1','MICROWAVE1','OVEN1','RANGE1','WASHER1','WASHINGMACHINE1',
+           'BATHROOM1','BEDROOM1','BEDROOM2','DISPOSAL1','DRYE1','FAMROOM1','BATH1','DRYER2','GARAGE','GARAGE1',
+           'GENLIGHT1','SMALLAPPLIANCE1','SMALLAPPLIANCE2','SMALLAPPLIANCE3','COOKTOP1',
+           'BACKYARD1','OFFICE1','TVROOM1','THEATER1','MASTERBED1')
+total   = c('use')
+solar   = c('gen')
+ev      = c('CAR1')
+net     = c('Grid')
+
+# __________________________________________________
+# Plot usage by minute & by hour
+
+ppw = pecanCombinedData
+if (0 == 1) {
+for(homeName in names(ppw)){
+  print(homeName)
+  homeData = ppw[[homeName]]
+  #print(names(homeData))
+  print(dim(homeData))
+	homeName = trim(homeName)
+	
+	# aggregate data to 10 minutes  
+  hrData = to10min(homeData)
+
+  # print minute-by-minute data
+  op <- par(no.readonly = TRUE)
+  cols = c('black','#FE2E2E','#0040FF','#ff9999', '#bbbbbb')
+  m <- matrix(c(1,2,3),nrow=3,ncol=1,byrow=T)
+  layout(mat = m,heights = c(0.4,0.4,0.2))
+  par(oma=c(2,2,2,0),mar=c(2,4,2,1)) # Room for the title
+  maxUsage = max(usage(homeData,total))
+  plot(homeData$date,usage(homeData,total),type='l',col=cols[1],main='minute',ylab='kW',ylim=c(0,1.1*maxUsage),xaxt='n')
+  points(homeData$date,usage(homeData,AC),type='l',col=cols[3])
+  points(homeData$date,usage(homeData,HV),type='l',col=cols[2])
+  points(homeData$date,usage(homeData,user),type='l',col=cols[4])
+  points(homeData$date,homeData$TemperatureF/100*maxUsage,type='l',col=cols[5])
+  d = homeData$date
+  dts = seq(d[1],d[length(d)],by=3600*24) # one per day from one per minute
+  axis(1, dts, format(dts, "%a, %m/%d"), cex.axis=1)
+  grid(nx=NA,ny=NULL)
+  abline(v=dts,col="black",lty=3)
+  
+  # print hourly data
+  hrData = toHourly(homeData)
+  maxUsage = max(usage(hrData,total))
+  plot(hrData$date,usage(hrData,total),type='l',col=cols[1],main='hourly',ylim=c(0,1.1*maxUsage),ylab='kW',xaxt='n')
+  points(hrData$date,usage(hrData,HV),type='l',col=cols[2])
+  points(hrData$date,usage(hrData,AC),type='l',col=cols[3])
+  points(hrData$date,usage(hrData,user),type='l',col=cols[4])
+  points(hrData$date,hrData$TemperatureF/100*maxUsage,type='l',col=cols[5])
+  d = as.POSIXct(hrData$date)
+  dts = seq(d[1],d[length(d)],by=3600*24) # one per day from one per hour
+  axis(1, dts, format(dts, "%a, %m/%d"), cex.axis=1)
+  grid(nx=NA,ny=NULL)
+  abline(v=dts,col="black",lty=3)
+  mtext(paste('Example','kW demand'), line=0, font=2, cex=1.2, outer=TRUE)
+  par(mar=c(1,4,1,1))
+  plot.new()
+  legend("center", lty=1,cex=1,lwd=2,
+         legend=c('total','HV', 'AC', 'user','temperature'), 
+         col=cols,horiz=T)
+  # par(op)
+  #break
+	dir.create(file.path(PLOTS_PATH, homeName))
+  dev.copy2pdf(file=paste(paste(PLOTS_PATH, homeName, sep = '/'), paste(homeName,'.pdf',sep=''), sep='/'),width=10,height=6)
+}
+}
+
+#plot(homeData$date,usage(homeData,'THEATER1'),type='l')
+#points(homeData$date,usage(homeData,fridge),type='l',col='green')
+
+# __________________________________________________
+# Apply Thermal States model to Pecan data
+ 
+for(homeName in names(ppw)[-c(5)][1]){
+  print(homeName)
+  homeData = ppw[[homeName]]
+  print(dim(homeData))
+	
+ 	cur_data  = subset(homeData, select = c('date', 'use'))
+ 	names(cur_data)[2] = 'obs'
+ 	cur_data$date = as.character(cur_data$date)
+ 	cur_covar = subset(homeData, select = c('date', 'TemperatureF'))
+ 	cur_covar$date = as.character(cur_covar$date)
+ 	
+  # define model learning controls
+  controls = list(
+    Kmin = 4, Kmax = 4, 
+    maxit = 50, nRestarts = 5, tol = 1e-6,
+    thresh.R2 = 0.85, thresh.MAPE = 0.10,
+    test.periods = 12,
+    vis.interval = 60*24-1)
+
+ 	stateProcessorWrapper(cur_data, cur_covar, homeName, 
+ 												controls = controls,
+ 												verbose = F, plots_path = paste(PLOTS_PATH, '/', homeName, '/', sep=''))
+}
