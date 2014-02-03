@@ -35,6 +35,7 @@ setMethod("fit",
 		}
 		
 		if(method=="EM") {
+			print('using EM...')
 			object <- em(object,maxit=emcontrol$maxit,tol=emcontrol$tol,crit=emcontrol$crit,random.start=emcontrol$random.start,classification=emcontrol$classification,verbose=verbose,...)
 		}
 		
@@ -157,6 +158,7 @@ setMethod("fit",
 			}
 			
 			if(method=="rsolnp") {
+				print('using direct maximization...')
 				
 				if(!(require(Rsolnp,quietly=TRUE))) stop("Method 'rsolnp' requires package 'Rsolnp'")
 				

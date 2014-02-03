@@ -16,22 +16,23 @@
 library('reshape2')
 library('ggplot2')
 library('RColorBrewer')
+library('grid')
 
 plot_hmm_ts = function(hmm.means, hmm.sigma, states, timestamps, observed, y.lab = 'observed', title = 'HMM-ts') {
 	# construct plotting data frames
-	df.hmm = data.frame(Mean   = hmm.means, 
-		          Sigma  = hmm.sigma, 
-		          State  = states,      
-			  Index  = 1:length(states),				                              
-		          Time   = format(timestamps, "%a,%m/%d"))              
+	df.hmm = data.frame(Regime = hmm.means, 
+		                  Sigma  = hmm.sigma, 
+		                  State  = states,      
+			                Index  = 1:length(states),				                              
+		                  Time   = format(timestamps, "%a,%m/%d %H"))              
 	df.obs = data.frame(Observed = observed, 
-		          Time   = format(timestamps, "%a,%m/%d"),
-			  Index  = 1:length(states),				                              
-		          Sigma    = rep(0, length(observed)))
+		                  Time     = format(timestamps, "%a,%m/%d %H"),
+			                Index    = 1:length(states),				                              
+		                  Sigma    = rep(0, length(observed)))
 
 	df.mlt.obs = melt(df.obs, id.vars = c('Time', 'Sigma', 'Index'))
-	df.mlt.hmm = melt(df.hmm, id.vars = c('Time', 'Sigma', 'State', 'Index'), measure.vars = c('Mean'))
-	df.mlt.hmm$variable = paste(df.mlt.hmm$variable, df.mlt.hmm$State, sep='.')
+	df.mlt.hmm = melt(df.hmm, id.vars = c('Time', 'Sigma', 'State', 'Index'), measure.vars = c('Regime'))
+	df.mlt.hmm$variable = paste(df.mlt.hmm$variable, df.mlt.hmm$State, sep=' ')
 	df.mlt.hmm$State = NULL
 
   # add in error bars
@@ -45,24 +46,24 @@ plot_hmm_ts = function(hmm.means, hmm.sigma, states, timestamps, observed, y.lab
     geom_line(size = 1.2) + geom_point(aes(colour=variable), size = 3) + 
 	  geom_line(col='black', data = df.mlt.obs, alpha = 0.4, size = 1.2) + 
 	  geom_point(col='black', data = df.mlt.obs, alpha = 0.4, size = 3) + 
-	  scale_x_continuous(breaks = seq(1,length(df.mlt.hmm$Time), length.out=10), 
-		           labels = format(df.mlt.hmm$Time[seq(1,length(df.mlt.hmm$Time), length.out=10)], 
+	  scale_x_continuous(breaks = seq(1,length(df.mlt.hmm$Time), length.out=5), 
+		           labels = format(df.mlt.hmm$Time[seq(1,length(df.mlt.hmm$Time), length.out=5)], 
 		                           format = "%a,%m/%d %H:00"))
 	plt = plt + theme_bw() +
 	theme(panel.grid.major  = element_blank(),
 	       panel.grid.minor = element_blank(),
 	       panel.background = element_blank(),
 	       axis.title.x     = element_blank(),
-	       axis.text.y      = element_text(size=18), 
-	       axis.text.x      = element_text(size=18),
-	       axis.title.y     = element_text(size=18),
-	       axis.title.x     = element_text(size=18),
-	       plot.title       = element_text(size=20),            
-	       legend.text      = element_text(size=18),	      
-	       axis.ticks = element_blank() ) + 
-	ylab(y.lab) + xlab('Time') + 
-	theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
-	ggtitle( title )
+	       axis.text.y      = element_text(size=20), 
+	       axis.text.x      = element_text(size=20),
+	       axis.title.y     = element_text(size=20),
+	       axis.title.x     = element_text(size=20),
+	       plot.title       = element_text(size=22),            
+	      legend.text      = element_text(size=22),	      
+	      legend.title     = element_blank(),	      
+	      legend.position  = c(0.2,0.75),	      
+	      axis.ticks = element_blank() ) + 
+	ylab(y.lab) + xlab('Time') + ggtitle( title )
 
 	return(plt)
 }
@@ -87,10 +88,11 @@ plot_hmm_coefs_ts = function(covar_state, states, observed, timestamps,
                   Index  = 1:length(states),				                              
                   Time   = format(timestamps, "%a,%m/%d %H:00"))   
 
-  if (ncol(covar_state)>1) tmp = covar_state[states,] else {
-    tmp = data.frame(covar_state[states,])
-    names(tmp) = names(covar_state)
-  }
+#   if (ncol(covar_state)>1) tmp = covar_state[states,] else {
+#     tmp = data.frame(covar_state[states,])
+#     names(tmp) = names(covar_state)
+#   }
+  tmp = covar_state
   df = cbind(df,tmp)
   
   print(summary(df))
@@ -101,8 +103,8 @@ plot_hmm_coefs_ts = function(covar_state, states, observed, timestamps,
   plt = ggplot(df.mlt, aes(x = Index, y = value)) + 
     geom_line(position=pd, size = 1.2, alpha = 0.5) + 
     geom_point(position=pd, aes(colour=State), size = 3) + 
-    scale_x_continuous(breaks = seq(1,length(df.mlt$Time), length.out=18), 
-                       labels = format(df.mlt$Time[seq(1,length(df.mlt$Time), length.out=18)], 
+    scale_x_continuous(breaks = seq(1,length(df.mlt$Time), length.out=5), 
+                       labels = format(df.mlt$Time[seq(1,length(df.mlt$Time), length.out=5)], 
                                        format = "%a,%m/%d %H:00"))
   plt = plt + facet_wrap(~variable, ncol = 1, scale = 'free')
   plt = plt + theme_bw() +
@@ -223,15 +225,15 @@ plot_state_breakdown = function(states, timestamps, state.type = NULL,
     theme(panel.grid.major  = element_blank(),
           panel.grid.minor = element_blank(),
           panel.background = element_blank(),
-          strip.text.x     = element_text(size=18),
-          axis.title.x     = element_text(size = 18),
-          axis.text.y      = element_text(size=18), 
-          axis.text.x      = element_text(size=18),
-          axis.title.y     = element_text(size=18),
-          axis.title.x     = element_text(size=18),
-          plot.title       = element_text(size=20),            
-          legend.text      = element_text(size=18),        
-          legend.title      = element_text(size=18),        
+          strip.text.x     = element_text(size=22),
+          axis.title.x     = element_text(size = 22),
+          axis.text.y      = element_text(size=22), 
+          axis.text.x      = element_text(size=22, angle=45),
+          axis.title.y     = element_text(size=22),
+          axis.title.x     = element_text(size=22),
+          plot.title       = element_text(size=24),            
+          legend.text      = element_text(size=24),        
+          legend.title      = element_text(size=22),        
           axis.ticks = element_blank() ) + 
     theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
     ggtitle(title )  + xlab('Hour of Day')
@@ -271,7 +273,8 @@ plot_state_heatmap = function(myMat, timestamps, title = 'State Heatmap') {
   heatmap(profile.mat, Rowv = NA, Colv=NA, 
           labRow = y.labels, 
           labCol = x.labels, 
-          cexRow = 1.5, cexCol = 1.3, col = hmcol, main = title)
+          cexRow = 1.5, cexCol = 1.3,
+          col = hmcol, main = title)
 }
 
 # #########################################################
@@ -467,13 +470,14 @@ plot_components_ts = function(df, timestamps,
   # ______________________________
   # Main components plot
   
-	myTime   = format(timestamps, "%a,%m/%d %H:00")
+	myTime   = format(timestamps, "%m/%d %H:00")
 	df$Index = 1:nrow(df)
 	df.obs   = subset(df, select = c('fit', 'obs', 'Index'))
   df$state = NULL
   df$fit   = NULL
   df$obs   = NULL
 	df.mlt   = melt(df, id.vars = c('Index'))
+  df.mlt$value = abs(df.mlt$value)
 	lev.var  = levels(df.mlt$variable)
 	lev.var.n= c('(Intercept)', setdiff(lev.var, '(Intercept)'))
 	df.mlt$variable <- ordered( df.mlt$variable, levels = lev.var.n)
@@ -484,15 +488,15 @@ plot_components_ts = function(df, timestamps,
 	df.mlt.n$value[df.mlt.n$value > 0] = 0
 	
 	p <- ggplot()   
-	p <- p + geom_area(data = df.mlt.p, aes(x = Index, y = value, fill = variable)) # positive contributions
-	p <- p + geom_area(data = df.mlt.n, aes(x = Index, y = value, fill = variable)) # negative contributions
+# 	p <- p + geom_area(data = df.mlt.p, aes(x = Index, y = value, fill = variable)) # positive contributions
+# 	p <- p + geom_area(data = df.mlt.n, aes(x = Index, y = value, fill = variable)) # negative contributions
   
   # add in states color bar
   if (!is.null(states)) {
     y_pos =  max(df.obs$fit)*1.5
     df_state = data.frame(Index = 1:length(states), State = as.factor(states), obs = y_pos)
   	p <- p + geom_point(data = df_state, aes(x = Index, y = obs, colour = State), size = 6, shape = 15)
-    p <- p + scale_color_grey()
+    # p <- p + scale_color_grey()
   }	
   
   # add in fitted time series
@@ -504,8 +508,8 @@ plot_components_ts = function(df, timestamps,
 		 geom_line(data = df.obs, aes(x = Index, y = obs), alpha = 0.8) 
   
   # x axis time labels
-	p <- p + scale_x_continuous(breaks = seq(1,length(myTime), length.out=10), 
-                           	    labels = format(myTime[seq(1,length(myTime), length.out=10)], 
+	p <- p + scale_x_continuous(breaks = seq(1,length(myTime), length.out=5), 
+                           	    labels = format(myTime[seq(1,length(myTime), length.out=5)], 
                                     format = "%a,%m/%d %H:00")) + 
         theme_bw() +
         theme(panel.grid.major  = element_blank(),
@@ -519,7 +523,7 @@ plot_components_ts = function(df, timestamps,
                legend.text      = element_text(size=18),              
                plot.margin      = unit(c(0,0,0,0), "cm"),
                axis.ticks       = element_blank() ) + 
-        ylab("obs [%]") + 
+        ylab("observation") + 
         theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
         ggtitle( title )
 
@@ -527,23 +531,21 @@ plot_components_ts = function(df, timestamps,
   # Auxiliary covariates
   
     if (!is.null(covars)) {
-    df2    = data.frame(Index = 1:length(myTime), state = states)
-    if (length(covars) >= 2) {
-      df2  = cbind(df2, covars[df2$state,])
-    } else df2[,names(covars)]  = covars[df2$state,]
-
-    # df2[,names(covars)] = scale(df2[,names(covars)])
-    df2$state = as.factor(df2$state)
+    df2    = data.frame(Index = 1:length(myTime), state = as.factor(states))
+    df2  = cbind(df2, covars)
     df2    = melt(df2, id.vars = c('Index', 'state'))    
-    theta  = atan(df2$value)
-    df2$dx = 1
-    df2$dy = df2$value    
-    
+#     theta  = atan(df2$value)
+#     df2$dx = 1
+#     df2$dy = df2$value    
+#     
+#     p2  = ggplot(df2) + 
+#       geom_point(aes(x = Index, y = 0, color = state), size=2) 
+#     p2 = p2 + geom_segment(aes(x = Index-dx/2, xend = Index + dx/2, 
+#                                y = -dy/2, yend = dy/2, color = variable), 
+#                            arrow = arrow(length = unit(0.1,"cm")), alpha = 0.7)
     p2  = ggplot(df2) + 
-      geom_point(aes(x = Index, y = 0, color = state), size=2) 
-    p2 = p2 + geom_segment(aes(x = Index-dx/2, xend = Index + dx/2, 
-                               y = -dy/2, yend = dy/2, color = variable), 
-                           arrow = arrow(length = unit(0.1,"cm")), alpha = 0.7)
+      geom_point(aes(x = Index, y = value, color = state), size=2) 
+    p2 = p2 + geom_line(aes(x = Index, y = value))
     p2 = p2 + facet_wrap(~variable, ncol=1, scale = 'free') + 
       theme_bw() +
       theme(panel.grid.major = element_blank(),
@@ -635,22 +637,23 @@ plot_dep_covar = function(x, y, state, title = 'HMM-dep-covar',
   plt = plt + 
         scale_colour_hue(l=50) + # Use a slightly darker palette than normal
         geom_smooth(method=lm,   # Add linear regression lines
-                    se=TRUE,     # Don't add shaded confidence region
-                    fullrange=T) # Extend regression lines
+                    se=T,     # Don't add shaded confidence region
+                    fullrange=F, # Extend regression lines
+                    aes(group=state, color = state),alpha = 0.1, size = 0.5) 
   plt = plt + theme_bw() +
     theme(panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
           panel.background = element_blank(),
-          axis.text.y      = element_text(size=18),
-          axis.text.x      = element_text(size=18),
-          axis.title.y     = element_text(size=18),
-          axis.title.x     = element_text(size=18),
-          plot.title       = element_text(size=20),
-          legend.position  = 'null',
+          axis.text.y      = element_text(size=22),
+          axis.text.x      = element_text(size=22),
+          axis.title.y     = element_text(size=22),
+          axis.title.x     = element_text(size=22),
+          legend.title     = element_text(size=22),
+          plot.title       = element_text(size=24),
+          legend.text      = element_text(size=24),
+          legend.position  = c(0.2,0.7),
           axis.ticks       = element_blank() ) + 
-    ylab(y.lab) + xlab(x.lab) + 
-    theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
-    ggtitle( title )
+    ylab(y.lab) + xlab(x.lab) + ggtitle( title )
   nx = sqrt(length(unique(df$state)))
   if (separate) plt = plt + facet_wrap(~state, ncol = nx)
   return(plt)
@@ -670,11 +673,13 @@ plot_dep_covar = function(x, y, state, title = 'HMM-dep-covar',
 #' @author Adrian Albert \email{adalbert -at- stanford.edu}
 # #########################################################
 
-plot_tran_covar = function(x_var, dep, title = 'HMM-dep-covar', 
-                          y.lab = '', x.lab = '', markers = c()) {
+plot_tran_covar = function(x_var, dep, 
+                           type = paste('State', 1:length(dep), sep='.'),
+                           title = 'HMM-dep-covar', 
+                           y.lab = '', x.lab = '', markers = c()) {
   
   df       = as.data.frame(do.call('rbind', dep))
-  names(df)= paste('State', 1:ncol(df), sep='.')
+  names(df)= type
   df$From  = rep(1:length(dep), each = nrow(dep[[1]]))  
   covar    = names(x_var)
   df       = cbind(rep(x_var[,covar], length(dep)), df)
@@ -698,14 +703,15 @@ plot_tran_covar = function(x_var, dep, title = 'HMM-dep-covar',
     theme(panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
           panel.background = element_blank(),
-          strip.text.x     = element_text(size=18),
-          axis.text.y      = element_text(size=18),
-          axis.text.x      = element_text(size=18),
-          axis.title.y     = element_text(size=18),
-          axis.title.x     = element_text(size=18),
-          plot.title       = element_text(size=20),
-          legend.text      = element_text(size=18),
-          legend.title     = element_text(size=18),
+          strip.text.x     = element_text(size=22),
+          axis.text.y      = element_text(size=22),
+          axis.text.x      = element_text(size=22),
+          axis.title.y     = element_text(size=22),
+          axis.title.x     = element_text(size=22),
+          plot.title       = element_text(size=24),
+          legend.text      = element_text(size=24),
+          legend.title     = element_text(size=22),
+          legend.position  = c(0.15, 0.6),
           axis.ticks       = element_blank() ) + 
     ylab(y.lab) + xlab(x.lab) + 
     theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
@@ -762,6 +768,8 @@ multiplot <- function(..., plotlist=NULL, cols=1, layout=NULL) {
     }
   }
 }
+
+vplayout <- function(x, y) viewport(layout.pos.row = x, layout.pos.col = y)
 
 hmap = function(data,colorMap=NULL,yvals=NA,xvals=NA,xlabs=NULL,ylabs=NULL,cex.axis=1,...) {
   n = dim(data)[1]

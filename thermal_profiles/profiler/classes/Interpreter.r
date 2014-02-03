@@ -24,10 +24,40 @@ setClass(
   representation  = representation(
     UID           = "character",         # unique person ID
     benchmarks    = "list",
+    regime.type   = 'character',         # state type interpretation
     temporalStats = "list",
     contributions = "list"
     )
 )
+
+# _____________________________________________________
+# Compute interpretable metrics on the HMM fit
+
+computeRegimeType = function(decoder){
+  
+  # access model parameters
+  K_opt  = decoder@HMM$nStates
+  stdev  = decoder@HMM$response$stdev
+  respm  = decoder@HMM$response$means
+  trans  = decoder@HMM$transition
+  covar  = rownames(respm)[2]
+  
+  # interpret states
+  # sort states by response magnitude/sign and base magnitude
+  types = paste('Type', 1:K_opt)
+  limits= c(H.Hi = -Inf, H.Lo = -2, N = -0.025, N = 0.025, C.Lo = 2, C.Hi = Inf) 
+  types = c('H.Hi', 'H.Lo', 'N', 'C.Lo', 'C.Hi')
+  regime= sapply(1:ncol(respm), function(c) {
+    r = respm[,c]
+    i = findInterval(r[2], limits)
+    return(types[i])
+  })
+  
+  regime = paste(regime, ' (', 1:length(regime), ')', sep = '')
+  
+  return(regime)
+  
+}
 
 # _____________________________________________________
 # Compute interpretable metrics on the HMM fit
@@ -148,12 +178,16 @@ computeContributions = function(decoder, verbose=T) {
 	    df.season$Day    = wday(date, label=T)
 	    df.season$Hour   = hour(date)
 	    df.season$Season[months %in% c(1:4,10:12)] = 'Winter'
+      seas.avail       = names(table(df.season$Season))
       
-      agg              = aggregate(data = df.season, fmla, FUN = mean)
-	    agg.summer       = aggregate(data = subset(df.season, Season == 'Summer'), fmla.seas, FUN = mean)
-	    agg.winter       = aggregate(data = subset(df.season, Season == 'Winter'), fmla.seas, FUN = mean)
-      agg.diff         = agg.summer[,-c(1,2)] - agg.winter[,-c(1,2)]
-      agg.diff         = cbind(agg.summer[,c(1,2)], agg.diff)	    
+      # agg              = aggregate(data = df.season, fmla, FUN = mean)
+	    agg              = do.call(aggregate, list(fmla, data = df.season, FUN = mean)) 
+	    # if ("Summer" %in% seas.avail)
+		  #  agg.summer     = aggregate(data = subset(df.season, Season == 'Summer'), fmla.seas, FUN = mean)
+	    # if ("Winter" %in% seas.avail)
+			#  agg.winter     = aggregate(data = subset(df.season, Season == 'Winter'), fmla.seas, FUN = mean)
+      # agg.diff         = agg.summer[,-c(1,2)] - agg.winter[,-c(1,2)]
+      # agg.diff         = cbind(agg.summer[,c(1,2)], agg.diff)	    
 		
 	    return(list(ts = X, agg = agg))
 }
@@ -171,7 +205,10 @@ setMethod(f = "initialize",
               t0 = proc.time()
             }
             
-            .Object@UID     = as.character(decoder@UID)
+            .Object@UID            = as.character(decoder@UID)
+            
+            # compute stationary metrics
+            .Object@regime.type    = computeRegimeType(decoder)
             
             # compute stationary metrics
             .Object@benchmarks     = computeBenchmarks(decoder)
@@ -218,11 +255,14 @@ setMethod('dumpInterpretedData',
             data$benchmarks    = .Object@benchmarks
             data$temporalStats = .Object@temporalStats
             data$contributions = .Object@contributions
+            data$regime.type   = .Object@regime.type
             
             if (is.null(path)) return(data) else {
               save(list = c('data'), file = paste(path, .Object@UID, '.RData', sep=''))
               return(NULL)
             }
+            
+            return(data)
           })
 
 

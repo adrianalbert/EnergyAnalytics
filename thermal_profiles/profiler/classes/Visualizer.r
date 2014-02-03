@@ -19,7 +19,8 @@ setClass(
     UID           = "character",         # unique person ID
     timestamps    = "POSIXct",
     obs           = "numeric",
-    covar         = "data.frame",    
+    t.covar       = "data.frame",    
+    r.covar       = "data.frame",    
     HMM           = "list"    
   )
 )
@@ -29,7 +30,8 @@ setClass(
 
 setMethod(f = "initialize", 
           signature = "Visualizer",
-          definition = function(.Object, decoder, interpreter, interval = c(), verbose = T, covar = NULL) {
+          definition = function(.Object, decoder, interpreter, interval = c(), verbose = T, 
+                                t.covar = NULL, r.covar = NULL) {
             
             if (verbose) {
               cat(paste('*** Initializing Visualizer (', .Object@UID, ') ***\n', sep=''))
@@ -39,13 +41,26 @@ setMethod(f = "initialize",
             .Object@UID         = decoder@UID
             .Object@timestamps  = as.POSIXct(decoder@data.train$timestamps)
             .Object@obs         = decoder@data.train$obs
-            .Object@covar       = as.data.frame(decoder@data.train[,covar])
-            colnames(.Object@covar) = covar
-            
-            HMM         = list()            
+            HMM         = list()    
+            HMM$types   = interpreter@regime.type
             HMM$means   = decoder@HMM$fit
-            HMM$covar   = t(decoder@HMM$response$means[covar,])[decoder@HMM$states[,1]]
-            HMM$states  = decoder@HMM$states[,1]
+            
+            if (!is.null(r.covar)){            
+              .Object@r.covar   = as.data.frame(decoder@data.train[,r.covar])
+              colnames(.Object@r.covar) = r.covar
+              HMM$r.covar   = t(decoder@HMM$response$means[r.covar,])[decoder@HMM$states[,1]]
+            } else {
+              .Object@r.covar = NULL
+              HMM$r.covar = NULL
+            }            
+            if (!is.null(t.covar)){            
+              .Object@t.covar   = as.data.frame(decoder@data.train[,t.covar])
+              colnames(.Object@t.covar) = t.covar
+            } else {
+              .Object@t.covar = NULL
+            }            
+            
+            HMM$states  = interpreter@regime.type[decoder@HMM$states[,1]]
             HMM$sigma   = decoder@HMM$response$stdev[HMM$states]
             HMM$residual= decoder@HMM$residual      
             HMM$probProfile = interpreter@benchmarks$probProfile
@@ -64,11 +79,13 @@ setMethod(f = "initialize",
               HMM$sigma   = HMM$sigma[idx_ok]
               HMM$states  = HMM$states[idx_ok]
               HMM$residual= HMM$residual[idx_ok]
-              HMM$covar   = HMM$covar[idx_ok]
+              HMM$r.covar   = HMM$r.covar[idx_ok]
               HMM$contrib.ts  = HMM$contrib.ts[idx_ok,]
               HMM$fit         = HMM$fit[idx_ok]
-              .Object@covar= as.data.frame(.Object@covar[idx_ok,])
-              colnames(.Object@covar) = covar
+              .Object@t.covar= as.data.frame(.Object@t.covar[idx_ok,])
+              colnames(.Object@t.covar) = t.covar
+              .Object@r.covar= as.data.frame(.Object@r.covar[idx_ok,])
+              colnames(.Object@r.covar) = r.covar
             }  
             .Object@HMM = HMM
             
@@ -89,7 +106,7 @@ setMethod('plot',
             }
                                     
             if (type == 'HMM-ts') {
-              title = paste("Zoom-In: States and Observed Emissions (", x@UID,')',sep='')                       
+              title = paste("Zoom-In: Data and Decoded States (", x@UID,')',sep='')                       
               plt = plot_hmm_ts(x@HMM$means, x@HMM$sigma, x@HMM$states, x@timestamps, x@obs, 
                                 y.lab = 'kWh', title = title)
               return(plt)
@@ -97,9 +114,11 @@ setMethod('plot',
             
             # plot time series of state parameters
             if (type == 'HMM-coefs-ts') {
-              covar = colnames(x@covar)
-              covar_state = as.data.frame(as.matrix(x@HMM$covar))
-              colnames(covar_state) = covar
+              
+              r.covar = colnames(x@r.covar)
+              covar_state = as.data.frame(as.matrix(x@HMM$r.covar))
+              colnames(covar_state) = r.covar
+              
               title = paste("Zoom-In: States Parameters (", x@UID,')',sep='')                       
               plt = plot_hmm_coefs_ts(covar_state, x@HMM$states, x@obs, x@timestamps,  
                                       title = title)
@@ -151,46 +170,50 @@ setMethod('plot',
             }             
             
             if (type == 'HMM-dep-covar') {
-              covar = colnames(x@covar)
-              title = paste(paste(covar, " dependence (", x@UID,')',sep=''))
+              t.covar = colnames(x@t.covar)
+              title = paste(paste(t.covar, " dependence (", x@UID,')',sep=''))
               states = x@HMM$states
 #               states = paste(states, ': slope=', 
 #                              round(x@HMM$response$means[covar,states]*100, digits=3),'(/100)',sep='')
               
-              p     = plot_dep_covar(as.numeric(x@covar[,1]), x@obs, states, 
-                                     title = title, x.lab = covar, y.lab = 'kWh')  	
+              p     = plot_dep_covar(as.numeric(x@t.covar[,1]),
+                                     x@obs, 
+                                     states, 
+                                     title = title, x.lab = t.covar, y.lab = 'kWh')  	
               return(p)
             }            
             
             if (type == 'HMM-dep-covar-sep') {
-              covar = colnames(x@covar)
-              title = paste(paste(covar, " dependence (", x@UID,')',sep=''))
+              t.covar = colnames(x@t.covar)
+              title = paste(paste(t.covar, " dependence (", x@UID,')',sep=''))
               states = x@HMM$states
-              p     = plot_dep_covar(as.numeric(x@covar[,1]), x@obs, states, 
-                                     title = title, x.lab = covar, y.lab = 'kWh', separate=T)    
+              p     = plot_dep_covar(as.numeric(x@t.covar[,1]), x@obs, states, 
+                                     title = title, x.lab = t.covar, y.lab = 'kWh', separate=T)    
               return(p)
             }            
             
             if (type == 'HMM-trans-prob') {
-              covar = colnames(x@covar)
+              t.covar = colnames(x@t.covar)
               title = paste("Transition probabilities (", x@UID,')',sep='')  
               x_var = as.data.frame(1:nrow(x@HMM$probProfile[[1]]))
-              names(x_var) = covar
+              names(x_var) = t.covar
               p     = plot_tran_covar(x_var, x@HMM$probProfile, 
-                                      title = title, x.lab = covar, y.lab = 'P', markers = NULL)  	
+                                      title = title, x.lab = t.covar, y.lab = 'P', markers = NULL)  	
               return(p)
             }            
             
             if (type == 'HMM-stationary-prob') {
-              covar = colnames(x@covar)
-              title = paste("Stationary transition probabilities (", x@UID,')',sep='')
+              t.covar = colnames(x@t.covar)
+              title = paste("Stationary distribution (", x@UID,')',sep='')
               x_var = as.data.frame(1:nrow(x@HMM$probProfile[[1]]))
-              names(x_var) = covar
+              names(x_var) = t.covar
               dep   = x@HMM$steadyDistr
               dep   = list(as.matrix(dep))
-              
+              type  = x@HMM$types
+
               # plot 
-              p     = plot_tran_covar(x_var, dep, title = title, x.lab = covar, y.lab = 'P')    
+              p     = plot_tran_covar(x_var, dep, type = type,
+                                      title = title, x.lab = t.covar, y.lab = 'P')    
               return(p)
             }            
             
@@ -232,7 +255,7 @@ setMethod('plot',
             if (type == 'HMM-aggregate-season') {
               title = paste("Seasonal analysis (", x@UID,')',sep='')              
               df.mlt = melt(x@HMM$contributions, id.vars = c('Day', 'Hour', 'Season'))
-              covar = colnames(x@covar)
+              t.covar = colnames(x@t.covar)
               
               # plot 
               plt = ggplot(df.mlt, aes(x = Hour, y = value, color = Season, shape = Day))
@@ -254,19 +277,24 @@ setMethod('plot',
                       legend.text      = element_text(size=15),
                       legend.title     = element_text(size=15),
                       axis.ticks       = element_blank() ) + 
-                ylab('kWh') + xlab(covar) + 
+                ylab('kWh') + xlab('Hour of Day') + 
                 theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
                 ggtitle( title )
               return(plt)
             }          
             
             if (type == 'HMM-contrib-ts'){
-              title = paste("Zoom-In: HMM Covariate Contributions (", x@UID,')',sep='')
+              title = paste("Zoom-In: Contributions (", x@UID,')',sep='')
               df = x@HMM$contrib.ts
               df$obs = x@obs
               df$fit = x@HMM$fit
+              
+              r.covar = colnames(x@r.covar)
+              covar_state = as.data.frame(as.matrix(x@HMM$r.covar))
+              colnames(covar_state) = r.covar 
+              
               plot_components_ts(df, x@timestamps,
-                                 title = title, states = x@HMM$states, covars = x@covar)              
+                                 title = title, states = x@HMM$states, covars = covar_state)              
             }
             
           })

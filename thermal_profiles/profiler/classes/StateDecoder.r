@@ -18,7 +18,7 @@ source('./estimation/viterbi_states.R')
 
 ### Remove !!! 
 # Hack into the depmix direct likelihood maximization
-# source('depmixS4/R/depmixfit.R')
+# source('./estimation/depmixfit-modified.R')
 # source('classes/responseTruncNORM.R')
 ### Remove !!! 
 
@@ -72,7 +72,7 @@ setMethod(f = "initialize",
             
             # split up into test and train
             T_train   = trunc(nrow(data) * train.frac)
-            T_train   = trunc(T_train / 24) * 24
+            # T_train   = trunc(T_train / 24) * 24
             idx_train = 1:T_train
             idx_test  = setdiff(1:nrow(data), idx_train)    
             if (length(idx_train) > 0) data.train = data[idx_train,] else data.train = data.frame()                                      
@@ -168,65 +168,87 @@ defineHMM.depmix = function(data.train, K = 3, type = 'default',
 defineConstraints = function(mod) {
   
   pars  = c(unlist(getpars(mod)))
+  fixed = rep(0, length(pars))
   K_opt = nstates(mod) 
   nResp = length(mod@response[[1]][[1]]@parameters$coefficients)
-#   print(setpars(mod, value = 1:npar(mod)))
+  
+	# define non-negative base levels
   conMat= matrix(0, ncol = npar(mod), nrow=K_opt)
   bl    = rep(0, K_opt)
-  bu    = rep(Inf, K_opt)
+  bu    = rep(20, K_opt)
   for (j in 1:K_opt) {
     idx.base = K_opt + K_opt^2 * nResp + (nResp + 1) * (j-1) + 1
-    idx.stdv = K_opt + K_opt^2 * nResp + (nResp + 1) * j
     conMat[j,idx.base] = 1
   }
-
-  return(list(conMat = conMat, lower = bl, upper = bu))  
+  
+  # define 4-state model
+	# state 1 is bursty (B)
+	for (j in 1:K_opt){
+	  pars[K_opt*j*nResp + 1] = 0 # no temperature dependence in transition
+	}
+  pars[K_opt + K_opt^2*nResp + nResp] = 0 # no temperature dependence in response
+	fixed[K_opt*1:K_opt*nResp + 1] = 1
+	fixed[K_opt + K_opt^2*nResp + nResp] = 1
+	
+	# state 2 is no-HVAC (N)
+  pars[K_opt + K_opt^2*nResp + nResp*2 + 1] = 0 # no temperature dependence in response
+	fixed[K_opt + K_opt^2*nResp + nResp*2 + 1] = 1
+	
+	mod.cs = setpars(mod, pars)
+  return(list(conMat = conMat, lower = bl, upper = bu, mod = mod.cs, fixed = fixed))  
 }
 
 # ______________________________________
 # Wrapper to fit model
 
-fit.model = function(mod, maxit = 100, cur_tol = 1e-3){ 
+fit.model = function(mod, maxit = 100, tol = 1e-3){ 
   
     constr = defineConstraints(mod)
-#   contrl = donlp2Control()
-#   contrl$epsx = 1e-4
-#   contrl$epsfcn = 1e-8
-#   contrl$silent = F
-#   contrl$te1 <- contrl$te2 <- contrl$te3 <- T  
-#   contrl$nreset.multiplier = 2
+    mod.cs = constr$mod
+
+		# for donlp
+    # contrl = donlp2Control()
+    # contrl$epsx = 1e-4
+    # contrl$epsfcn = 1e-8
+    # contrl$silent = F
+    # contrl$te1 <- contrl$te2 <- contrl$te3 <- T  
+    # contrl$nreset.multiplier = 2
+
+    # print(constr)
+    
+    print(tol)
   
-  if (class(mod) == 'depmix')
-    mod.fit = fit(mod, useC=T, verbose = T, emcontrol = em.control(maxit = maxit, tol = cur_tol))
-#                   conrows = constr$conMat, 
-#                   conrows.lower = constr$lower, 
-#                   conrows.upper = constr$upper, 
-#                   method = 'rsolnp',
-#                   solnpcntrl=list(rho = 1, outer.iter = 400, inner.iter = 800, delta = 1e-6, tol = 1e-7, trace=1))
+    mod.fit = fit(mod.cs, verbose = T, emcontrol = em.control(maxit = maxit, tol = tol))
+    
+#    mod.fit = fit(mod.cs, verbose = T, 
+#                  conrows = constr$conMat, 
+#                  conrows.lower = constr$lower, 
+#                  conrows.upper = constr$upper, 
+#                  fixed  = constr$fixed,
+#                  method = 'rsolnp',
+#                  solnpcntrl=list(rho = 1, outer.iter = 100, inner.iter = 200, delta = 1e-5, tol = 1e-6, trace=1))
 #                  donlpcntrl=contrl)
 
-  if (class(mod) == 'HMM')
-    mod.fit = NULL # TODO: replace with actual model
   return(mod.fit)
 }
 
 # ______________________________________
 # Wrapper that treats for fitting errors
 
-fitHMM = function(mod, nRestarts = 1, verbose = T, maxit = 100){ 
+fitHMM = function(mod, nRestarts = 1, verbose = T, maxit = 100, tol = 1e-3){ 
 
   if (verbose) cat('---> Learning HMM...\n')
     
   # fit given model            
   ok = FALSE
   it = 0
-  cur_tol = 1e-3
+  cur_tol = tol
   
   while (!ok & it <= nRestarts) {
     
 #     out <- capture.output(fm  <- try(fit.model(mod, maxit = maxit, cur_tol = cur_tol)))                
 #     nlines = length(out)
-    fm  <- fit.model(mod, maxit = maxit, cur_tol = cur_tol)
+    fm  <- fit.model(mod, maxit = maxit, tol = cur_tol)
     nlines = 3
     
     if (class(fm) != 'try-error') {
@@ -249,7 +271,7 @@ fitHMM = function(mod, nRestarts = 1, verbose = T, maxit = 100){
 fitHMM.cv = function(data, K = 3, 
                      response.vars = NULL, transitn.vars = NULL, 
                      respstart = NULL, trstart = NULL, 
-                     nRestarts = 1, verbose = T, maxit = 100){ 
+                     nRestarts = 1, verbose = T, maxit = 100, tol = 1e-3){ 
   if (verbose)
     cat(paste('---> HMM Cross-Validation K =', K,'\n'))
   
@@ -261,7 +283,7 @@ fitHMM.cv = function(data, K = 3,
                       respstart     = respstart,
                       trstart       = trstart)
 
-  fm_half = fitHMM(mod, nRestarts = nRestarts, verbose = verbose, maxit = maxit)
+  fm_half = fitHMM(mod, nRestarts = nRestarts, verbose = verbose, maxit = maxit, tol = tol)
   
   if (class(fm_half) == 'try-error') 
     return(list(model.half = NA, metrics = c(MAPE.cv = NA, R2.cv = NA, BIC = NA, AIC = NA)))
@@ -284,7 +306,7 @@ fitHMM.cv = function(data, K = 3,
 learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(), 
                              verbose = T, 
                              Kmin = 3, Kmax = 3, 
-                             nRestarts = 1, maxit = 100, 
+                             nRestarts = 1, maxit = 100, tol = 1e-3, 
                              thresh.R2 = 0.8, thresh.MAPE = 0.15) { 
 
     # _______________________________________________
@@ -299,7 +321,7 @@ learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(),
                                               response.vars = resp.vars,
                                               transitn.vars = tran.vars, 
                                               respstart = NULL, trstart = NULL, 
-                                              nRestarts = nRestarts, verbose = verbose, maxit = maxit)
+                                              nRestarts = nRestarts, verbose = verbose, maxit = maxit, tol = tol)
         R2.cv   = result[[as.character(k)]]$metrics['R2.cv']
         MAPE.cv = result[[as.character(k)]]$metrics['MAPE.cv']
         if (R2.cv > thresh.R2 | MAPE.cv < thresh.MAPE) done = T else k = k + 1
@@ -334,7 +356,7 @@ learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(),
                        transitn.vars = tran.vars, 
                        respstart = NULL, 
                        trstart = trstart)
-    fm     = fitHMM(mod, nRestarts = nRestarts, verbose = verbose, maxit = maxit)
+    fm     = fitHMM(mod, nRestarts = nRestarts, verbose = verbose, maxit = maxit, tol = tol)
     
     # ______________________
     # Save computation
@@ -508,7 +530,7 @@ setMethod('learnStateDecoder',
                                    resp.vars = .Object@resp.vars, tran.vars = .Object@tran.vars, 
                                    verbose = T, 
                                    Kmin = controls$Kmin, Kmax = controls$Kmax, 
-                                   nRestarts = controls$nRestarts, maxit = controls$maxit, 
+                                   nRestarts = controls$nRestarts, maxit = controls$maxit, tol = controls$tol, 
                                    thresh.R2 = controls$thresh.R2, thresh.MAPE = controls$thresh.MAPE)
             
             # compute prediction accuracy out-of-sample
