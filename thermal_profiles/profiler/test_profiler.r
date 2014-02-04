@@ -28,6 +28,9 @@ source('stateVisualizerWrapper.r')
 PLOTS_PATH = '~/Dropbox/OccupancyStates/plots/bakersfield/'
 dir.create(file.path(PLOTS_PATH))
 
+DUMP_PATH = '~/Dropbox/OccupancyStates/fits/bakersfield/'
+dir.create(file.path(DUMP_PATH))
+
 # load consumption and weather data
 load('~/Dropbox/OccupancyStates/data/selection_consumption.RData')
 
@@ -54,13 +57,13 @@ controls = list(
   thresh.R2 = 0.85, thresh.MAPE = 0.10,
   test.periods = 12)
 
-dir.create(file.path(PLOTS_PATH, UID))
 # learn model
 source('stateProcessorWrapper.r')
 res = stateProcessorWrapper(raw_data, wthr_data, 'Bob', 
                             controls = controls,
                             train.frac = 0.95, 
-                            verbose = F)
+                            verbose = F, 
+                            dump_path = DUMP_PATH)
 
 # visualizations
 source('stateVisualizerWrapper.r')
@@ -68,7 +71,7 @@ vis.interval = 3*24
 interval = c(timesteps[1], timesteps[1+vis.interval])   
 vis = stateVisualizerWrapper(res$decoder, res$interpreter,
                              interval = interval,
-                             plots_path = paste(PLOTS_PATH, '/', UID, '/', sep=''))
+                             plots_path = PLOTS_PATH)
 
 # Rprof(NULL)
 # profiled = summaryRprof(filename='Rprof.out', memory = 'none')

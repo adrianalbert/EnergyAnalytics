@@ -25,6 +25,7 @@ setClass(
     UID           = "character",         # unique person ID
     benchmarks    = "list",
     regime.type   = 'character',         # state type interpretation
+    activ.level   = 'character',         # activity level
     temporalStats = "list",
     contributions = "list"
     )
@@ -42,8 +43,8 @@ computeRegimeType = function(decoder){
   trans  = decoder@HMM$transition
   covar  = rownames(respm)[2]
   
-  # interpret states
-  # sort states by response magnitude/sign and base magnitude
+  # interpret states: thermal response
+  # sort states by response magnitude/sign 
   types = paste('Type', 1:K_opt)
   limits= c(H.Hi = -Inf, H.Lo = -2, N = -0.025, N = 0.025, C.Lo = 2, C.Hi = Inf) 
   types = c('H.Hi', 'H.Lo', 'N', 'C.Lo', 'C.Hi')
@@ -52,10 +53,16 @@ computeRegimeType = function(decoder){
     i = findInterval(r[2], limits)
     return(types[i])
   })
-  
   regime = paste(regime, ' (', 1:length(regime), ')', sep = '')
+    
+  # interpret states: baseloads
+  # sort states by base magnitude
+  thresh= 0.5
+  activ = paste('Activity', 1:K_opt)
+  CVs   = stdev / respm[1,]  
+  activ = c('Low', 'High')[1 + 1*(CVs > thresh)]
   
-  return(regime)
+  return(list(thermal = regime, activity = activ))
   
 }
 
@@ -70,23 +77,40 @@ computeBenchmarks = function(decoder){
   respm  = decoder@HMM$response$means
   trans  = decoder@HMM$transition
   covar  = rownames(respm)[2]
-  
-  # compute "stationary" probabilities given dependent variable (temperature)
-  # x_var  = decoder@HMM$model@transition[[1]]@x
-  x_var  = cbind(rep(1,121), seq(0, 120, by=1))
   idx.rm = c(length(colnames(trans))-1, length(colnames(trans)))
-  colnames(x_var) = colnames(trans)[-idx.rm]
-  dep    = lapply(1:K_opt, function(s) {
-    c = as.matrix(subset(trans, From == s)[,-idx.rm])
-    y = x_var %*% t(c)
-    y = exp(y) / rowSums(exp(y))
-    return(y)
-  })
-  prob= dep
-
-  dep = do.call('cbind', dep)
-  dis = lapply(1:nrow(dep), function(i) {
-    M = matrix(dep[i,], ncol = sqrt(ncol(dep)), byrow=T)
+  
+  # function build transition matrices for given covariates
+  compute_trans_matrix = function(x_var) {
+    
+    # apply model to input covariates
+    colnames(x_var) = colnames(trans)[-idx.rm]
+    dep    = lapply(1:K_opt, function(s) {
+      c = as.matrix(subset(trans, From == s)[,-idx.rm])
+      y = x_var %*% t(c)
+      y = exp(y) / rowSums(exp(y))
+      return(y)
+    })
+    prob= dep
+    
+    # build transition matrices
+    dep = do.call('cbind', dep)
+    dis = lapply(1:nrow(dep), function(i) {
+      M = matrix(dep[i,], ncol = sqrt(ncol(dep)), byrow=T)
+      return(M)              
+    })
+    names(dis) = x_var[,2]
+    return(list(prob,dis))    
+  }
+  
+  # compute transition matrices
+  x_var = cbind(rep(1,121), seq(0, 120, by=1))
+  res.m = compute_trans_matrix(x_var)  
+  mat   = res.m[[2]]
+  prob  = res.m[[1]]
+  
+  # compute stationary distributions
+  dis = lapply(1:length(mat), function(i) {
+    M = mat[[i]]
     p = abs(as.double(eigen(t(M))$vectors[,1]))
     p = p / sum(p)
     return(p)              
@@ -108,9 +132,13 @@ computeBenchmarks = function(decoder){
     }
     return(t)
   })     
-  tau = do.call('rbind', tau)                      
+  tau = do.call('rbind', tau)           
+  
+  # compute overall state distribution
+  pi0 = table(decoder@HMM$states$state)
+  pi0 = pi0/sum(pi0)
               
-  return(list(probProfile = prob, steadyDistr = dis, duration = tau))
+  return(list(probProfile  = prob, steadyDistr = dis, duration = tau, pi0 = pi0))
 }            
 
 # _____________________________________
@@ -208,7 +236,9 @@ setMethod(f = "initialize",
             .Object@UID            = as.character(decoder@UID)
             
             # compute stationary metrics
-            .Object@regime.type    = computeRegimeType(decoder)
+            reg.type               = computeRegimeType(decoder)
+            .Object@regime.type    = reg.type$thermal
+            .Object@activ.level    = reg.type$activity
             
             # compute stationary metrics
             .Object@benchmarks     = computeBenchmarks(decoder)
@@ -256,28 +286,12 @@ setMethod('dumpInterpretedData',
             data$temporalStats = .Object@temporalStats
             data$contributions = .Object@contributions
             data$regime.type   = .Object@regime.type
+            data$activ.level   = .Object@activ.level
             
             if (is.null(path)) return(data) else {
-              save(list = c('data'), file = paste(path, .Object@UID, '.RData', sep=''))
+              save(list = c('data'), file = paste(path, .Object@UID, '_interpreted.RData', sep=''))
               return(NULL)
             }
             
             return(data)
-          })
-
-
-# _______________________________________
-# Extract features for classification
-
-setGeneric(
-  name = "extractUserFeatures",
-  def = function(.Object, verbose = T)
-  {standardGeneric("extractUserFeatures")}
-)
-setMethod('extractUserFeatures',
-          signature  = 'Interpreter',
-          definition = function(.Object, verbose=T) {
-            
-            # TODO: extract & format features for classifying ppl
-            
           })

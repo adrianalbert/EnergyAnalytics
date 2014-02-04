@@ -5,7 +5,7 @@
 # Read in model result data. 
 # 
 # Adrian Albert
-# Last modified: October 2013.
+# Last modified: February 2014.
 # #########################################################################
 
 library('methods')
@@ -16,7 +16,7 @@ require('lmtest')
 library('pls')
 library('reshape')
 
-# clean-up previous definitions of methods for class Person
+# clean-up previous definitions of methods for class 
 removeClass('DataImporter')
 
 # ________________________
@@ -26,26 +26,33 @@ setClass(
   Class = "DataImporter",
   representation = representation(
     STATES_PAR     = "data.frame",          # state parameters
-    TRANSITION     = "data.frame",          # transition parameters
-    STATES_SES     = "data.frame"           # seasonal breakdown of states
+    TRANSITION     = "data.frame"           # transition parameters
   )
 )
 
-# function to read in data from files
-read_files = function(path, pattern) {
-  cur_files  = list.files(path = path, pattern = pattern, full.names = T, recursive = T)
-  res        = data.frame()
-  for (f in cur_files) {
-    if (file.info(f)$size < 10) next
-    tmp = read.csv(f)
-    if (nrow(res) == 0) res = tmp else res = rbind(res, tmp)
-  }
-  res <- res[,colSums(is.na(res))<nrow(res)]
-  res$X = NULL
+# function to read in data from RData files
+read_rdata_files = function(path) {
   
-  return(list(data = res, noChunks = length(cur_files)))
+  # read decoder data
+  dec_files  = list.files(path = path, pattern = '*decoded*', full.names = T, recursive = T)
+  int_files  = list.files(path = path, pattern = '*interpreted*', full.names = T, recursive = T)
+  cur_uids   = list.files(path = path, pattern = '*interpreted*', full.names = F, recursive = T)  
+  cur_uids   = sapply(strsplit(cur_uids, '_'), function(l) as.numeric(l[[1]]))
+  resp       = list()
+  sder       = list()
+  init       = list()
+  for (i in 1:length(cur_uids)) {
+    load(dec_files[i])
+    resp[[1+length(resp)]] = cbind(data$response$means, UID = cur_uids[i])
+    sder[[1+length(sder)]] = cbind(rbind(stdev = data$response$stdev, stderr = data$response$stderr[2,]), UID = cur_uids[i])
+    load(int_files[i])
+    init[[1+length(init)]] = cbind(data$benchmarks$pi0, UID = cur_uids[i])
+  }
+  
+  # 
+  
+  return(list(data = res))
 }
-
 # _____________________________________________________
 # Constructor method for class DataImporter
 

@@ -3,7 +3,7 @@
 # Extracts occupancy states from obs time series data.
 # 
 # Adrian Albert
-# Last modified: October 2013.
+# Last modified: February 2014.
 # -----------------------------------------------------------------------
 
 library('timeDate')
@@ -479,6 +479,24 @@ extractParameters.depmixS4 = function(fm_opt){
 # ________________________________________
 # Compute decoding performance statistics 
 
+estimateStandardErrors = function(states, data, resp.vars) {
+  
+  K = length(unique(states))
+  resp.vars = setdiff(resp.vars, '(Intercept)')
+  stderr = sapply(1:K, function(k) {
+    fmla = as.formula(paste('obs ~ ', resp.vars))
+    fit  = lm(fmla, data[which(states == k),])
+    se   = summary(fit)$coefficients[,2]
+    return(se)
+  })
+  
+  return(stderr)
+  
+}
+
+# ________________________________________
+# Compute decoding performance statistics 
+
 setGeneric(
   name = "computeDecodingStats",
   def = function(.Object, verbose = T){standardGeneric("computeDecodingStats")}
@@ -542,6 +560,11 @@ setMethod('learnStateDecoder',
             # compute decoding performance stats
             .Object@HMM = extractParameters.depmixS4(model$model)
                                         
+            # estimate state-specific coefficient standard errors
+            # note that this over-estimates errors because all variance is attributed just to errors in state-based
+            # coefficients, not also to the coefficients of the transition matrix
+            .Object@HMM$response$stderr = estimateStandardErrors(.Object@HMM$states[,1], .Object@data.train, .Object@resp.vars)
+                        
             # compute some stats
             .Object = computeDecodingStats(.Object)
             
@@ -574,7 +597,7 @@ setMethod('dumpDecodedData',
             data$fit.avg  = NULL
             
             if (is.null(path)) return(data) else {
-              save(list = c('data'), file = paste(path, .Object@UID, '.RData', sep=''))
+              save(list = c('data'), file = paste(path, .Object@UID, '_decoded.RData', sep=''))
               return(NULL)
             }
           })

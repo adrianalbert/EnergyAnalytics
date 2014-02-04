@@ -48,8 +48,6 @@ stateProcessorWrapper = function(cur_data, cur_covar, UID,
   decoder   = learnStateDecoder(decoder, verbose = T)
   show(decoder)
   
-  print(bla)
-  
   # perform interpretation and feature extraction
   interpreter  = new(Class = "Interpreter", decoder)
   
@@ -58,8 +56,10 @@ stateProcessorWrapper = function(cur_data, cur_covar, UID,
   
   decode.dump  = dumpDecodedData(decoder, path = dump_path)
   interp.dump  = dumpInterpretedData(interpreter, path = dump_path)    
-	features     = extractUserFeatures(interpreter)
-  
-  return(list(decoder = decoder, interpreter = interpreter, features = features, decoded_data = decode.dump, interp_data = interp.dump))
+	
+  return(list(decoder      = decoder, 
+              interpreter  = interpreter, 
+              decoded_data = decode.dump, 
+              interp_data  = interp.dump))
 }
 

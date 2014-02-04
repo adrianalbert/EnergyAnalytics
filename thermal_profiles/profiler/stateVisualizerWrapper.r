@@ -36,7 +36,11 @@ stateVisualizerWrapper = function(decoder, interpreter,
 		                     t.covar = 'TemperatureF',
 		                     r.covar = 'TemperatureD')
 
-		# just the data
+    # place plots in a directory
+		dir.create(file.path(plots_path, visualizer@UID))
+    plots_path = paste(plots_path, '/', visualizer@UID, '/', sep = '')
+    
+    # just the data
 		png(paste(plots_path, visualizer@UID, '_raw.png', sep=''), width=1400, height=600, res = 150)
 		plot(visualizer)
 		dev.off()
