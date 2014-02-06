@@ -101,9 +101,9 @@ stateVisualizerWrapper = function(decoder, interpreter,
 		dev.off()
 
 		# error forecasts
-    png(paste(plots_path, visualizer.all@UID,'HMM-err-horiz.png',sep=''), width = 1000, height = 400, res = 150)
-		print(plot(visualizer.all, type = 'HMM-err-horiz'))
-		dev.off()
+#     png(paste(plots_path, visualizer.all@UID,'HMM-err-horiz.png',sep=''), width = 1000, height = 400, res = 150)
+# 		print(plot(visualizer.all, type = 'HMM-err-horiz'))
+# 		dev.off()
 
 		# aggregate seasonal contributions
     png(paste(plots_path, visualizer.all@UID,'HMM-aggregate-season.png',sep=''), width = 1600, height = 600, res = 150)

@@ -62,48 +62,6 @@ setMethod(f = "initialize",
             return(.Object)
           })
 
-# ____________________________________________________
-# Method to extract data to pass on to other modules
-
-setGeneric(
-  name = "propagateDistribution",
-  def = function(.Object, TRANSITION, UID_vec = NULL){standardGeneric("propagateDistribution")}
-)
-setMethod('propagateDistribution',
-          signature  = 'Scheduler',
-          definition = function(.Object, TRANSITION, UID_vec = NULL) {
-            
-            # prepare distribution data
-            if (!is.null(UID_vec)) {
-              trans = subset(TRANSITION, UID %in% UID_vec)
-            } else {
-              trans = TRANSITION
-            }            
-            trans = subset(trans, variable == "Distribution")
-            trans$ZIPCODE  = NULL            
-            trans$variable = NULL
-            N = length(unique(trans$UID))
-            
-            # extract distribution according to given profile
-            covar_values = as.numeric(.Object@INPUTS$PROFILE[,1])
-            covar = names(.Object@INPUTS$PROFILE)
-            tau   = length(covar_values)
-            idx   = as.integer(round(covar_values))
-            if (any(idx > 120)) idx[idx>120] = 120
-            vars  = c('UID', 'State', paste('X',idx, sep=''))
-            trans = trans[,vars]
-            
-            # compute MLE of state distribution            
-            trans          = melt(trans, id.vars = c("UID", "State"))
-            trans$variable = as.numeric(gsub('X', '', trans$variable))
-            tr.mle         = aggregate(value ~ variable + UID, trans, FUN = which.max)    
-            names(tr.mle)  = c(covar, 'UID','State')
-            tr.mle$Time    = rep(1:tau, N)
-            # tr.ret = cast(tr.mle, UID ~ variable)
-            
-            return(tr.mle)     
-          })      
-
 # __________________________________________________________
 # Method to set up & solve deterministic scheduling problem
 

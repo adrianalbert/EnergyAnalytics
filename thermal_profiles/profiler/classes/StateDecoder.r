@@ -248,7 +248,7 @@ fitHMM = function(mod, nRestarts = 1, verbose = T, maxit = 100, tol = 1e-3){
     
 #     out <- capture.output(fm  <- try(fit.model(mod, maxit = maxit, cur_tol = cur_tol)))                
 #     nlines = length(out)
-    fm  <- fit.model(mod, maxit = maxit, tol = cur_tol)
+    fm  <- try(fit.model(mod, maxit = maxit, tol = cur_tol))
     nlines = 3
     
     if (class(fm) != 'try-error') {
@@ -553,7 +553,7 @@ setMethod('learnStateDecoder',
             
             # compute prediction accuracy out-of-sample
             performance          = list()            
-            performance$accuracy = computePredictionAccuracy(model$model, .Object@data.test, test.periods = 5)
+            performance$accuracy = NULL #computePredictionAccuracy(model$model, .Object@data.test, test.periods = 5)
             performance$cv.stats = model$metrics
             .Object@performance  = performance
                             
@@ -591,6 +591,7 @@ setMethod('dumpDecodedData',
               cat(paste('*** Dumping decoded data (', .Object@UID, ')***\n', sep=''))
             
             data          = .Object@HMM
+            data$UID      = .Object@UID
             data$states   = data$states[,1]
             data$fit      = NULL
             data$residual = NULL
