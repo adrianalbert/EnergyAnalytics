@@ -29,16 +29,19 @@ weather$Hour = hour(as.POSIXct(weather$Time))
 weather  = aggregate(TemperatureF ~ Hour, data = weather, FUN = mean)
 weather$Hour = NULL
 weather$TemperatureF = weather$TemperatureF + 25
+weather = rbind(weather, weather$TemperatureF[nrow(weather)]*0.95)
 
 # Goal data
 Goal = data.frame(Goal = 50 * weather$TemperatureF * (1 + 0.1*runif(23)))
 # Goal = data.frame(Goal = rep(1200,23))
 
+# load in baby names
+baby_names  = read.csv('~/Dropbox/OccupancyStates/data/baby-names.csv')
+
 # ____________________________________________________
 # Format data for scheduler
 
 # read in data
-source('classes/DataImporter.r')
 importer = new(Class='DataImporter', path = DATA_PATH)
 importer
 
@@ -60,8 +63,50 @@ save.image(file = '~/Dropbox/OccupancyStates/data/bakersfield_processed_profiles
 # # solve deterministic proglem
 # scheduler = solveDeterministic(scheduler)
 # 
+
 # ____________________________________________________
-# Produce plots 
+# Produce example plots 
+
+# plot performance stats
+png(filename = paste(PLOTS_PATH, 'performance_cross_validation.png', sep=''), height = 600, width = 800, res = 180)
+plot(importer)
+dev.off()
+
+# sample example profiles and assign names to users
+uids_sel        = sample(names(inputs), 4)
+names(uids_sel) = sample(baby_names$name, 4)
+selection       = inputs[uids_sel]
+names(selection)= names(uids_sel)
+
+# plot example profiles
+png(filename = paste(PLOTS_PATH, 'example_profiles.png', sep=''), height = 800, width = 2000, res = 150)
+plot(importer, type = 'profiles', inputs = selection)
+dev.off()
+
+# plot covariance matrices
+plts = plot(importer, type = 'covmat', inputs = selection)
+png(filename = paste(PLOTS_PATH, 'example_covmat_response.png', sep=''), height = 600, width = 1800, res = 180)
+plts[['response']]
+dev.off()
+png(filename = paste(PLOTS_PATH, 'example_covmat_baseload.png', sep=''), height = 600, width = 1800, res = 180)
+plts[['baseload']]
+dev.off()
+
+# plot example propagated distributions
+png(filename = paste(PLOTS_PATH, 'example_distribution.png', sep=''), height = 1000, width = 800, res = 160)
+plot(importer, type = 'distributions', inputs = selection)
+dev.off()
+
+# plot example state space charaterization (a, b, sigma)
+source('classes/DataImporter.r')
+png(filename = paste(PLOTS_PATH, 'example_state_space.png', sep=''), height = 600, width = 1600, res = 180)
+plot(importer, type = 'state-space', inputs = uids_sel)
+dev.off()
+
+# ____________________________________________________
+# Produce scheduling plots
+
+
 
 # # plot schedule heatmap
 # selected.rnd = importer@STATES_PAR$UID[sample(1:nrow(importer@STATES_PAR), 20)]
