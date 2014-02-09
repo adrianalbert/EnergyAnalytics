@@ -287,34 +287,6 @@ setMethod('plot',
             }
             
             # input profiles
-            if (type == 'inputs') {   
-              
-              df = cbind(x@INPUTS$PROFILE, Generation.kWh = x@SETUP$g, Time = 1:x@INPUTS$HORIZON)
-              df = melt(df, id.vars = 'Time')
-              
-              # construct plot
-              plt = ggplot(df, aes(x = Time, y = value)) + 
-                geom_point(size = 2.5) + geom_line(size=1.5) + 
-                facet_wrap(~variable, ncol = 2, scales = 'free')
-              plt = plt + theme_bw() + 
-                theme(panel.grid.major = element_blank(),
-                      panel.grid.minor = element_blank(),
-                      panel.background = element_blank(),
-                      strip.text.x     = element_text(size=18),
-                      axis.text.y      = element_text(size=18), 
-                      axis.text.x      = element_text(size=18),
-                      axis.title.y     = element_text(size=18),
-                      axis.title.x     = element_text(size=18),
-                      plot.title       = element_text(size=20),            
-                      legend.text      = element_text(size=18),
-                      legend.title     = element_text(size=18),
-                      axis.ticks = element_blank()) + 
-                ggtitle('Input Profiles') + xlab('Hour of Day')
-              
-              return(plt)                                        
-            }
-            
-            # input profiles
             if (type == 'aggregates') {   
               
               cntrl = colSums(x@OUTPUT$deterministic$C)

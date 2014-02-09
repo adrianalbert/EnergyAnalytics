@@ -298,7 +298,7 @@ setMethod('plot',
                       plot.title       = element_text(size=20),   
                       legend.position  = c(0.8, 0.5),
                       axis.ticks = element_blank()) + 
-                ylab('pdf') + ggtitle("Cross-Validation Performance")       
+                ylab('pdf') + xlab('') + ggtitle("Cross-Validation Performance")       
               
               return(plt)
             }
@@ -341,13 +341,15 @@ setMethod('plot',
 
               plt = ggplot(profs, aes(x = Hour, y = mu, color = Profile))
               plt = plt + geom_point(size = 2) + geom_line(size=1.5)
-              plt = plt + geom_errorbar(aes(ymax = mu + sd, ymin = mu - sd))              
-              plt = plt + facet_wrap( Profile ~ User, nrow=2, scales = 'free')
+              plt = plt + geom_errorbar(aes(ymax = mu + sd, ymin = mu - sd))        
+              #facet_grid(species~year, scales = "free_y", drop = FALSE)
+              plt = plt + facet_grid( Profile ~ User, scales = 'free_y')
               plt = plt + theme_bw() + 
                 theme(panel.grid.major = element_blank(),
                       panel.grid.minor = element_blank(),
                       panel.background = element_blank(),
                       strip.text.x     = element_text(size=18),
+                      strip.text.y     = element_text(size=18), 
                       axis.text.y      = element_text(size=18), 
                       axis.text.x      = element_text(size=18),
                       axis.title.y     = element_text(size=18),
@@ -425,7 +427,7 @@ setMethod('plot',
               
               pla = ggplot(mat, aes(x=Hour, y=Probability, color = Regime))
               pla = pla + geom_point(size=3) + geom_line(size=1.5)
-              pla = pla + facet_wrap(~ User, ncol = 1)
+              pla = pla + facet_wrap(~ User, nrow = 1)
               pla = pla + theme_bw() + 
                 theme(panel.grid.major = element_blank(),
                       panel.grid.minor = element_blank(),
@@ -490,7 +492,7 @@ setMethod('plot',
                       legend.text     = element_text(size=18),
                       plot.title       = element_text(size=22),   
                       axis.ticks = element_blank()) + 
-                xlab('Baseload [kWh]') + ylab('Response [kWh/F]') + ggtitle("Regimes Probability Distribution")       
+                xlab('Baseload [kWh]') + ylab('Response [kWh/F]') + ggtitle("State Space Characterization")       
               
               return(pla)
             }
