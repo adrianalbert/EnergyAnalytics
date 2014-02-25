@@ -195,13 +195,13 @@ dev.off()
 
 # cost vs budget
 library('pracma')
-png(filename = paste(PLOTS_PATH, 'no_users_vs_budget.png', sep=''), height = 400, width = 1000, res = 170)
+png(filename = paste(PLOTS_PATH, 'no_users_vs_budget.png', sep=''), height = 600, width = 1000, res = 150)
 plotyy(dh$Budget, dh$Cost, dh$Budget, dh$No.Selected, gridp = TRUE, box.col = "grey",
-       type = "b", lwd = 3, lty = 1, cex.lab = 2, cex.axis = 2, cex.main = 2, 
+       type = "b", lwd = 3, lty = 1, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.3, 
        xlab = "Effort Budget beta [deg F x 5 / 24hrs]", ylab = "Expected Cost", 
        main = 'DR Program Administration',
        col.y1 = "navy", col.y2 = "maroon")
-legend(4.5,950, # places a legend at the appropriate place 
+legend(4,990, # places a legend at the appropriate place 
        c("Expected Deviation Penalty","No. Users Enrolled"), # puts text in the legend               
        lty=c(1,1), # gives the legend appropriate symbols (lines)       
        lwd=c(2.5,2.5),col=c("navy","maroon"), cex = 1)
