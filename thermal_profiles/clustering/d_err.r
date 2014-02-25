@@ -4,11 +4,13 @@
 # C-Rcpp implementation of kError algorithm distance computations.
 #
 # Adrian Albert
-# September 2013
+# February 2014
 # --------------------------------------
 
 library('Rcpp')
 library('inline')
+library('MASS')
+library('parallel')
 
 # ------------------------------------------
 # Pure R implementations for testing
@@ -18,18 +20,30 @@ library('inline')
 # Distance function (chi-square)
 d_err <- function(x, sx, y, sy) {
   p    = length(x)
-  # stat = sum((x - y)^2 /(sx + sy))
-  # d    = pchisq(stat, p)
   d    = sum((x - y)^2 /sx)
   return(d)
 }
 
-d_err_mat <- function(X, SX, Y, SY) {
-  D = matrix(nrow=nrow(X), ncol=nrow(Y))
-  for (x in 1:nrow(X))
-    for (y in 1:nrow(Y))
-      D[x,y] = d_err(X[x,], SX[x,], Y[y,], SY[y,])
-  return(D)
+# _____________________________________________________________
+# Distance function (Mahalanobis) for non-diagonal covariance
+d_err_cov <- function(x, S, mu) {
+  S1   = ginv(S)
+  d    = t(x - mu) %*% S1 %*% (x - mu)
+  return(d)
+}
+
+# ________________________
+# Compute distance matrix 
+d_err_mat <- function(X, SX, M) {
+  idx = expand.grid(x=1:nrow(X), m=1:nrow(M))
+  D   = lapply(1:nrow(idx), function(i){
+    x = X[idx[i,'x'],]
+    S = SX[[idx[i,'x']]]
+    mu= M[idx[i,'m'],]
+    d = d_err_cov(x, S, mu)
+    return(d)
+  })
+  D = matrix(unlist(D), nrow = nrow(X), byrow=T)
 }
 
 # ------------------------------------------
@@ -104,7 +118,7 @@ init_d_err_mat = function() {
 # _______________________
 # Initialize C functions
 
-cat('Initializing C functions...\n')
-#d_err_c     = init_d_err()
-d_err_mat_c = init_d_err_mat()
+# cat('Initializing C functions...\n')
+# d_err_c     = init_d_err()
+# d_err_mat_c = init_d_err_mat()
 

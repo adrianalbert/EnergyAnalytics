@@ -32,6 +32,7 @@ setClass(
     VOLATILITY      = "data.frame",          # state-specific volatilities
     INIT.DIS        = "data.frame",          # initial distribution over states
     TRANSITION      = "data.frame",          # transition parameters
+    COV.MATRIX      = "data.frame",          # covariance matrix of users
     PERFORMANCE     = "data.frame"           # performance stats
   )
 )
@@ -447,29 +448,72 @@ setMethod('plot',
             }
             
             # state space for selected users
-            if (type == 'state-space') {
+            if (type == 'state-stats') {
               
-              # uid to name key
+              # uid to name key              
               tmp= names(inputs)
               names(tmp) = inputs
               
               # form plotting dataset
-              df = subset(x@RESPONSE, UID %in% inputs)
-              levels(df$variable) <- c('Baseload', 'Response')
-              df$UID = tmp[as.character(df$UID)]
+              df = subset(x@RESPONSE, UID %in% tmp)
+              levels(df$variable) <- c('Baseload [kWh]', 'Response [kWh/F]')
+              df$UID = inputs[as.character(df$UID)]
               df = melt(df)
               names(df)[3] = 'Regime'
-              de = subset(x@RESP.ERR, UID %in% inputs)
+              dh = subset(x@VOLATILITY, UID %in% tmp)
+              dh = melt(dh, id.vars = 'UID')
+              names(dh)[2] = 'Regime'
+              dh$variable = 'Volatility [kWh]'
+              dh = dh[,names(df)]
+              dh$UID = inputs[as.character(dh$UID)]
+              df = rbind(df, dh)
+              
+              # compose plot
+              pla = ggplot(df, aes(x = value, color = variable))
+              pla = pla + geom_density(size = 2)
+              pla = pla + facet_wrap(~variable, scales = 'free', nrow=1)
+              pla = pla + theme_bw() + 
+                theme(panel.grid.major = element_blank(),
+                      panel.grid.minor = element_blank(),
+                      panel.background = element_blank(),
+                      strip.text.x     = element_text(size=18),
+                      axis.text.y      = element_text(size=18), 
+                      axis.text.x      = element_text(size=18),
+                      axis.title.y     = element_text(size=18),
+                      axis.title.x     = element_text(size=18),
+                      legend.title     = element_text(size=18),
+                      legend.position  = 'none',
+                      plot.title       = element_text(size=22),   
+                      axis.ticks = element_blank()) + 
+                xlab('Value') + ylab('pdf') + ggtitle("State Characteristics Distributions")       
+              
+              return(pla)
+            }
+            
+            # state-space stats plots
+            if (type == 'state-space') {
+              
+              # uid to name key              
+              tmp= names(inputs)
+              names(tmp) = inputs
+              
+              # form plotting dataset
+              df = subset(x@RESPONSE, UID %in% tmp)
+              levels(df$variable) <- c('Baseload', 'Response')
+              df$UID = inputs[as.character(df$UID)]
+              df = melt(df)
+              names(df)[3] = 'Regime'
+              de = subset(x@RESP.ERR, UID %in% tmp)
               levels(de$variable) <- c('Base.Err', 'Resp.Err')
-              de$UID = tmp[as.character(de$UID)]
+              de$UID = inputs[as.character(de$UID)]
               de = melt(de)
               names(de)[3] = 'Regime'
-              dh = subset(x@VOLATILITY, UID %in% inputs)
+              dh = subset(x@VOLATILITY, UID %in% tmp)
               dh = melt(dh, id.vars = 'UID')
               names(dh)[2] = 'Regime'
               dh$variable = 'Volatility'
               dh = dh[,names(df)]
-              dh$UID = tmp[as.character(dh$UID)]
+              dh$UID = inputs[as.character(dh$UID)]
               df = rbind(df, de, dh)
               df = cast(df, Regime + UID ~ variable)
               

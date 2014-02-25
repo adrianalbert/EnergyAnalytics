@@ -21,16 +21,29 @@
 # OBJ:  clustering objective
 # 
 # Adrian Albert
-# Last modified: September 2013.
+# Last modified: February 2014.
 # #########################################################################
 
-source('./clustering/d_err.r')
+source('../clustering/d_err.r')
 
 # ___________________________________
 # Compute center of cluster
 computeCenter <- function(X, S) {
-  CS = 1 / colSums(1/S) 
-  CX = CS * colSums(X / S)
+  
+  # compute cluster covariance matrix
+  S1 = lapply(S, function(s) ginv(s))
+  SS = S1[[1]]
+  if (length(S1)>1) for (i in 2:length(S1)) SS = SS + S1[[i]]
+  CS = ginv(SS)
+  
+  # compute cluster mean
+  if (length(S1) == 1) X = t(as.matrix(X))
+  Sx = lapply(1:length(S1), function(i) S1[[i]] %*% X[i,])
+  xx = Sx[[1]]
+  if (length(Sx)>1) for (i in 2:length(Sx)) xx = xx + Sx[[i]]
+  CX = CS %*% xx
+  CX = as.numeric(CX)
+  
   return(list(CX = CX, CS = CS))
 }
 
@@ -46,31 +59,34 @@ kError <- function(X, S, K, iter = 10, verbose = T) {
   }
   
   # main interation loop
-  i = 0; done = 0;
+  i = 0; done = 0; obj = NA;
   while (i < iter & !done ){    
     i       = i + 1
     ASS_old = ASS
-    if (verbose) cat(paste("Iteration", i, '\n'))
     
     # M-step
     CX = matrix(nrow=K, ncol=p)
-    CS = matrix(nrow=K, ncol=p)
+    CS = list()
     for (k in 1:K) {
       idx = which(ASS == k)
       x_k = X[idx,]
-      s_k = S[idx,]
+      s_k = S[idx]
       res = computeCenter(x_k, s_k)
       CX[k,] = res$CX
-      CS[k,] = res$CS
+      CS[[1+length(CS)]] = res$CS
     }
     # E-step
-    D   = d_err_mat_c(X, S, CX, CS)
+  
+    D   = d_err_mat(X, S, CX)
     ASS = apply(D, 1, which.min) 
+    obj = sum(D[,ASS])
     
     # check convergence
     done = sum((ASS - ASS_old)^2) == 0;
+  
+    if (verbose) cat(paste("Iteration", i, ': Objective =', obj, '; no. changed =', sum(ASS != ASS_old), '\n'))    
   }
   
-  return(list(assignment = ASS, centers = CX, errors = CS))
+  return(list(objective = obj, assignment = ASS, centers = CX, errors = CS))
   
 }
