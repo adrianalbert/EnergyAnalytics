@@ -20,3 +20,10 @@ toXmin = function(data,dateCol='date', min = 15){
   return(toXmin_cur)
 }
 
+add.columns = function(data,labels) {
+  sub = match(labels,names(data))
+  sub = sub[!is.na(sub)]
+  return(apply(as.matrix(data[,sub]),1,sum))
+}
+
+

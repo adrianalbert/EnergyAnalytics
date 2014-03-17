@@ -16,7 +16,7 @@
 require(plyr)
 
 # i.e. wuWeatherDay('KTXAUSTI90','2012-10-01',tz='CST6CDT')
-wuWeatherDay <- function(station, dateStr,tz=NULL) {
+wuWeatherDay <- function(station, dateStr, tz=NULL) {
   base_url <- 'http://www.wunderground.com/weatherstation/WXDailyHistory.asp?'
   
   day = as.POSIXlt(dateStr)
@@ -121,7 +121,7 @@ interpolateTime = function(data,newTimes,dateCol='Time') {
   return(newData)
 }
 
-test=F
+test=T
 if(test){
   station='KTXAUSTI90' # this is ausitn Tx
   

@@ -32,7 +32,9 @@ select.light = c("lights_plugs1", "lights_plugs2", "lights_plugs3", "lights_plug
 
 # directory to save files
 DUMP_PATH = '~/energy-data/pecan_street/'
-dir.create(file.path(DUMP_PATH, '/usage'))    
+USGE_PATH = paste(DUMP_PATH, 'usage-orig', sep = '/')
+META_PATH = paste(DUMP_PATH, 'metadata', sep = '/')
+dir.create(file.path(USGE_PATH))    
 dir.create(file.path(DUMP_PATH, '/metadata'))    
 
 # ------------------------------------------
@@ -46,12 +48,11 @@ parse_data = function(data, selection = NULL) {
   
   # only store columns that have actual data
   col.na = which(sapply(data, function(x)all(is.na(x))) | sapply(data, function(x)all(x==0)))
-  if (length(col.na)>0) data = data[,-col.na] else return(NULL)
+  if (length(col.na)>0) data = data[,-col.na]
   
   # if too little data return null
   if (ncol(data)<=3) return(NULL)
   
-  # aggregate at 15-minute and hourly levels
   return(data)  
 }
 
@@ -109,6 +110,7 @@ for (yr in years) {
 for (yr in names(uids)) {
   cur_uids = uids[[yr]]$dataid
   yr       = as.numeric(yr)
+  dir.create(file.path(USGE_PATH, yr))    
   res      = lapply(1:length(cur_uids), function(i) {       
     uid = cur_uids[i]
     cat(paste('Fetching user ', i, '/', length(cur_uids), ' (ID=', uid, ')', sep = ''))
@@ -126,13 +128,9 @@ for (yr in names(uids)) {
     }
     
     # save to CSV file; if file exists, append
-    filename = paste('usage/', uid, '.csv', sep = '')
-    filepath = file.path(DUMP_PATH, filename)
-    if (file.exists(filepath)) {
-      write.table(ok_data, file = filepath, col.names=FALSE, sep=",", append=TRUE)        
-    } else {
-      write.csv(ok_data, file = filepath)
-    }    
+    filename = paste(uid, '.csv', sep = '')
+    filepath = file.path(USGE_PATH, yr, filename)
+    write.csv(ok_data, file = filepath, row.names = F)
     cat('...done\n')
   
     # return columns available for each user
