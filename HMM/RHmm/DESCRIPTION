@@ -1,0 +1,17 @@
+Package: RHmm
+Version: 2.0.3
+Date: 2013-04-13
+Title: Hidden Markov Models simulations and estimations
+Author: Ollivier TARAMASCO, Sebastian Bauer
+Maintainer: Ollivier TARAMASCO <Ollivier.Taramasco@imag.fr>
+Depends: R (>= 2.10.0), MASS, nlme
+Description: Discrete, univariate or multivariate gaussian, mixture of
+        univariate or multivariate gaussian HMM functions for
+        simulation and estimation.
+License: GPL (>= 2)
+URL: http://www.r-project.org,
+        http://r-forge.r-project.org/projects/rhmm/
+Packaged: 2013-04-13 13:29:30 UTC; Taram
+NeedsCompilation: yes
+Repository: CRAN
+Date/Publication: 2013-04-13 16:01:08

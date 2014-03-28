@@ -1,0 +1,152 @@
+
+R version 2.13.0 (2011-04-13)
+Copyright (C) 2011 The R Foundation for Statistical Computing
+ISBN 3-900051-07-0
+Platform: i486-pc-linux-gnu (32-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> #    Compare mmglm0 and mmglm1
+> #    Gaussian with identity link function
+> #    R CMD BATCH --no-save mmglm0-mmglm1-binomial.R mmglm0-mmglm1-binomial.Rout.save
+> 
+> library(HiddenMarkov)
+> 
+> 
+> delta <- c(0,1)
+> 
+> Pi <- matrix(c(0.8, 0.2,
++                0.3, 0.7),
++              byrow=TRUE, nrow=2)
+> 
+> beta <- matrix(c(0.1, -0.1,
++                  1.0,  5.0),
++                byrow=TRUE, nrow=2)
+> 
+> sd <- c(1, 2)
+> 
+> n <- 5000
+> 
+> #   Use different numbers of Bernoulli trials
+> set.seed(5)
+> x <- list(size=rpois(n, 10)+1)
+> 
+> #--------------------------------------------------------
+> #     Gaussian with identity link function
+> #         using mmglm0
+> 
+> x0 <- mmglm0(x, Pi, delta, family="binomial", link="logit",
++              beta=beta, sigma=sd, msg=FALSE)
+> 
+> x0 <- simulate(x0, nsim=n, seed=10)
+> 
+> x0 <- BaumWelch(x0, bwcontrol(prt=FALSE))
+> 
+> print(summary(x0))
+$variable.names
+[1] "size" "x1"   "y"   
+
+$delta
+[1] 0 1
+
+$Pi
+          [,1]      [,2]
+[1,] 0.7910361 0.2089639
+[2,] 0.2930963 0.7069037
+
+$nonstat
+[1] TRUE
+
+$beta
+           [,1]        [,2]
+[1,] 0.06952233 -0.07849712
+[2,] 1.04381456  5.03532098
+
+$sigma
+[1] 0.9854419 0.9982205
+
+$family
+[1] "binomial"
+
+$glmformula
+y ~ x1
+<environment: 0x8dd9204>
+
+$link
+[1] "logit"
+
+$n
+[1] 5000
+
+> 
+> #--------------------------------------------------------
+> #    Now embed this data into a mmglm1 object
+> 
+> glmformula <- formula(y ~ x1)
+> glmfamily <- binomial(link="logit")
+> Xdesign <- model.matrix(glmformula, data=x0$x)
+> 
+> x1 <- mmglm1(x0$x$y, Pi, delta, glmfamily, beta, Xdesign, sigma=sd,
++              size=x$size, msg=FALSE)
+> 
+> x1 <- BaumWelch(x1, bwcontrol(prt=FALSE))
+> 
+> print(summary(x1))
+$delta
+[1] 0 1
+
+$Pi
+          [,1]      [,2]
+[1,] 0.7910361 0.2089639
+[2,] 0.2930963 0.7069037
+
+$nonstat
+[1] TRUE
+
+$beta
+               State 1     State 2
+(Intercept) 0.06952233 -0.07849712
+x1          1.04381456  5.03532098
+
+$sigma
+[1] 0.9854419 0.9982205
+
+$glmfamily
+
+Family: binomial 
+Link function: logit 
+
+
+$n
+[1] 5000
+
+> 
+> #--------------------------------------------------------
+> #   Compare Models
+> 
+> if (abs(logLik(x0)-logLik(x1)) > 1e-06)
++     warning("WARNING: See tests/mmglm0-mmglm1.R-binomial, log-likelihoods are different")
+> 
+> if (any(Viterbi(x0)!=Viterbi(x1)))
++     warning("WARNING: See tests/mmglm0-mmglm1-binomial.R, Viterbi paths are different")
+> 
+> if (any(abs(residuals(x0)-residuals(x1)) > 1e-06))
++     warning("WARNING: See tests/mmglm0-mmglm1-binomial.R, residuals are different")
+> 
+> 
+> 
+> proc.time()
+   user  system elapsed 
+ 17.981   0.052  18.253 
