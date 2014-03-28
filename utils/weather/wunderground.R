@@ -7,15 +7,29 @@
 # http://casoilresource.lawr.ucdavis.edu/drupal/node/991
 #
 # Written by Sam Borgeson (sborgeson@berkeley.edu)
+# Modified by Adrian Albert (adalbert@stanford.edu)
 # 
 # You are free to re-use and modify for non-commercial purposes.
-# Contact Sam with questions.
-# Last modified 10/7/2013
 #
-# See test code example at the bottom of this file for more on usage.
+# Last modified: March 2014.
+
 require(plyr)
 
+# columns of interest
+weatherCols = c('Time',
+                'TemperatureF',
+                'DewpointF',
+                'PressureIn',
+                'Humidity',
+                #'SolarRadiationWatts.m.2',
+                'WindSpeedMPH' )
+
+# ------------------------------------------------
+# Get weather data given a station and a date
+# ------------------------------------------------
+
 # i.e. wuWeatherDay('KTXAUSTI90','2012-10-01',tz='CST6CDT')
+
 wuWeatherDay <- function(station, dateStr, tz=NULL) {
   base_url <- 'http://www.wunderground.com/weatherstation/WXDailyHistory.asp?'
   
@@ -41,6 +55,7 @@ wuWeatherDay <- function(station, dateStr, tz=NULL) {
   if(length(urlData) <= 5 ) {
     print('[wuWeatherDay]:No usable data found.')
     print(urlData)
+    return(NULL)
   } else {
     # remove the first and last lines
     urlData <- urlData[-c(1, length(urlData))]
@@ -83,6 +98,10 @@ wuWeatherDay <- function(station, dateStr, tz=NULL) {
   }
 }
 
+# ---------------------------------------------------
+# Get weather data given a station and a date range
+# ---------------------------------------------------
+
 # be sure to load the function from above
 # get a single day's worth of (hourly) data
 #w <- wuWeather(station, as.Date('2012-09-05'))
@@ -93,13 +112,29 @@ wuWeather = function(station,startDate,endDate=NULL,tz=NULL) {
   library(plyr)
   date.range <- seq.Date(from=as.Date(startDate), to=as.Date(endDate), by='1 day')
 
-  l <- vector(mode='list', length=length(date.range)) # pre-allocate list
+  l <- list()  # pre-allocate list
   
   # loop over dates, and fetch data
-  for(i in seq_along(date.range))
+  dates_vec = seq_along(date.range)
+  i = 1
+  repeat
   {
-    print(date.range[i])
-    l[[i]] <- wuWeatherDay(station, date.range[i],tz=tz)
+    res <- wuWeatherDay(station, date.range[i],tz=tz)
+    if (!is.null(res)) {
+      l[[length(l)+1]] <- subset(res, select = weatherCols)
+      cat(paste(date.range[i], ': ', nrow(res), '\n', sep = ''))
+      i = i + 1
+      Sys.sleep(3) # wait three seconds
+      k = 0
+    } else {
+      Sys.sleep(5) # wait three seconds      
+      k = k + 1
+      if (k == 3) {
+        k = 0
+        i = i + 1
+      } else cat('Retrying...\n')
+    }
+    if (i>length(dates_vec)) break;
   }
   
   # stack elements of list into DF, filling missing columns with NA
@@ -107,12 +142,22 @@ wuWeather = function(station,startDate,endDate=NULL,tz=NULL) {
   return(df)
 }
 
+# ---------------------------------------------------
+# Given a lat/long or zipcode, find closest station
+# ---------------------------------------------------
+
+# TODO!
+
+# ---------------------------------------------------
+# Snap data to given time grid by interpolation
+# ---------------------------------------------------
+
 interpolateTime = function(data,newTimes,dateCol='Time') {
-  weatherCols = c(  'TemperatureF',
+  weatherCols = c('TemperatureF',
 		    'DewpointF',
 		    'PressureIn',
 		    'Humidity',
-		    'SolarRadiationWatts.m.2',
+		    #'SolarRadiationWatts.m.2',
 		    'WindSpeedMPH' )
   t = data$Time
   # run approx of the data to interpolate values for the times passed in
@@ -121,7 +166,28 @@ interpolateTime = function(data,newTimes,dateCol='Time') {
   return(newData)
 }
 
-test=T
+# ---------------------------------------------------
+# Get data for a given interval, snap & clean
+# ---------------------------------------------------
+
+getWUData = function(station, start, end) {
+  
+  # get weather data
+  weather = wuWeather(station, start, end, tz='CST6CDT')
+  
+  # interpolate data to arbitrary times
+  tvec = weather$Time
+  minuteTimes = seq.POSIXt(from=trunc(tvec[1],'day'),to=round(tvec[length(tvec)],'day'),by='min')  
+  minuteData = interpolateTime(weather,minuteTimes)
+  
+  return(minuteData)
+}
+
+# ---------------------------------------------------
+# Test functions
+# ---------------------------------------------------
+
+test=F
 if(test){
   station='KTXAUSTI90' # this is ausitn Tx
   
