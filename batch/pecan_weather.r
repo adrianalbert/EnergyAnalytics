@@ -93,3 +93,4 @@ weather_60m = toHourly(data, dateCol = 'Time')
   
 write.csv(weather_15m, row.names = F, file = paste(OUT_PATH, '/', 'weather_15mins.csv', sep=''))
 write.csv(weather_60m, row.names = F, file = paste(OUT_PATH, '/', 'weather_hourly.csv', sep=''))
+
