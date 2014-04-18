@@ -1,0 +1,162 @@
+2013-01-15  Dirk Eddelbuettel  <edd@debian.org>
+
+	* DESCRIPTION (Version): New version 0.1.6
+
+	* DESCRIPTION (Description): Mention http://gallery.rcpp.org
+	* man/RcppExamples-package.Rd: Idem
+
+	* inst/NEWS.Rd: Moved from directory above per CRAN request
+
+2012-12-27  Dirk Eddelbuettel  <edd@debian.org>
+
+	* DESCRIPTION (Version): New version 0.1.5
+
+	* DESCRIPTION (Depends, Imports): No longer use RcppClassic
+	* NAMESPACE: Updated accordingly
+
+	* R/RcppDateExample.R (RcppDateExample): No longer call 'classic'
+	example moved to new package RcppClassicExamples
+	* R/RcppMatrixExample.R (RcppMatrixExample): Idem
+	* R/RcppParamsExample.R (RcppParamsExample): Idem
+	* R/RcppStringVectorExample.R (RcppStringVectorExample): Idem
+	* R/RcppVectorExample.R (RcppVectorExample): Idem
+
+	* man/RcppExamples-package.Rd: Update Description:
+
+	* src/Makevars (PKG_LIBS): Remove RcppClassic use
+	* src/Makevars.win (PKG_LIBS): Idem
+
+	* src/newRcppMatrixExample.cpp: Corrected header use
+	* src/newRcppVectorExample.cpp: Idem
+
+2012-08-09  Dirk Eddelbuettel  <edd@dexter>
+
+ 	* DESCRIPTION: Release 0.1.4
+
+	* src/RcppRNGs.cpp: New example of generating RNG draws
+	* R/RcppRNGs.R: New R function to call new example
+	* man/RcppRNGs.Rd: New manual page for new example
+
+	* NEWS.Rd: Converted from NEWS
+
+	* DESCRIPTION: Changed Maintainer: to single person per CRAN Policy
+
+2011-12-28  Dirk Eddelbuettel  <edd@debian.org>
+
+ 	* DESCRIPTION: Release 0.1.3
+
+	* src/newRcppDateExample.cpp: switch from std::cout to the new
+	Rcpp::Rcout device available since Rcpp 0.9.8
+	* src/classicRcppDateExample.cpp: idem
+
+	* DESCRIPTION: Depends on Rcpp (>= 0.9.9) for Rcpp::Rcout
+
+2011-04-08  Dirk Eddelbuettel  <edd@debian.org>
+
+	* R/RcppDataFrame.R: Added new example for Rcpp::DataFrame
+	* src/RcppDataFrame.cpp: C++ source for new example
+	* man/RcppDataFrame.Rd: Documentation
+
+	* man/RcppParams.Rd: Small change to suppres a warning
+
+2010-12-20  Dirk Eddelbuettel  <edd@debian.org>
+
+	* DESCRIPTION: Release 0.1.2
+
+	* src/newRcppDateExample.cpp (newRcppDateExample): New API example
+	* src/newRcppParamsExample.cpp (newRcppParamsExample): dito
+
+	* R/RcppDateExample.R (RcppDateExample): Call new API example
+	* R/RcppParamsExample.R (RcppParamsExample): dito
+
+	* src/*: Split source files into 'new*.cpp' and 'classic*.cpp' as
+	they use a different include header file anyway
+
+2010-12-03  Romain Francois <romain@r-enthusiasts.com>
+
+	* DESCRIPTION: depending on RcppClassic
+
+	* src/*.cpp: using include <RcppClassic.h>
+
+	* src/Makevars: link against the RcppClassic library
+
+	* src/Makevars.win : link against the RcppClassic library
+
+2010-11-19  Dirk Eddelbuettel  <edd@debian.org>
+
+	* inst/ChangeLog: moved to top-level enabling 'C-x 4 a' lookups
+
+2010-11-19  Romain Francois <romain@r-enthusiasts.com>
+
+	* src/Makevars: apply new recommended PKG_LIBS declaration
+
+	* DESCRIPTION: removed SystemRequirements: GNU make
+
+2010-07-29  Romain Francois <romain@r-enthusiasts.com>
+
+	* src/RcppMatrixExample.cpp: disambiguate versions of sqrt
+
+2010-07-29  Dirk Eddelbuettel  <edd@debian.org>
+
+	* DESCRIPTION: Release 0.1.1
+
+	* TODO: Expanded noting need for additional documentation
+
+2010-07-29  Romain Francois <romain@r-enthusiasts.com>
+
+	* TODO: Added, noting need to emphasize new API
+
+	* man/*: Minor edits noting that the classic API is not recommended
+	for new code
+
+2010-07-28  Dirk Eddelbuettel  <edd@debian.org>
+
+	* DESCRIPTION: Use LinkingTo: Rcpp
+	* DESCRIPTION: Update Depends: on R and Rcpp to newer version
+
+	* src/Makevars: Simplified thanks to 'LinkingTo: Rcpp'
+
+2010-05-25  Romain Francois <romain@r-enthusiasts.com>
+
+	* src/*.cpp: use BEGIN_RCPP/END_RCPP in new api examples and use
+	List::create instead of Pairlist
+
+	* src/Makevars.win: apply Brian Ripley's advice from R-devel thread
+	to anticipate changes in R 2.12.0
+
+2010-03-10  Dirk Eddelbuettel  <edd@debian.org>
+
+	* DESCRIPTION: Release 0.1.0 for the first CRAN upload
+
+	* src/Makevars.win: Switch back from backticks to $(shell ...)
+	  which should be fine as GNU make is mandated on Windows anyway
+
+2010-03-07  Romain Francois <romain@r-enthusiasts.com>
+
+	* src/RcppVectorExample.cpp: use a new vector for the output
+	* src/RcppStringVectorExample.cpp: rework the new api version
+	using the StringTransformer class (depends on Rcpp >= 0.7.7.15)
+
+2010-03-04  Dirk Eddelbuettel  <edd@dexter>
+
+	* src/RcppMatrixExample.cpp: Added 'classic' + 'new' API examples
+	* R/RcppMatrixExample.R: idem
+	* src/RcppStringVectorExample.cpp: idem
+	* R/RcppStringVectorExample.R: idem
+
+2010-03-03  Dirk Eddelbuettel  <edd@dexter>
+
+	* src/RcppVectorExample.cpp: Added 'new' API example
+	* R/RcppVectorExample.R: Added argument 'api'
+
+2010-02-27  Dirk Eddelbuettel  <edd@debian.org>
+
+	* src/RcppDateExample.cpp: Carved out of RcppExample.cpp
+	* src/RcppParamsExample.cpp: idem
+	* src/RcppVectorExample.cpp: idem
+	* src/RcppExample.cpp: fixed indentation
+
+2010-02-16  Dirk Eddelbuettel  <edd@debian.org>
+
+	* New package, started from Rcpp 0.7.7
+

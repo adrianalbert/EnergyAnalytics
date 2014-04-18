@@ -1,0 +1,32 @@
+RHmm package version 2.0.2 - September, 9th, 2012
+
+News
+----
+
+A lot of work to compute the asymptotic covariance matrix of the estimates has been made is this new version. It is working much better than in previous versions even if some numerical problems could persist.
+
+
+Make instructions
+-----------------
+
+
+RHmm can be used as a standalone library. if R_HOME is R directory, go into RHmm/src and
+1) compile all .cpp using g++ -c *.cpp -I R_HOME/include -w
+2) link the program using
+	On unix system: g++ -o main *.o -W1,-Bstatic -lRlapack -lRblas -L R_HOME/lib
+	On windows system: g++ -o main *.o -W1,-Bstatic -lR -lRlapack -lRblas -L R_HOME/bin
+3) To execute the main program,
+	on unix system: copy R_HOME/lib/libRlapack.so and R_HOME/lib/libRblas.so in RHmm/src directory
+	on windows system: copy R_HOME/bin/*.dll in Rhmm/src directory
+then you can execute the main program by doing ./main in RHmm/src directory. Main.cpp is an example of the main program. At the end of Main.cpp file, you will find some samples used for testing the library.
+or
+1') Use the makefile programe in src/makevar
+
+Thanks to:
+- Mait Raag who found a bug in may Multivariate Normal Density function (version <= 1.03).
+- Tarmo Leinonen who found some problems in the forwardbackward procedure
+- Matteo Re who found bugs in Viterbi path procedure (for discrete distributions)
+- Vince Melfi who found a bug in the ForwardBackward procedure.
+- Simon Malinowski who found a bug in LLH computation.
+
+Ollivier TARAMASCO <Ollivier.Taramasco@imag.fr> and Sebastian Bauer <mail@sebastianbauer.info>

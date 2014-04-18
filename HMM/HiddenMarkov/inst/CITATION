@@ -1,0 +1,26 @@
+desc <- packageDescription("HiddenMarkov")
+year <- sub(".*(2[[:digit:]]{3})-.*", "\\1", desc$Date)
+vers <- paste("R package version", desc$Version)
+url <- desc$URL
+package <- desc$Package
+title <- paste(package, ": ", desc$Title, sep="")
+
+citHeader(paste("To cite package '", package,
+                "' in publications use:", sep=""))
+
+citEntry(entry="Manual",
+         title = title,
+         author = personList(as.person("David Harte")),
+         year = year,
+         note = vers,
+         organization = "Statistics Research Associates",
+         address = "Wellington",
+         url = url,
+
+         textVersion =
+         paste("Harte, David. (",
+               year, "). ", title, ". ", vers, ". ", 
+               "Statistics Research Associates, Wellington. URL: ",
+               url, sep="")
+)
+

@@ -1,0 +1,45 @@
+# For standalone library
+# PKG_LIBS = $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)  
+# PKG_CXXFLAGS = -I$(R_HOME)/include -w
+# Here is a makefile
+# --- begin makefile
+#SRCS = cBaumWelch.cpp \
+#	cInParam.cpp  \
+#	cOTError.cpp \
+#	cViterbi.cpp \
+#	RHmm.cpp \
+#	cBaumWelchInParam.cpp  \
+#	cLogBaumWelch.cpp       \
+#	cOTMatrix.cpp  \
+#	Kmeans.cpp \
+#	SamplesUtil.cpp \
+#	cDiscrete.cpp  \
+#     cMixtMultivariateNormal.cpp \
+#	cOTVector.cpp \
+#        logprob.cpp \
+#	cHmm.cpp  \
+#	cMixtUnivariateNormal.cpp  \
+#	cRUtils.cpp \
+#	Main.cpp \
+#	cHmmFit.cpp  \
+#	cMultivariateNormal.cpp \
+#	cUnivariateNormal.cpp \
+#	MultivariateNormalUtil.cpp
+#
+#OBJS = $(patsubst %.cpp,%.o,$(SRCS))
+#CXXFLAGS = `pkg-config --cflags libR`
+
+#all: Main
+#
+#Main:$(OBJS)
+#	g++ $(OBJS) -o Main  `pkg-config --libs libR` -llapack
+#
+#clean:
+#	rm -Rf $(OBJS)
+#
+#--- end makefile ---
+
+# For R Library 
+
+PKG_LIBS=$(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
+PKG_CXXFLAGS=-w -D_RDLL_

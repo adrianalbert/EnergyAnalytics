@@ -1,0 +1,125 @@
+useDynLib(HiddenMarkov)
+
+#  The "exports" below are divided into blocks:
+#   1.  define model objects
+#   2.  generic functions applied to model objects
+#   3.  forward-backward equations
+#   4.  EM related calculations
+#   5.  miscellaneous, mainly fitting related
+#   6.  deprecated functions
+
+export(
+    dthmm,
+    mchain,
+    mmpp,
+    mmglm0,
+    mmglm1,
+    mmglmlong1,
+    mmglm,
+
+    BaumWelch,
+    Viterbi,
+
+    backward,
+    forward,
+    forwardback,
+    forwardback.dthmm,
+    forwardback.mmpp,
+
+    Estep0.mmpp,
+    Estep.mmglm1,
+    Estep.mmpp,
+    Estep,
+    Mstep.beta,
+    Mstep.binom,
+    Mstep.exp,
+    Mstep.gamma,
+    Mstep.glm,
+    Mstep.lnorm,
+    Mstep.logis,
+    Mstep.mmglm1,
+    Mstep.norm,
+    Mstep.pois,
+
+    bwcontrol,
+    compdelta,
+    neglogLik,
+    Pi2vector,
+    probhmm,
+    Q2vector,
+    vector2Pi,
+    vector2Q,
+
+    Baum.Welch0.mmpp,
+    Baum.Welch.mmpp,
+    Baum.Welch,
+    backward0.mmpp,
+    forward0.mmpp,
+    residualshmm,
+    sim.hmm,
+    sim.hmm1,
+    sim.markov,
+    sim.mmpp,
+    Viterbihmm,
+    logLikmmpp
+)
+
+#   These functions are not exported
+#      as.dthmm
+#      as.mmglm0
+#      dglm
+#      pglm
+#      dmmglm
+#      pmmglm
+#      getj
+#      makedensity1
+#      makedensity
+#      makedistn
+
+
+importFrom(stats, simulate, logLik)
+
+#   methods for class "mchain"
+S3method(simulate, mchain)
+
+#   methods for class "dthmm"
+S3method(BaumWelch, dthmm)
+S3method(logLik, dthmm)
+S3method(residuals, dthmm)
+S3method(simulate, dthmm)
+S3method(summary, dthmm)
+S3method(Viterbi, dthmm)
+
+#   methods for class "mmglm0"
+S3method(BaumWelch, mmglm0)
+S3method(logLik, mmglm0)
+S3method(residuals, mmglm0)
+S3method(simulate, mmglm0)
+S3method(summary, mmglm0)
+S3method(Viterbi, mmglm0)
+
+#   methods for class "mmglm1"
+S3method(BaumWelch, mmglm1)
+S3method(logLik, mmglm1)
+S3method(residuals, mmglm1)
+S3method(simulate, mmglm1)
+S3method(summary, mmglm1)
+S3method(Viterbi, mmglm1)
+
+#   methods for class "mmglmlong1"
+S3method(BaumWelch, mmglmlong1)
+S3method(logLik, mmglmlong1)
+S3method(residuals, mmglmlong1)
+S3method(simulate, mmglmlong1)
+S3method(summary, mmglmlong1)
+S3method(Viterbi, mmglmlong1)
+
+#   methods for class "mmpp"
+S3method(BaumWelch, mmpp)
+S3method(logLik, mmpp)
+S3method(residuals, mmpp)
+S3method(simulate, mmpp)
+S3method(summary, mmpp)
+S3method(Viterbi, mmpp)
+
+
