@@ -19,7 +19,7 @@ rm(list=ls())
 
 library('Rcpp')
 library('RcppArmadillo')
-# library('benchmark')
+library('benchmark')
 
 # ________________________
 # Load C++ functions
