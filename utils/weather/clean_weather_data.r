@@ -4,7 +4,7 @@
 #
 # Adrian Albert
 #
-# Last modified: March 2014.
+# Last modified: May 2014.
 
 library('dummies')
 library('timeDate')
@@ -20,6 +20,7 @@ imputateMissingValues = function(X.imp, verbose=T){
   sd_col   = apply(X.imp, 2, function(x) sd(x,na.rm=T))
   rm.vars  = which(sd_col == 0 | is.na(sd_col))
   if (length(rm.vars) == ncol(X.imp)) {
+    
     print('All non-NA covariate values are constant - cannot impute!')
     X.ok.imp = X.imp
   } else {
@@ -100,7 +101,7 @@ clean_weather_data = function(wthr_data, dateCol = 'date', addToD = F) {
   wthr_posix  = as.POSIXct(wthr_times)
   wthr_names  = c('TemperatureF', 'DewpointF', 'Pressure', 'WindSpeed', 'Humidity', 
                   'HourlyPrecip', 'SolarRadiation')
-  wthr_data   = wthr_data[,wthr_names]            
+  wthr_data   = wthr_data[,intersect(names(wthr_data), wthr_names)]            
     
   # remove duplicate timestamps in weather data, if any
   idx_dup     = which(duplicated(wthr_times))
@@ -110,9 +111,10 @@ clean_weather_data = function(wthr_data, dateCol = 'date', addToD = F) {
   }  
   
   # clean up weather covariates (remove unreasonable values)
-  ranges = list(TemperatureF = c(2, 125), 
+  ranges = list(TemperatureF = c(0, 125), 
                 Pressure     = c(25, 35),
-                Humidity     = c(5, 100))
+                Humidity     = c(5, 100),
+                DewpointF    = c(0, 125))
   for (r in intersect(names(ranges),names(wthr_data))){
     idx = which(wthr_data[,r]<ranges[[r]][1] | wthr_data[,r]>ranges[[r]][2]) 
     if (length(idx)>0) wthr_data[idx,r] = NA
@@ -122,7 +124,7 @@ clean_weather_data = function(wthr_data, dateCol = 'date', addToD = F) {
   na.number = sapply(names(wthr_data), function(v) {
     return(length(which(is.na(wthr_data[,v]))))
   })
-  idx = which(na.number < nrow(wthr_data) / 2)                   
+  idx = which(na.number > nrow(wthr_data) / 2)                   
   if (length(idx) > 0) wthr_data = wthr_data[,-idx]              
     
   # imputate missing values (at least one covariate value in an observation tuple needs to be defined)
@@ -140,12 +142,13 @@ clean_weather_data = function(wthr_data, dateCol = 'date', addToD = F) {
   
   # use gbm to estimate gaps (no covariate value available for a given observation)
   X.dum = dummy.data.frame(wthr_clean)
-  X.imp = gbmImpute(X.dum, max.iters = 2, cv.fold = 4, verbose = F)$x 
-  wthr_clean = X.imp[,wthr_covar]
+  X.imp = gbmImpute(X.dum, max.iters = 2, cv.fold = 4, verbose = T)$x 
+  wthr_clean = X.imp[,wthr_covar]  
+  wthr_clean = cbind(date = wthr_times, wthr_clean)
   
   # add in dummies
   if (addToD) {
-    wthr_clean = cbind(data.frame(date = wthr_times, Month = Month, HourOfDay = Hour.Of.Day, 
+    wthr_clean = cbind(data.frame(Month = Month, HourOfDay = Hour.Of.Day, 
                                   IsHoliday = Is.Holiday, DayOfWeek = Day.Of.Week), wthr_clean)
   } 
   
