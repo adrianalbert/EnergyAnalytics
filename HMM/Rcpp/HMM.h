@@ -1,18 +1,27 @@
-#include <Rcpp.h>
-#include <RcppArmadillo.h>
+//#include <Rcpp.h>
+//#include <RcppArmadillo.h>
 
 using namespace Rcpp;
 using namespace RcppArmadillo;
 
 /* 
-	Inputs
+	Data to train model on
 */	
-typedef struct{
+class HMMData{
+public:
 	Rcpp::NumericMatrix z_resp;
 	Rcpp::NumericMatrix z_tran;
 	Rcpp::NumericVector x_obs;	
-} HMMInputs;
+};
 
+/* 
+	Estimation input parameters
+*/	
+class HMMInputs{
+public:
+	double tol;
+	int nStates;	
+};
 
 /* 
 	HMM class definition
@@ -20,14 +29,17 @@ typedef struct{
 class HMM{
 private:
 	int nStates;
-	
+	Rcpp::List params_tran;
+	Rcpp::List params_resp;	
+	Rcpp::List params_init;	
+
 	// internal methods
 	void compute_backward_probs();	
 	void compute_forward_probs();
 
 public:
 	// constructor
-	void HMM();
+	void HMM(): nStates(1);
 
 	// setter
 	int set_model_size();

@@ -1,6 +1,7 @@
 
 library('Rcpp')
 library('RcppArmadillo')
+library('inline')
 
 kalmanSrc <- '
 mat Z = as<mat>(ZS);

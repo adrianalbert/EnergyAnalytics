@@ -1,4 +1,5 @@
 using namespace arma;
+
 class Kalman {
 private:
 	mat A, H, Q, R, xest, pest;
