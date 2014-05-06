@@ -22,15 +22,9 @@ library('dummies')
 library('parallel')
 library('VIM')
 
-source('~/EnergyAnalytics/utils/aggregate_data.r')
-source('~/EnergyAnalytics/utils/weather/clean_weather_data.r')
-
-# some interesting components
-select.keep  = c('dataid', 'localminute', 'use')
-select.AC    = c("air1", "air2", "air3", "airwindowunit1")
-select.HV    = c("furnace1", "furnace2", "heater1", "housefan1")
-select.light = c("lights_plugs1", "lights_plugs2", "lights_plugs3", "lights_plugs4", "lights_plugs5", "lights_plugs6",
-                 "outsidelights_plugs1", "outsidelights_plugs2")
+setwd('~/EnergyAnalytics/')
+source('./utils/aggregate_data.r')
+source('./utils/weather/clean_weather_data.r')
 
 # directory to save files
 DATA_PATH = '~/energy-data/pecan_street/'
@@ -60,6 +54,8 @@ process_data = function(raw, thresh = 50, dateCol = 'date') {
   nr.na = sapply(df, function(x)length(which(is.na(x))))
   nr.na = which(nr.na >= nrow(df)/3)
   if (length(nr.na)>0) df = df[,-nr.na] 
+  
+  if (!is.data.frame(df)) return(NULL)
   
   # remove complete NAs row-wise
   idx = apply(df, 1, function(x) sum(as.numeric(is.na(x))))
@@ -131,12 +127,14 @@ res      = mclapply(1:length(files.input[idx]),
   data_60 = process_data(data_60)
   data_15 = process_data(data_15)
   
+  # is there enough data for this user?
+  if (is.null(data_60) || is.null(data_15)) return(NA);
+  
   # save to file
   dir.create(file.path(OUT_PATH, year))      
-  write.csv(data, file = paste(OUT_PATH, paste(year, '/', uid, '_minute.csv', sep = ''), sep = '/'), row.names = F)
+  # write.csv(data, file = paste(OUT_PATH, paste(year, '/', uid, '_minute.csv', sep = ''), sep = '/'), row.names = F)
   write.csv(data_15, file = paste(OUT_PATH, paste(year, '/', uid, '_15mins.csv', sep = ''), sep = '/'), row.names = F)
   write.csv(data_60, file = paste(OUT_PATH, paste(year, '/', uid, '_hourly.csv', sep = ''), sep = '/'), row.names = F)
   
-  # return columns available for each user
   return(0)
 })  

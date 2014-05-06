@@ -1,6 +1,6 @@
-# run_profiler_pecan.r
+# prepare_pecan.r
 #
-# Applies HMM decoding on Pecan Street data. 
+# Constructs an analysis dataset for pecan st validation. 
 #
 # Adrian Albert
 # Last modified: May 2014.
@@ -16,9 +16,12 @@ library('segmented')
 setwd('~/EnergyAnalytics/thermal_profiles/profiler/')
 source('stateProcessorWrapper.r')
 source('stateVisualizerWrapper.r')
+source('../../utils/aggregate_data.r')
 
-DATA_PATH  = '~/energy-data/pecan_street/usage-processed/2013/'
-PLOTS_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street'
+# use data from 2013
+DATA_PATH     = '~/energy-data/pecan_street/usage-processed/2012/'
+DATA_PATH_RAW = '~/energy-data/pecan_street/usage-orig/2012/'
+PLOTS_PATH    = '~/Dropbox/OccupancyStates/plots/pecan-street'
 dir.create(PLOTS_PATH)
 
 # load weather data
@@ -28,35 +31,48 @@ weather.hourly$date = as.POSIXct(as.character(weather.hourly$date))
 weather.15mins$date = as.POSIXct(as.character(weather.15mins$date))
 
 # load baby names
+# we're going to name each user for later easiness of use
 baby_names  = read.csv('~/Dropbox/OccupancyStates/data/baby-names.csv')
 
 # __________________________________________________
-# Select appliances of interest
+# Define appliance categories
 
-HVAC   = c('AIR1','AIR2','FURNACE1','FURNACE2')
-HV     = c('FURNACE1','FURNACE2')
-AC     = c('AIR1','AIR2')
-lights = c('LIGHTS_PLUGS1','LIGHTS_PLUGS2','LIGHTS_PLUGS3','LIGHTS_PLUGS4')
-total   = c('USE')
+# some interesting components
+appliances   = as.character(read.csv('~/energy-data/pecan_street/metadata/appliances.csv')$Appliance)
+select.keep  = c('dataid', 'localminute', 'use')
+select.AC    = c("air1", "air2", "air3", "airwindowunit1", "housefan1")
+select.HV    = c("furnace1", "furnace2", "heater1", "housefan1")
+select.light = c("lights_plugs1", "lights_plugs2", "lights_plugs3", "lights_plugs4", "lights_plugs5", "lights_plugs6",
+                 "outsidelights_plugs1", "outsidelights_plugs2")
+select.alwOn = c('refridgerator1', 'refridgerator2', 'winecooler1', 'aquarium1',
+                 "freezer1")
+select.sched = c("pool1", "pool2", 'sprinkler1', "poolpump1", "pump1")
+select.total = c('use')
+select.dhw   = c('waterheater1', 'waterheater2')
+select.user  = c("bathroom1", "bathroom2", "bedroom1", "bedroom2", "bedroom3", "bedroom4", "bedroom5",
+                 "clotheswasher1", "clotheswasher_dryg1", "diningroom1", "diningroom2", "dishwasher1",
+                 "disposal1", "drye1", "dryg1", "garage1", "garage2", "icemaker1", "jacuzzi1", 
+                 "kitchenapp1", "kitchenapp2", "lights_plugs1", "lights_plugs2", "lights_plugs3",
+                 "lights_plugs4", "lights_plugs5", "lights_plugs6", "livingroom1", "livingroom2", 
+                 "microwave1", "office1", "outsidelights_plugs1", "outsidelights_plugs2", "oven1", 
+                 "poollight1",  "range1", "security1", "shed1", "utilityroom1", "venthood1")
+select.solar = c('gen')
+select.ev    = c('car1')
 
 # __________________________________________________
 # Load up user data
 
-# list all data files for 2013
+# list all data files for the selected subset of data
 files    = list.files(path=DATA_PATH, full.names = T)
-files_01 = files[grep('minute',files)]
+files_01 = list.files(path=DATA_PATH_RAW, full.names = T)
 files_15 = files[grep('15mins',files)]
 files_60 = files[grep('hourly', files)]
 
+# select those users for which enough data is available
+
+
 # __________________________________________________
 # Plot usage by minute & by hour for each user
-
-# aggregate data from columns defined by labels
-usage = function(data,labels) {
-  sub = match(labels,names(data))
-  sub = sub[!is.na(sub)]
-  return(apply(as.matrix(data[,sub]),1,sum))
-}
 
 # plot ground truth components
 plot_user = function(homeData, main = 'minute') {
@@ -64,9 +80,9 @@ plot_user = function(homeData, main = 'minute') {
   names(homeData) = toupper(names(homeData))
   
   # aggregate components
-  AC_kwh        = usage(homeData,AC)
-  HV_kwh        = usage(homeData,HV)
-  total_kwh     = usage(homeData,total)
+  AC_kwh        = add.columns(homeData,AC)
+  HV_kwh        = add.columns(homeData,HV)
+  total_kwh     = add.columns(homeData,total)
   occupancy_kwh = total_kwh - AC_kwh - HV_kwh
   
   maxUsage = max(total_kwh)

@@ -141,13 +141,13 @@ for (yr in names(uids)) {
 }
 
 # pull curated data
-yr = 2013
+yr = '2013'
 dir.create(file.path(USGE_PATH, yr))    
 for (group in 1:2) {
-  cur_uids = uids[[yr]]$dataid
+  cur_uids = uids[[yr]]
   
   res      = lapply(1:11, function(mo) {       
-    cat(paste('Fetching group ', group, ' month ', mo, '/', length(cur_uids), ' (ID=', uid, ')', sep = ''))
+    cat(paste('Fetching group ', group, ' month ', mo, '/', 11, sep = ''))
     
     query    = paste("select * from \"PecanStreet_CuratedSets\".group", group, "_disaggregated_", yr, "_", sprintf("%02d",10), sep='')
     cur_data = dbGetQuery(con, query)    
