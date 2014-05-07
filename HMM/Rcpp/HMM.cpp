@@ -1,127 +1,130 @@
-#include <Rcpp.h>
-#include <armadillo>
+//#include <Rcpp.h>
+#include <RcppArmadillo.h>
+
 //#include "HMM.h"		// class definition
 
 using namespace Rcpp;
 using namespace arma;
 
+// Algebra & math is done in Armadillo because of more robust support for this functionality.
+// Rcpp is used to interface easily with R.
+
+// [[Rcpp::depends("RcppArmadillo")]]
+
 /* 
 	Build an object to store a HMM model.
 */
 
-// [[Rcpp::export]]
-Rcpp::List initialize_model(int modelSize, 
-							Rcpp::NumericVector vars_resp,
-							Rcpp::NumericVector vars_tran) {
-
-	return(
-		Rcpp::List::create(Rcpp::Named("coef")= 0,
-		Rcpp::Named("se") = 0,
-		Rcpp::Named("df") = 0));
-};
+//RcppExport SEXP initialize_model(int modelSize, arma::colvec vars_resp, arma::colvec vars_tran) {
+//  
+//	return(
+//		Rcpp::List::create(Rcpp::Named("coef")= 0,
+//		Rcpp::Named("se") = 0,
+//		Rcpp::Named("df") = 0));
+//};
 
 /* 
 	Response distribution density
 */
 
-Rcpp::NumericMatrix p_response(
-	double x_obs, 
-	const Rcpp::NumericVector &beta, 
-	const Rcpp::NumericVector &z,
-	double sigma) {
+arma::mat p_response(double x_obs, arma::colvec z, arma::mat beta) {
 
-	double mu = beta * z;
-	double p = dnorm(x_obs, mu, sigma);
-
-	return arma::diagvec(p);
+  arma::mat beta_mu = beta.cols(0, beta.n_cols-2);
+  arma::colvec sigma  = beta.col(beta.n_cols-1);
+  
+  arma::colvec be;
+  arma::mat P(beta_mu.n_rows, beta_mu.n_rows);
+  double mu, p, sd;
+  
+  for (int i = 0; i<beta.n_rows; i++) {
+    sd = sigma(i);
+    be = beta_mu.row(i);
+    mu = sum(be * z);
+    P(i,i) = R::dnorm(x_obs, mu, sd, 0);
+  }
+  
+	return P;
 }
 
 /* 
 	Transition distribution density
 */
 
-Rcpp::NumericMatrix p_transition(
-	const Rcpp::List par_trans, 
-	const Rcpp::NumericVector &y) {
-
-	Rcpp::NumericMatrix G;
-	int K = par_trans.size();
-
-
-	for (int i = 0; i < K; i++){
-		G[i] = 
-	}
-
+arma::mat p_transition(arma::colvec y, SEXP theta_) {
+  
+  Rcpp::List theta(theta_);
+	arma::mat G;
+  
 	return G;
 }
 
 /* 
 	Compute log-likelihood function
+	Implements [MacDonald and Zucchinni, 2011], pg. 46
 */
 
-// [[Rcpp::export]]
-double compute_log_likelihood(
-	Rcpp::List &model, 
-	Rcpp::NumericVector &x_obs, 
-	Rcpp::DataFrame &y_resp, 
-	Rcpp::DataFrame &z_tran){	
+Rcpp::List compute_log_likelihood(SEXP model_, 
+                                  arma::colvec x_obs, 
+                                  arma::mat y_resp, 
+                                  arma::mat z_tran){	
 
+  Rcpp::List model(model_);
 
 	// access model parameters
-	int T = x_obs.size()
+	int T = x_obs.n_elem;
 	int K = model["nStates"];
-	Rcpp::List initDist 		= model["initDist"];
-	Rcpp::List response  		= model["response"];
-	Rcpp::DataFrame respCoef 	= response["coef"]
-	Rcpp::DataFrame respSder 	= response["sder"]
-	Rcpp::List transition		= model["transition"];
+	Rcpp::NumericVector initDist = model["initDist"];
+	Rcpp::List response  		     = model["response"];
+	Rcpp::DataFrame respCoef 	   = response["coef"];
+	Rcpp::DataFrame respSder 	   = response["sder"];
+	Rcpp::List transition		     = model["transition"];
 
 	// compute log-likelihood of the data under the model
-	Rcpp::NumericVector phi = initDist;
-	double ll = 0;
-	for (t = 0; t < T; t++) {
-		G  = p_transition(x_obs[t], z_tran[t])
-		P  = p_response(x_obs[t], y_resp[t])
-		v  = phi * G * P;
-		u  = sum(v);
-		ll = ll + log(u);
-		phi= v / u;
+	// phi <-- alpha/sum(alpha)
+  // use arma objects since Rcpp NumericVector/Matrix do not yet fully implement algebraic operations
+  arma::mat P, F, B, H, beta;  
+  arma::colvec phi = as<arma::colvec>(initDist), a, G, v;
+  Rcpp::List theta;
+
+	double ll = 0, u;
+	for (int t = 0; t < T; t++) {
+
+		// log-likelihood
+		P  = p_transition(z_tran.row(t), theta);
+		F  = p_response(x_obs(t), y_resp.row(t), beta);
+		v  = phi * P * F;		// alpha_prime(t)
+		u  = sum(v);			// c(t)
+		ll = ll + log(u);		
+		phi= v / u;				// alpha_star(t)
+
+		// recursions for gradient of log-likelihood
+		// a = 
+		// B = 
 	}
 
 	return(
 		Rcpp::List::create(
-			Rcpp::Named("coef")= 0,
-			Rcpp::Named("se") = 0,
-			Rcpp::Named("df") = 0)
+			Rcpp::Named("LL")= ll,
+			Rcpp::Named("G") = G,
+			Rcpp::Named("H") = H)
 	);
 };
 
-
-/* 
-	Compute log-likelihood gradient
-*/
-
-/* 
-	Compute log-likelihood Hessian
-*/
 
 /* 
 	Estimate HMM by direct likelihood maximization.
 */
 
-// [[Rcpp::export]]
-Rcpp::List estimate_model(
-	Rcpp::List model, 
-	Rcpp::NumericVector x_obs, 
-	Rcpp::DataFrame y_resp, 
-	Rcpp::DataFrame z_tran){
+//// [[Rcpp::export]]
+//RcppExport SEXP estimate_model(SEXP model_, SEXP x_obs_, SEXP y_resp_, SEXP z_tran_){
+//
+//
+//
+//	return(
+//		Rcpp::List::create(
+//			Rcpp::Named("coef")= 0,
+//			Rcpp::Named("se") = 0,
+//			Rcpp::Named("df") = 0)            
+//	);
+//};
 
-
-
-	return(
-		Rcpp::List::create(
-			Rcpp::Named("coef")= 0,
-			Rcpp::Named("se") = 0,
-			Rcpp::Named("df") = 0)
-	);
-};
