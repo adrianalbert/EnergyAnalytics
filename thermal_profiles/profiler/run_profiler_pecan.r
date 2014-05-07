@@ -3,7 +3,7 @@
 # Applies HMM decoding on Pecan Street data. 
 #
 # Adrian Albert
-# Last modified: March 2014.
+# Last modified: May 2014.
 # ---------------------------------------------------------
 
 rm(list = ls())
@@ -18,11 +18,14 @@ source('stateProcessorWrapper.r')
 source('stateVisualizerWrapper.r')
 source('../../utils/aggregate_data.r')
 
-load('~/energy-data/pecan_street/pecan_plus_weather.RData')
-
 PLOTS_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street'
 dir.create(PLOTS_PATH)
 
+# load weather data
+weather.hourly = read.csv('~/energy-data/pecan_street/weather/weather_hourly.csv')
+weather.15mins = read.csv('~/energy-data/pecan_street/weather/weather_15mins.csv')
+weather.hourly$date = as.POSIXct(as.character(weather.hourly$date))
+weather.15mins$date = as.POSIXct(as.character(weather.15mins$date))
 
 # __________________________________________________
 # Select appliances of interest
