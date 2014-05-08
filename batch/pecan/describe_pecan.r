@@ -1,6 +1,6 @@
-# prepare_pecan.r
+# describe_pecan.r
 #
-# Constructs an analysis dataset for pecan st validation. 
+# Performs a basic statistical description of the Pecan St dataset.
 #
 # Adrian Albert
 # Last modified: May 2014.
@@ -8,67 +8,37 @@
 
 rm(list = ls())
 options(error = recover)
-library('segmented')
 
 # __________________________________________________
 # Initializations...
 
-setwd('~/EnergyAnalytics/thermal_profiles/profiler/')
-source('stateProcessorWrapper.r')
-source('stateVisualizerWrapper.r')
+setwd('~/EnergyAnalytics/batch/pecan/')
 source('../../utils/aggregate_data.r')
+source('../../batch/pecan/define_categories_pecan.r')
 
 # use data from 2013
-DATA_PATH     = '~/energy-data/pecan_street/usage-processed/2012/'
-DATA_PATH_RAW = '~/energy-data/pecan_street/usage-orig/2012/'
+DATA_PATH_SEL = '~/energy-data/pecan_street/usage-select/'
+METADATA_PATH = '~/energy-data/pecan_street/metadata/'
 PLOTS_PATH    = '~/Dropbox/OccupancyStates/plots/pecan-street'
 dir.create(PLOTS_PATH)
 
-# load weather data
-weather.hourly = read.csv('~/energy-data/pecan_street/weather/weather_hourly.csv')
-weather.15mins = read.csv('~/energy-data/pecan_street/weather/weather_15mins.csv')
-weather.hourly$date = as.POSIXct(as.character(weather.hourly$date))
-weather.15mins$date = as.POSIXct(as.character(weather.15mins$date))
-
-# load baby names
-# we're going to name each user for later easiness of use
-baby_names  = read.csv('~/Dropbox/OccupancyStates/data/baby-names.csv')
-
 # __________________________________________________
-# Define appliance categories
-
-# some interesting components
-appliances   = as.character(read.csv('~/energy-data/pecan_street/metadata/appliances.csv')$Appliance)
-select.keep  = c('dataid', 'localminute', 'use')
-select.AC    = c("air1", "air2", "air3", "airwindowunit1", "housefan1")
-select.HV    = c("furnace1", "furnace2", "heater1", "housefan1")
-select.light = c("lights_plugs1", "lights_plugs2", "lights_plugs3", "lights_plugs4", "lights_plugs5", "lights_plugs6",
-                 "outsidelights_plugs1", "outsidelights_plugs2")
-select.alwOn = c('refridgerator1', 'refridgerator2', 'winecooler1', 'aquarium1',
-                 "freezer1")
-select.sched = c("pool1", "pool2", 'sprinkler1', "poolpump1", "pump1")
-select.total = c('use')
-select.dhw   = c('waterheater1', 'waterheater2')
-select.user  = c("bathroom1", "bathroom2", "bedroom1", "bedroom2", "bedroom3", "bedroom4", "bedroom5",
-                 "clotheswasher1", "clotheswasher_dryg1", "diningroom1", "diningroom2", "dishwasher1",
-                 "disposal1", "drye1", "dryg1", "garage1", "garage2", "icemaker1", "jacuzzi1", 
-                 "kitchenapp1", "kitchenapp2", "lights_plugs1", "lights_plugs2", "lights_plugs3",
-                 "lights_plugs4", "lights_plugs5", "lights_plugs6", "livingroom1", "livingroom2", 
-                 "microwave1", "office1", "outsidelights_plugs1", "outsidelights_plugs2", "oven1", 
-                 "poollight1",  "range1", "security1", "shed1", "utilityroom1", "venthood1")
-select.solar = c('gen')
-select.ev    = c('car1')
-
-# __________________________________________________
-# Load up user data
+# Access usage data
 
 # list all data files for the selected subset of data
-files    = list.files(path=DATA_PATH, full.names = T)
-files_01 = list.files(path=DATA_PATH_RAW, full.names = T)
+files_prc    = list.files(path=DATA_PATH_PRC, full.names = T, recursive = T, pattern = '*hourly*')
+files_prc_60 = list.files(path=DATA_PATH_PRC, full.names = T, pattern = '*hourly*')
 files_15 = files[grep('15mins',files)]
 files_60 = files[grep('hourly', files)]
 
-# select those users for which enough data is available
+# extract user IDs 
+users_01 = sapply(files_01, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '\\.')[[1]][1])
+users_15 = sapply(files_15, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '_')[[1]][1])
+users_sel= intersect(users_01, users_15)
+
+
+# load IDs and names
+usr_name = read.csv(paste(METADATA_PATH, 'user_names_ids.csv', sep = '/'))
 
 
 # __________________________________________________
@@ -77,7 +47,7 @@ files_60 = files[grep('hourly', files)]
 # plot ground truth components
 plot_user = function(homeData, main = 'minute') {
   
-  names(homeData) = toupper(names(homeData))
+  names(homeData) = tolower(names(homeData))
   
   # aggregate components
   AC_kwh        = add.columns(homeData,AC)
@@ -101,26 +71,21 @@ plot_user = function(homeData, main = 'minute') {
 }
 
 all_data = list()
-for(i in 1:length(files_01)){
+for(i in 1:nrow(user_names)){
 
-  # some gymnastics to get user ID
-  userID = strsplit(rev(strsplit(files_01[i], '/')[[1]])[1], '_')[[1]][1]
+  # current user info
+  user   = user_names[i,]
   
+  # some gymnastics to get appropriate data files for this user  
+  files_01_i = files_01[grep(paste('/', user$ID, '.csv', sep=''), files_01)]
+  files_15_i = files_15[grep(paste('/', user$ID, '_15mins.csv', sep=''), files_15)]
+  files_60_i = files_60[grep(paste('/', user$ID, '_hourly.csv', sep=''), files_60)]
+
   # read in data at different resolutions...
-  cat(paste(userID, '...\n'))
-  data_01 = read.csv(files_01[i]); data_01$localminute = as.POSIXct(data_01$localminute); names(data_01)[1] = 'date';
-  data_15 = read.csv(files_15[i]); data_15$date = as.POSIXct(data_15$date);
-  data_60 = read.csv(files_60[i]); data_60$date = as.POSIXct(data_60$date);
-  
-  # add in weather (temperature) data
-  data_15 = merge(data_15, subset(weather.15mins, select = c('date', 'TemperatureF')), by = 'date')
-  data_60 = merge(data_60, subset(weather.hourly, select = c('date', 'TemperatureF')), by = 'date')  
-  
-  # skip users that don't have enough data
-  if (nrow(data_60) < 2 * 30 * 24) {
-    cat('Not enough data!\n')
-    next
-  }
+  cat(paste(user$ID, '...\n'))
+  data_01 = read.csv(files_01_i); data_01$localminute = as.POSIXct(data_01$localminute); names(data_01)[1] = 'date';
+  data_15 = read.csv(files_15_i); data_15$date = as.POSIXct(data_15$date);
+  data_60 = read.csv(files_60_i); data_60$date = as.POSIXct(data_60$date);
   
   dir.create(file.path(PLOTS_PATH, userID))
   pdf(file=paste(paste(PLOTS_PATH, userID, sep = '/'), paste(userID,'.pdf',sep=''), sep='/'),width=10,height=6)
