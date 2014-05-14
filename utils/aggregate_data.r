@@ -23,7 +23,7 @@ toXmin = function(data,dateCol='date', min = 15){
 add.columns = function(data,labels) {
   sub = match(labels,names(data))
   sub = sub[!is.na(sub)]
-  return(apply(as.matrix(data[,sub]),1,sum))
+  return(apply(as.matrix(data[,sub]),1,function(x) sum(x, na.rm=T)))
 }
 
 

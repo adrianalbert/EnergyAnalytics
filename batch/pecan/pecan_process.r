@@ -1,6 +1,9 @@
 # pecan_process.r
 #
 # Parse & integrate Pecan St data.
+# Clean: remove unreasonable values, 
+#        fill in small gaps, 
+#        remove columns with many missing values.
 # 
 # Adrian Albert
 #
@@ -20,7 +23,6 @@ library('ggplot2')
 library('reshape')
 library('dummies')
 library('parallel')
-library('VIM')
 
 setwd('~/EnergyAnalytics/')
 source('./utils/aggregate_data.r')
@@ -36,25 +38,27 @@ dir.create(file.path(OUT_PATH))
 # Logic to process data 
 # ------------------------------------------
 
-process_data = function(raw, thresh = 50, dateCol = 'date') {
+process_data = function(raw, dateCol = 'date', method = 'IRMI') {
   
   # remove nonsensical values
   df = sapply(raw[,-which(names(raw) == dateCol)], function(x) {
-    idx = which(x < 0 | x > thresh)
-    x[idx] = NA
+    q   = quantile(x, probs = c(0.005, 0.995), na.rm = T)
+    idx = which(x < q[1] | x > q[2])
+    if (length(idx)>0) x[idx] = NA
     return(x)
   })
   df = as.data.frame(df)
   dat= as.POSIXct(raw[,dateCol])
   
-  # remove columns with too much missing data
+  # remove columns with all missing data
   col.na = which(sapply(df, function(x)all(is.na(x))) | sapply(df, function(x)all(x==0)))
   if (length(col.na)>0) df = df[,-col.na] 
   
   nr.na = sapply(df, function(x)length(which(is.na(x))))
-  nr.na = which(nr.na >= nrow(df)/3)
+  nr.na = which(nr.na >= nrow(df)/2)
   if (length(nr.na)>0) df = df[,-nr.na] 
   
+  # have we removed all but one column?
   if (!is.data.frame(df)) return(NULL)
   
   # remove complete NAs row-wise
@@ -68,10 +72,12 @@ process_data = function(raw, thresh = 50, dateCol = 'date') {
   # imputate missing data  
   no.nas = apply(df, 2, function(x) length(which(is.na(x))))
   if (sum(no.nas) > 0) {    
-#     imp = irmi(df) 
-    imp = imputateMissingValues(df) 
+    imp = imputateMissingValues(df, method = method) 
   } else imp = df
-  imp[,dateCol] = dat
+  
+  # add date column back in
+  imp = cbind(dat, imp)
+  names(imp)[1] = 'date'
   
   return(imp)
 }
@@ -105,7 +111,7 @@ res      = mclapply(1:length(files.input[idx]),
                     mc.cores = 5, 
                     function(i) {       
   file = files.input[idx[i]]  
-  cat(paste('Processing ', file, ' : ', idx[i], '/', length(files.input[idx]), sep = ''))
+  cat(paste('Processing ', file, ' : ', idx[i], '/', length(files.input[idx]), '\n', sep = ''))
   year = strsplit(file, '/')[[1]]
   year = year[length(year)-1]
   
@@ -116,25 +122,26 @@ res      = mclapply(1:length(files.input[idx]),
   if (uid %in% uids.done) {
     cat('Already processed!\n')
     return(0)
-  } else cat('\n')
+  }
   
   #source('~/EnergyAnalytics/utils/aggregate_data.r')
   # aggregate data
   data_60 = toHourly(data, dateCol = 'localminute')
-  data_15 = toXmin(data, dateCol = 'localminute', min = 15)
+  data_15 = toXmin(data, min = 15, dateCol = 'localminute')
   
   # clean data
-  data_60 = process_data(data_60)
-  data_15 = process_data(data_15)
+  data_01_proc = process_data(data, method = 'NONE', dateCol = 'localminute')  
+  data_60_proc = process_data(data_60, method = 'NONE')
+  data_15_proc = process_data(data_15, method = 'NONE')
   
   # is there enough data for this user?
-  if (is.null(data_60) || is.null(data_15)) return(NA);
+  if (is.null(data_60_proc) || is.null(data_15_proc)) return(NA);
   
   # save to file
   dir.create(file.path(OUT_PATH, year))      
-  # write.csv(data, file = paste(OUT_PATH, paste(year, '/', uid, '_minute.csv', sep = ''), sep = '/'), row.names = F)
-  write.csv(data_15, file = paste(OUT_PATH, paste(year, '/', uid, '_15mins.csv', sep = ''), sep = '/'), row.names = F)
-  write.csv(data_60, file = paste(OUT_PATH, paste(year, '/', uid, '_hourly.csv', sep = ''), sep = '/'), row.names = F)
+  write.csv(data_01_proc, file = paste(OUT_PATH, paste(year, '/', uid, '_minute.csv', sep = ''), sep = '/'), row.names = F)
+  write.csv(data_15_proc, file = paste(OUT_PATH, paste(year, '/', uid, '_15mins.csv', sep = ''), sep = '/'), row.names = F)
+  write.csv(data_60_proc, file = paste(OUT_PATH, paste(year, '/', uid, '_hourly.csv', sep = ''), sep = '/'), row.names = F)
   
   return(0)
 })  

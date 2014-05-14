@@ -12,25 +12,40 @@ library('lubridate')
 library('Amelia')
 library('imputation')
 library('zoo')
+library('VIM')
 
 # _______________________________________________________
 # Function to imputate missing observations using EM/SVD
 
-imputateMissingValues = function(X.imp, verbose=T){
+imputateMissingValues = function(X.imp, verbose=T, method = 'AMELIA'){
   sd_col   = apply(X.imp, 2, function(x) sd(x,na.rm=T))
   rm.vars  = which(sd_col == 0 | is.na(sd_col))
+  
   if (length(rm.vars) == ncol(X.imp)) {
     
     print('All non-NA covariate values are constant - cannot impute!')
     X.ok.imp = X.imp
-  } else {
-    if (length(rm.vars)>0) X.imp = X.imp[,-rm.vars]
+    return(X.ok.imp)
+  }
+  
+  if (length(rm.vars)>0) X.imp = X.imp[,-rm.vars]
+  
+  if (method == 'AMELIA') {
     bds        = matrix(nrow=ncol(X.imp), ncol=3)
     bds[,1]    = 1:ncol(X.imp)
     bds[,2:ncol(bds)] = t(sapply(1:ncol(X.imp), function(i) range(X.imp[,i], na.rm=T)))    
     res   = try(amelia(m=1, x = X.imp, bounds = bds)$imputations[[1]])
     if (class(res) == 'try-error') X.ok.imp = X.imp else X.ok.imp = res
   }
+  
+  if (method == 'IRMI') {
+    X.ok.imp = irmi(X.imp)#, robust = T, mi = 3)
+  }
+  
+  if (method == 'NONE') {
+    X.ok.imp = X.imp
+  }
+  
   return(X.ok.imp)
 }
 

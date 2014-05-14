@@ -18,6 +18,7 @@ source('./pecan/define_categories_pecan.r')
 
 # select one year of data to use
 year          = '2013'
+DATA_PATH_ALL = '~/energy-data/pecan_street/usage-orig/'
 DATA_PATH     = paste('~/energy-data/pecan_street/usage-processed/', year, sep='')
 DATA_PATH_RAW = paste('~/energy-data/pecan_street/usage-orig/', year, sep = '')
 METADATA_PATH = '~/energy-data/pecan_street/metadata/'
@@ -44,15 +45,17 @@ files_60 = files[grep('hourly', files)]
 # select those users for which enough data is available
 users_01 = sapply(files_01, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '\\.')[[1]][1])
 users_15 = sapply(files_15, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '_')[[1]][1])
-users_sel= intersect(users_01, users_15)
 
 # __________________________________________________
 # Assign each user a unique human-readable name
 
+files_all = list.files(path=DATA_PATH_ALL, full.names = T, recursive = T)
+users_all = unique(sapply(files_all, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '\\.')[[1]][1]))
+
 # load baby names
 # we're going to name each user for later easiness of use
 baby_names  = read.csv('~/Dropbox/OccupancyStates/data/baby-names.csv')
-user_names  = data.frame(ID = users_sel, name = unique(baby_names$name)[1:length(users_sel)])
+user_names  = data.frame(ID = users_all, name = unique(baby_names$name)[1:length(users_all)])
 
 # save names to file
 write.csv(user_names, file = paste(METADATA_PATH, 'user_names_ids.csv', sep = '/'))

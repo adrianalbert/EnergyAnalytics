@@ -8,6 +8,9 @@
 
 rm(list = ls())
 options(error = recover)
+library('lubridate')
+library('ggplot2')
+library('reshape')
 
 # __________________________________________________
 # Initializations...
@@ -16,7 +19,7 @@ setwd('~/EnergyAnalytics/batch/pecan/')
 source('../../utils/aggregate_data.r')
 source('../../batch/pecan/define_categories_pecan.r')
 
-# use data from 2013
+# define some paths
 DATA_PATH_SEL = '~/energy-data/pecan_street/usage-select/'
 METADATA_PATH = '~/energy-data/pecan_street/metadata/'
 PLOTS_PATH    = '~/Dropbox/OccupancyStates/plots/pecan-street'
@@ -26,97 +29,179 @@ dir.create(PLOTS_PATH)
 # Access usage data
 
 # list all data files for the selected subset of data
-files_prc    = list.files(path=DATA_PATH_PRC, full.names = T, recursive = T, pattern = '*hourly*')
-files_prc_60 = list.files(path=DATA_PATH_PRC, full.names = T, pattern = '*hourly*')
-files_15 = files[grep('15mins',files)]
-files_60 = files[grep('hourly', files)]
+files_01 = list.files(path=paste(DATA_PATH_SEL, '/01min', sep=''), full.names = T, recursive = T)
+files_15 = list.files(path=paste(DATA_PATH_SEL, '/15min', sep=''), full.names = T, recursive = T)
+files_60 = list.files(path=paste(DATA_PATH_SEL, '/60min', sep=''), full.names = T, recursive = T)
 
 # extract user IDs 
-users_01 = sapply(files_01, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '\\.')[[1]][1])
-users_15 = sapply(files_15, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '_')[[1]][1])
-users_sel= intersect(users_01, users_15)
-
+users_sel = sapply(files_60, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '\\.')[[1]][1])
+year_sel  = sapply(files_60, function(s) tail(strsplit(s, '/')[[1]], 2)[1])
 
 # load IDs and names
 usr_name = read.csv(paste(METADATA_PATH, 'user_names_ids.csv', sep = '/'))
 
-
 # __________________________________________________
-# Plot usage by minute & by hour for each user
+# Define plotting functions
+
+# color codes for different usage types
+cols = c(use= '#000000', AC = '#FE2E2E', HV = '#0040FF', user = '#088A08', nonHVAC = '#5F04B4',
+         lights = '#B45F04', always_on = '#01A9DB', scheduled = '#FF00BF', TemperatureF = '#424242')
 
 # plot ground truth components
 plot_user = function(homeData, main = 'minute') {
   
-  names(homeData) = tolower(names(homeData))
+  maxUsage = max(homeData$use)
+
+  # plot different usages
+  plot(homeData$date,homeData$use,type='l',col=cols['use'],main=main,ylab='kW',ylim=c(0,1.1*maxUsage),xaxt='n')
+  for (var in setdiff(names(homeData), c('use', 'date'))) {
+    points(homeData$date,homeData[,var],type='l',col=cols[var])
+  }
   
-  # aggregate components
-  AC_kwh        = add.columns(homeData,AC)
-  HV_kwh        = add.columns(homeData,HV)
-  total_kwh     = add.columns(homeData,total)
-  occupancy_kwh = total_kwh - AC_kwh - HV_kwh
+  # if plotting temperature, adjust values to plot on same axis
+  if ('TemperatureF' %in% names(homeData))
+    points(homeData$date, homeData$TemperatureF/100*maxUsage,type='l',col=cols['TemperatureF'])
   
-  maxUsage = max(total_kwh)
-  plot(homeData$DATE,total_kwh,type='l',col=cols[1],main=main,ylab='kW',ylim=c(0,1.1*maxUsage),xaxt='n')
-  points(homeData$DATE,AC_kwh,type='l',col=cols[3])
-  points(homeData$DATE,HV_kwh,type='l',col=cols[2])
-  points(homeData$DATE,occupancy_kwh,type='l',col=cols[4])
-  if ('TEMPERATUREF' %in% names(homeData))
-    points(homeData$DATE,homeData$TEMPERATUREF/100*maxUsage,type='l',col=cols[5])
-  d = homeData$DATE
+  d = homeData$date
   dts = seq(d[1],d[length(d)],by=3600*24) # one per day from one per minute
   axis(1, dts, format(dts, "%a, %m/%d"), cex.axis=1)
   grid(nx=NA,ny=NULL)
-  abline(v=dts,col="black",lty=3)
-  
+  abline(v=dts,col="black",lty=3)  
 }
 
-all_data = list()
-for(i in 1:nrow(user_names)){
+# plot usage by given factor
+plot_comps = function(dat, var = 'Hour', title = 'Components', facet = NULL) {
+  
+  # construct plot
+  dat = melt(dat, id.vars = c(var, facet))
+  
+  p = ggplot(dat, aes_string(x = var, y = 'value'))
+  p = p + geom_area(aes(fill = variable, color = variable), position = 'stack')    
+  if (!is.null(facet)) 
+    p = p + facet_wrap(as.formula(paste("~", facet)), ncol=1, scales = 'free')
+  p = p + theme_bw() +
+    theme(panel.grid.major  = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_blank(),
+          strip.text.x     = element_text(size=18),
+          axis.title.x     = element_text(size = 18),
+          axis.text.y      = element_text(size=18), 
+          axis.text.x      = element_text(size=18),
+          axis.title.y     = element_text(size=18),
+          axis.title.x     = element_text(size=18),
+          plot.title       = element_text(size=20),            
+          legend.text      = element_text(size=18),        
+          legend.title     = element_text(size=18),    
+          legend.position  = c(0.2, 0.5),
+          axis.ticks = element_blank() ) + 
+    theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
+    ggtitle(title)  + xlab(var) + ylab('Avg. kWh')
+  
+  return(p)
+}
+
+
+# __________________________________________________
+# Generate plots for each user
+end_uses = list()
+avg_cons = list()
+for(i in 1:length(users_sel)){
 
   # current user info
-  user   = user_names[i,]
-  
-  # some gymnastics to get appropriate data files for this user  
-  files_01_i = files_01[grep(paste('/', user$ID, '.csv', sep=''), files_01)]
-  files_15_i = files_15[grep(paste('/', user$ID, '_15mins.csv', sep=''), files_15)]
-  files_60_i = files_60[grep(paste('/', user$ID, '_hourly.csv', sep=''), files_60)]
+  user   = subset(usr_name, ID == users_sel[i])
+  year   = year_sel[i]
 
+  # create folder for plots
+  dir.create(file.path(PLOTS_PATH, year, user$ID), recursive = TRUE)
+    
   # read in data at different resolutions...
   cat(paste(user$ID, '...\n'))
-  data_01 = read.csv(files_01_i); data_01$localminute = as.POSIXct(data_01$localminute); names(data_01)[1] = 'date';
-  data_15 = read.csv(files_15_i); data_15$date = as.POSIXct(data_15$date);
-  data_60 = read.csv(files_60_i); data_60$date = as.POSIXct(data_60$date);
+  data_01 = read.csv(files_01[i]); data_01$date = as.POSIXct(data_01$date); 
+  data_15 = read.csv(files_15[i]); data_15$date = as.POSIXct(data_15$date); 
+  data_60 = read.csv(files_60[i]); data_60$date = as.POSIXct(data_60$date); data_60 = na.omit(data_60)   
   
-  dir.create(file.path(PLOTS_PATH, userID))
-  pdf(file=paste(paste(PLOTS_PATH, userID, sep = '/'), paste(userID,'.pdf',sep=''), sep='/'),width=10,height=6)
+  # Compute basic stats about end-uses
+  # --------------------------------------------
   
-  # define plot parameters
+  # types of end uses
+  end_uses[[i]] = setdiff(names(data_60), c('date', 'use', 'TemperatureF'))
+  
+  # consumption by time of day
+  df = cbind(data_60, Hour = hour(data_60$date), Month = month(data_60$date, label=T))
+  df$Time = 'Night'
+  df$Time[which(df$Hour %in% 5:12)]  = 'Morning'
+  df$Time[which(df$Hour %in% 13:18)] = 'Afternoon'
+  df$Time[which(df$Hour %in% 19:21)] = 'Evening'
+  df$Season = 'Fall-Winter'
+  df$Season[which(df$Month %in% c('Jun', 'Jul', 'Aug', 'Sep'))] = 'Summer'
+  df$Season[which(df$Month %in% c('Feb', 'Mar', 'Apr', 'May'))] = 'Spring'
+  cur_mu_hour = aggregate(. ~ Hour + Season, FUN = mean,
+                          data = df[,-which(names(df) %in% c('date', 'TemperatureF', 'Time', 'Month', 'use'))])  
+  cur_mu_time = aggregate(. ~ Time + Season, FUN = mean,
+                          data = df[,-which(names(df) %in% c('date', 'TemperatureF', 'Hour', 'Month', 'use'))])
+  cur_mu_time = melt(cur_mu_time, id.vars = c('Time', 'Season'))
+  cur_mu_time$ID = user$ID; cur_mu_time$name = user$name; cur_mu_time$year = year
+  avg_cons[[i]] = cur_mu_time
+  
+  # Plot breakdown of avg usage by end use & hr
+  # --------------------------------------------
+  
+  p.hr = plot_comps(cur_mu_hour, var = 'Hour', facet = 'Season',
+                    title = paste('Avg. Hourly Usage, User', user$name, 'ID', user$ID))
+    
+  pdf(file=paste(paste(PLOTS_PATH, year, user$ID, sep = '/'), paste(user$ID,'_components.pdf',sep=''), sep='/'),width=10,height=6)
+  print(p.hr)
+  dev.off()
+  
+  # Plot usage by minute & by hour for each user
+  # --------------------------------------------
+  
+  pdf(file=paste(paste(PLOTS_PATH, year, user$ID, sep = '/'), paste(user$ID,'_resolutions.pdf',sep=''), sep='/'),width=10,height=6)
+  
+  # define plot layout
   op <- par(no.readonly = TRUE)
   m <- matrix(c(1,2,3,4),nrow=4,ncol=1,byrow=T)
   layout(mat = m,heights = c(0.3,0.3,0.3,0.1))
   par(oma=c(2,2,2,0),mar=c(2,4,2,1)) # Room for the title
   
-  cols = c('black','#FE2E2E','#0040FF', '#088A08', '#424242')
+  # select a random starting point, make sure data is ok for plotting  
+  ok = FALSE
+  while (!ok) {
+    start_date = sample(data_60$date[-((nrow(data_60)-24*10):nrow(data_60))], 1)
+    sel_01 = subset(data_01, date >= start_date & date < start_date + 10*24*3600)
+    sel_15 = subset(data_15, date >= start_date & date < start_date + 10*24*3600)
+    sel_60 = subset(data_60, date >= start_date & date < start_date + 10*24*3600)
+    if (nrow(na.omit(sel_01)) > 0 & nrow(na.omit(sel_15)) > 0 & nrow(na.omit(sel_60)) > 0 ) 
+      ok = TRUE
+  }      
+    
   # print minute-by-minute data
-  print(plot_user(data_01[1:(7*24*60),], main = 'minute'))
+  print(plot_user(sel_01, main = 'minute'))
   # print 15 min data
-  print(plot_user(data_15[1:(7*24*4),], main = '15 minute'))
+  print(plot_user(sel_15, main = '15 minute'))
   # print hourly data
-  print(plot_user(data_60[1:(7*24),], main = 'hourly'))
+  print(plot_user(sel_60, main = 'hourly'))
   
-  mtext(paste('Pecan Street Experiment User', userID), line=0, font=2, cex=1.2, outer=TRUE)
+  mtext(paste('Pecan Street Experiment User', user$name, ', ID =', user$ID), line=0, font=2, cex=1.2, outer=TRUE)
   par(mar=c(1,4,1,1))
   plot.new()
-  legend("center", lty=1,cex=1,lwd=2,
-         legend=c('total','HV', 'AC', 'occupant', 'temperature (F)'), 
-         col=cols,horiz=T)
+  vars_sel = setdiff(names(data_60), 'date')
+  legend("center", lty=1,cex=1,lwd=2, legend=vars_sel, col=cols[vars_sel],horiz=T)
 
   # save plot to file
   dev.off()
   
-  # store data for later processsing
-  all_data[[userID]] = list(min_15 = data_15, min_60 = data_60)
 }
 
-# save data to RData file
-save(list = c('all_data'), file = '~/energy-data/pecan_street/')
+# how many users have different end uses monitored?
+end_uses_tab = table(unlist(end_uses))
+
+# form analysis dataset for entire population
+avg_cons_all = do.call('rbind', avg_cons)
+
+# _______________________________________________________
+# Plot distribution of appliance categories across users
+
+# _______________________________________________________________
+# Plot distribution of consumption by end use and by time of day
+
