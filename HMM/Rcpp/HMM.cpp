@@ -1,13 +1,15 @@
 //#include <Rcpp.h>
 #include <RcppArmadillo.h>
 
-//#include "HMM.h"		// class definition
+// in order to use includes like this it's best to build a package!
+//#include "/home/adrian/EnergyAnalytics/HMM/Rcpp/HMM.h"		// class definition
 
 using namespace Rcpp;
 using namespace arma;
 
 // Algebra & math is done in Armadillo because of more robust support for this functionality.
 // Rcpp is used to interface easily with R.
+// Some math functionality is based on "Rcpp sugar"
 
 // [[Rcpp::depends("RcppArmadillo")]]
 
@@ -27,6 +29,7 @@ using namespace arma;
 	Response distribution density
 */
 
+// C++/Armadillo version
 arma::mat p_response(double x_obs, arma::colvec z, arma::mat beta) {
 
   arma::mat beta_mu = beta.cols(0, beta.n_cols-2);
@@ -36,15 +39,27 @@ arma::mat p_response(double x_obs, arma::colvec z, arma::mat beta) {
   arma::mat P(beta_mu.n_rows, beta_mu.n_rows);
   double mu, p, sd;
   
-  for (int i = 0; i<beta.n_rows; i++) {
+  for (int i = 0; i<beta_mu.n_rows; i++) {
     sd = sigma(i);
-    be = beta_mu.row(i);
-    mu = sum(be * z);
+    be = arma::trans(beta_mu.row(i));
+    mu = arma::dot(be, z);
     P(i,i) = R::dnorm(x_obs, mu, sd, 0);
   }
   
 	return P;
 }
+
+// wrapper to export to R
+// [[Rcpp::export]]
+Rcpp::NumericMatrix r_p_response(double x_obs, 
+                                 Rcpp::NumericVector z_, 
+                                 Rcpp::NumericMatrix beta_) {
+                                   
+  arma::colvec z = as<arma::colvec>(z_);
+  arma::mat beta = as<arma::mat>(beta_);
+  arma::mat ret_ = p_response(x_obs, z, beta);
+  return(Rcpp::wrap(ret_));
+}       
 
 /* 
 	Transition distribution density
