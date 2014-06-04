@@ -59,7 +59,7 @@ process_data = function(raw, dateCol = 'date', method = 'IRMI') {
 
   # remove columns with many NAs
   nr.na = sapply(df, function(x)length(which(is.na(x))))
-  nr.na = which(nr.na >= nrow(df)/2)
+  nr.na = which(nr.na >= 0.9*nrow(df))
   if (length(nr.na)>0) df = df[,-nr.na] 
   
   # have we removed all but one column?
