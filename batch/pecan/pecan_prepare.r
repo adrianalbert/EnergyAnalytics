@@ -126,6 +126,46 @@ to_categories = function(homeData, dateCol = 'date') {
   return(data_new)
 }
 
+# ------------------------------------------
+# Concatenate data across multiple years
+# ------------------------------------------
+
+concatenate_data = function(file_list) {
+  
+  # load data
+  data_list = lapply(file_list, function(f) {
+    # get current data  
+    data = read.csv(f)   
+    uid  = data$dataid[1]
+    data = data[,-1]  
+    return(data)
+  })
+  
+  if (length(data_list) == 1) return(data_list)
+  
+  # make sure all end-uses are aligned
+  all_cols = unique(unlist(lapply(data_list, names)))
+  data = data_list[[1]]
+  for (i in 2:length(data_list)) {
+    tmp = data_list[[i]]
+    cur_cols = setdiff(names(data), names(tmp))
+    new_cols = setdiff(names(data_list[[i]]), names(data))
+    if (length(cur_cols)>0)  {
+      tmp[,cur_cols] = NA
+    }
+    if(length(new_cols)>0) {
+      data[,new_cols]= NA;
+    }
+    data = rbind(data, tmp)
+  }
+  
+  return(data)
+}
+
+# ------------------------------------------
+# Prepare data for analysis
+# ------------------------------------------
+
 res = mclapply(1:nrow(usersVec),
                mc.cores = 5,
             function(i) {
