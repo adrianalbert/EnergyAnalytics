@@ -136,7 +136,7 @@ defineHMM.depmix = function(data.train, K = 3, type = 'default',
   fmla_response = as.formula(fmla_response)            
   
   # define transition model
-  if (intercept_tran) fmla_transitn = 'obs ~ 1' else fmla_transitn = 'obs ~ -1'
+  if (intercept_tran) fmla_transitn = ' ~ 1' else fmla_transitn = ' ~ -1'
   if (length(transitn.vars)>0) fmla_transitn = paste(fmla_transitn, paste(transitn.vars, collapse = '+'), sep='+')
   fmla_transitn = as.formula(fmla_transitn)   
       

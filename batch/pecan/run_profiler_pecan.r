@@ -16,225 +16,153 @@ library('segmented')
 setwd('~/EnergyAnalytics/thermal_profiles/profiler/')
 source('stateProcessorWrapper.r')
 source('stateVisualizerWrapper.r')
+source('../../batch/pecan/define_categories_pecan.r')
 
-DATA_PATH  = '~/energy-data/pecan_street/usage-processed/2012/'
-PLOTS_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street'
-dir.create(PLOTS_PATH)
+DATA_PATH = '~/energy-data/pecan_street/usage-select/'
+DUMP_PATH = '~/energy-data/pecan_street/models/'
+PLOT_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street'
 
-# load weather data
-weather.hourly = read.csv('~/energy-data/pecan_street/weather/weather_hourly.csv')
-weather.15mins = read.csv('~/energy-data/pecan_street/weather/weather_15mins.csv')
-weather.hourly$date = as.POSIXct(as.character(weather.hourly$date))
-weather.15mins$date = as.POSIXct(as.character(weather.15mins$date))
-
-# load baby names
-baby_names  = read.csv('~/Dropbox/OccupancyStates/data/baby-names.csv')
-
-# __________________________________________________
-# Select appliances of interest
-
-HVAC   = c('AIR1','AIR2','FURNACE1','FURNACE2')
-HV     = c('FURNACE1','FURNACE2')
-AC     = c('AIR1','AIR2')
-lights = c('LIGHTS_PLUGS1','LIGHTS_PLUGS2','LIGHTS_PLUGS3','LIGHTS_PLUGS4')
-total   = c('USE')
+# load user names
+user_names = read.csv('~/energy-data/pecan_street/metadata/user_names_ids.csv')
 
 # __________________________________________________
 # Load up user data
 
-# list all data files for 2013
-files    = list.files(path=DATA_PATH, full.names = T)
-files_01 = files[grep('minute',files)]
-files_15 = files[grep('15mins',files)]
-files_60 = files[grep('hourly', files)]
+# list all data files by year/uid
+files.input = list.files(path=DUMP_PATH, pattern = '*_decoded*', full.names = T, recursive = T)
+already_done  = lapply(files.input, function(x) {
+  tmp = strsplit(x, '/')[[1]]
+  ret = data.frame(res = as.character(tmp[length(tmp)-1]),                   
+                   yr  = as.character(tmp[length(tmp)-3]),
+                   uid = as.character(tmp[length(tmp)-2]))
+  rownames(ret) = NULL
+  return(ret)
+})
+already_done = do.call('rbind', already_done)
+already_done$yr = as.character(already_done$yr)
+already_done$uid= as.character(already_done$uid)
+already_done$res= as.character(already_done$res)
 
-# __________________________________________________
-# Plot usage by minute & by hour for each user
+# list all data files
+files    = list.files(path=DATA_PATH, full.names = T, recursive = T)
+files_01 = files[grep('01min',files)]
+files_15 = files[grep('15min',files)]
+files_60 = files[grep('60min', files)]
 
-# aggregate data from columns defined by labels
-usage = function(data,labels) {
-  sub = match(labels,names(data))
-  sub = sub[!is.na(sub)]
-  return(apply(as.matrix(data[,sub]),1,sum))
-}
-
-# plot ground truth components
-plot_user = function(homeData, main = 'minute') {
-  
-  names(homeData) = toupper(names(homeData))
-  
-  # aggregate components
-  AC_kwh        = usage(homeData,AC)
-  HV_kwh        = usage(homeData,HV)
-  total_kwh     = usage(homeData,total)
-  occupancy_kwh = total_kwh - AC_kwh - HV_kwh
-  
-  maxUsage = max(total_kwh)
-  plot(homeData$DATE,total_kwh,type='l',col=cols[1],main=main,ylab='kW',ylim=c(0,1.1*maxUsage),xaxt='n')
-  points(homeData$DATE,AC_kwh,type='l',col=cols[3])
-  points(homeData$DATE,HV_kwh,type='l',col=cols[2])
-  points(homeData$DATE,occupancy_kwh,type='l',col=cols[4])
-  if ('TEMPERATUREF' %in% names(homeData))
-    points(homeData$DATE,homeData$TEMPERATUREF/100*maxUsage,type='l',col=cols[5])
-  d = homeData$DATE
-  dts = seq(d[1],d[length(d)],by=3600*24) # one per day from one per minute
-  axis(1, dts, format(dts, "%a, %m/%d"), cex.axis=1)
-  grid(nx=NA,ny=NULL)
-  abline(v=dts,col="black",lty=3)
-  
-}
-
-all_data = list()
-for(i in 1:length(files_01)){
-
-  # some gymnastics to get user ID
-  userID = strsplit(rev(strsplit(files_01[i], '/')[[1]])[1], '_')[[1]][1]
-  
-  # read in data at different resolutions...
-  cat(paste(files_01[i], files_15[i], files_60[i], '...\n'))
-  data_01 = read.csv(files_01[i]); data_01$localminute = as.POSIXct(data_01$localminute); names(data_01)[1] = 'date';
-  data_15 = read.csv(files_15[i]); data_15$date = as.POSIXct(data_15$date);
-  data_60 = read.csv(files_60[i]); data_60$date = as.POSIXct(data_60$date);
-  
-  # add in weather (temperature) data
-  data_15 = merge(data_15, subset(weather.15mins, select = c('date', 'TemperatureF')), by = 'date')
-  data_60 = merge(data_60, subset(weather.hourly, select = c('date', 'TemperatureF')), by = 'date')  
-  
-  # define plot parameters
-  op <- par(no.readonly = TRUE)
-  m <- matrix(c(1,2,3,4),nrow=4,ncol=1,byrow=T)
-  layout(mat = m,heights = c(0.3,0.3,0.3,0.1))
-  par(oma=c(2,2,2,0),mar=c(2,4,2,1)) # Room for the title
-  
-  cols = c('black','#FE2E2E','#0040FF', '#088A08', '#424242')
-  # print minute-by-minute data
-  print(plot_user(subset(data_01, date > as.POSIXct('2012-08-01') & date < as.POSIXct('2012-08-14')), main = 'minute'))
-  # print 15 min data
-  print(plot_user(subset(data_15, date > as.POSIXct('2012-08-01') & date < as.POSIXct('2012-08-14')), main = '15 minute'))
-  # print hourly data
-  print(plot_user(subset(data_60, date > as.POSIXct('2012-08-01') & date < as.POSIXct('2012-08-14')), main = 'hourly'))
-  
-  mtext(paste('Pecan Street Experiment User', userID), line=0, font=2, cex=1.2, outer=TRUE)
-  par(mar=c(1,4,1,1))
-  plot.new()
-  legend("center", lty=1,cex=1,lwd=2,
-         legend=c('total','HV', 'AC', 'occupant', 'temperature (F)'), 
-         col=cols,horiz=T)
-
-  # save plot to file
-  dir.create(file.path(PLOTS_PATH, userID))
-  dev.copy2pdf(file=paste(paste(PLOTS_PATH, userID, sep = '/'), paste(userID,'.pdf',sep=''), sep='/'),width=10,height=6)
-  
-  # store data for later processsing
-  all_data[[userID]] = list(min_15 = data_15, min_60 = data_60)
-}
+# extract ID and year
+usersVec = data.frame(UID = as.character(sapply(files_60, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '\\.')[[1]][1])),
+                      year= as.character(sapply(files_60, function(s) tail(strsplit(s, '/')[[1]], 2)[1])))
+rownames(usersVec) = NULL
 
 # __________________________________________________
 # Apply Thermal States model to Pecan data
 
-train.frac = 0.95
-psi    = matrix(ncol = 2, nrow = length(ppw))
-colnames(psi) = c('mins10', 'minute')
-rownames(psi) = as.character(sapply(names(ppw), trim))
-df.tot = list()
-if (1 == 1) {
-for(homeName in names(ppw)){
-  print(homeName)
-  homeData = ppw[[homeName]]
-  print(dim(homeData))
-  homeName = trim(homeName)
-  homeData$TemperatureD = c(0, diff(homeData$TemperatureF))
-    
-  datasets = list(mins10 = to10min(homeData),
-                  minute = homeData)
-  results  = list()
+# format data in the way it's expected by the HMM package
+format_data = function(homeData) {
   
-  k = 0
-  for (d in names(datasets)) {
-    data     = datasets[[d]]
-    nTrain   = trunc(nrow(data) * train.frac)
-    k        = k + 1
-   	cur_data = subset(data, select = c('date', 'use'))
-   	names(cur_data)[2] = 'obs'
-   	cur_data$date = as.character(cur_data$date)
-   	cur_covar = subset(data, select = c('date', 'TemperatureF', 'TemperatureD'))
-   	cur_covar$date = as.character(cur_covar$date)   
-    
-    # estimate a "breakpoint" indoors temperature
-    fit  = lm('use ~ TemperatureF', data = data)    
-    fmla = as.formula(paste('~', 'TemperatureF'))
-    fit.seg <- try(segmented(fit, seg.Z = fmla, psi = 75))
-    psi[homeName, d]  = fit.seg$psi[1,2]        
-    cur_covar$TemperatureD = cur_covar$TemperatureF - psi[homeName, d]
-    data$TemperatureD = cur_covar$TemperatureD 
-    
-    # compute breakpoint model temperature contributions
-    temp.diff   = data$TemperatureF[1:nTrain] - fit.seg$psi[1,2] 
-    temp.diff.p = sapply(temp.diff, function(x) max(c(x,0)))
-    temp.diff.n = sapply(temp.diff, function(x) min(c(x,0)))
-    bpm.hvac    = fit.seg$coefficients['TemperatureF'] * temp.diff.n + 
-      (fit.seg$coefficients['TemperatureF'] + fit.seg$coefficients['U1.TemperatureF']) * temp.diff.p
-    bpm.totl = predict(fit.seg)[1:nTrain]
-    
-    # define model learning controls
-    controls = list(
-      Kmin = 4, Kmax = 4, 
-      maxit = 50, nRestarts = 5, tol = 1e-6,
-      thresh.R2 = 0.85, thresh.MAPE = 0.10,
-      test.periods = 12,
-      vis.interval = 10^(k-1) * 20 * 6)
+  # temperature above reference
+  homeData$TemperatureD = homeData$TemperatureF - 65
   
-    dir.create(file.path(PLOTS_PATH, paste(homeName, d, sep='/')))
-    # learn model
-    results[[d]] = stateProcessorWrapper(cur_data, cur_covar, homeName, 
-   				  		  	  					         controls = controls,
-                                         train.frac = train.frac, 
-   					    	  						         verbose = F, plots_path = paste(PLOTS_PATH, '/', homeName, '/', d, '/', sep=''))
-    # print(bla)
-    
-    # format decoded data 
-    obs.hvac = usage(data, HVAC)[1:nTrain]
-    obs.ac   = usage(data,AC)[1:nTrain]
-    obs.hv   = usage(data,HV)[1:nTrain]
-    obs.totl = data$use[1:nTrain]
-    date.time= data$date[1:nTrain]
-    params   = results[[d]]$decoded_data$response
-    states   = results[[d]]$decoded_data$states
-    st.types = results[[d]]$interp_data$regime.types
-    fit.hvac = as.numeric(params$means[2,states]) * data$TemperatureD[1:nTrain]
-    fit.totl = colSums(as.matrix(params$means)[,states] * rbind(rep(1,nTrain), data$TemperatureD[1:nTrain]))
-    df       = data.frame(date.time, obs.hvac, obs.ac, obs.hv, obs.totl,
-                          state = as.factor(states), fit.hvac, fit.totl, 
-                          bpm.totl, bpm.hvac)
-    
-    # compute performance metrics
-    df$obs.pr= abs(df$obs.hvac) / df$obs.totl
-    df$fit.pr= abs(df$fit.hvac) / df$fit.totl
-    df$bpm.pr= abs(df$bpm.hvac) / df$bpm.totl
-    df$fit.re= abs(df$obs.hvac - df$fit.hvac) / df$obs.hvac
-    df$bpm.re= abs(df$obs.hvac - df$bpm.hvac) / df$obs.hvac
-#     is.neutr = sapply(st.types, function(s) length(grep('N', s)>0))
-#     df$match.fit  = 1*(df$obs.pr > 0.25 & !(df$state %in% is.neutr))
-    df$premise = homeName
-    df$resolution = d
-    df.tot[[length(df.tot)+1]] = df
-  }  
-}
+  # format data as expected by the HMM package
+  cur_data = subset(homeData, select = c('date', 'use'))
+  names(cur_data)[2] = 'obs'
+  cur_data$date = as.character(cur_data$date)
+  cur_covar = subset(homeData, select = c('date', 'TemperatureF', 'TemperatureD'))
+  cur_covar$date = as.character(cur_covar$date)
+  
+  return(list(cur_data, cur_covar))
 }
 
-# plots & aggregation
-df.fin   = do.call('rbind', df.tot)
-df.fin$hour  = hour(df.fin$date)    
-df.hour  = aggregate(data = df.fin, FUN = mean,  
-                     cbind(bpm.re, fit.re) ~ hour + premise + resolution)
-# df.hour  = aggregate(data = df.fin, FUN = mean,  
-#                      cbind(bpm.pr, fit.pr, obs.pr) ~ hour + premise + resolution)
-df.hour.m= melt(subset(df.hour, resolution == 'mins10'), id.vars = c('hour', 'premise', 'resolution'))
+apply_thermal_model = function(cur_data, cur_covar, userName, 
+                               dump_path = NULL, 
+                               plot_path = NULL,
+                               train.frac = 0.9) {
+  
+  nTrain   = trunc(nrow(cur_data) * train.frac)
+  
+  # define model learning controls
+  controls = list(
+    Kmin = 4, Kmax = 4, 
+    maxit = 50, nRestarts = 5, tol = 1e-6,
+    thresh.R2 = 0.85, thresh.MAPE = 0.10,
+    test.periods = 12,
+    vis.interval = 3 * 24
+  )
+  
+  # generate visualization interval; make sure there's data in there
+  # TODO: there was an error generated here (indices for subsetting were messed up)
+  ok = FALSE
+  no.secs = controls$vis.interval * 3600
+  while (!ok) {
+    start_date = sample(cur_data$date[-((nrow(cur_data)-controls$vis.interval):nrow(cur_data))], 1)
+    stop_date  = as.character(as.POSIXct(start_date) + no.secs)
+    dat        = subset(cur_data, date >= start_date & date < stop_date)
+    if (nrow(na.omit(dat)) > 0) 
+      ok = TRUE
+  }      
+  
+  
+  # learn model
+  res = try(stateProcessorWrapper(cur_data, cur_covar, userName, 
+                              controls = controls,
+                              train.frac = train.frac, 
+                              verbose = F, 
+                              dump_path = dump_path))
+  if (class(res) == 'try-error') {
+    cat('Error in learning model for current user!\n')
+  }
+  # produce visualizations
+  res = try(stateVisualizerWrapper(res$decoder, 
+                               res$interpreter, 
+                               plots_path = plot_path, 
+                               interval = c(start_date, stop_date)))
+  if (class(res) == 'try-error') {
+    cat('Error in visualizing current user!\n')
+  }
+  
+  return(NULL)
+}
 
-# plots
+res = mclapply(1:nrow(usersVec), 
+               mc.cores = 5,
+               function(i) {
+  # load data             
+  user     = usersVec[i,] 
+  userName = as.character(user_names[which(user_names$ID == user$UID),'name'])
+  cat(paste('Processing user', user$UID, '/', user$year, ':', i, '/', nrow(usersVec)))  
+  
+  idx = which(user$UID == already_done$uid & as.character(user$year) == already_done$yr)
+  if (length(idx)>0) {
+    cat('Already processed!\n')
+    return(NULL)
+  }
+  
+  homeData15 = read.csv(files_15[i])     
+  homeData60 = read.csv(files_60[i])     
+  
+  # create directory to store models
+  dump_path_15 = file.path(DUMP_PATH, paste(user$year, user$UID, '15min/', sep='/')); 
+  dir.create(dump_path_15, recursive = T)
+  dump_path_60 = file.path(DUMP_PATH, paste(user$year, user$UID, '60min/', sep='/')); 
+  dir.create(dump_path_60, recursive = T)
+  
+  # create directory to store plots
+  plot_path_15 = file.path(PLOT_PATH, paste(user$year, user$UID, '15min/', sep='/')); 
+  dir.create(plot_path_15, recursive = T)
+  plot_path_60 = file.path(PLOT_PATH, paste(user$year, user$UID, '60min/', sep='/')); 
+  dir.create(plot_path_60, recursive = T)
+  
+  # format datasets
+  res = format_data(homeData15); cur_data15 = res[[1]]; cur_covar15 = res[[2]];
+  res = format_data(homeData60); cur_data60 = res[[1]]; cur_covar60 = res[[2]];
 
-plt = ggplot(df.hour.m, aes(hour, value, color = variable, shape = resolution))
-plt = plt + geom_point(size = 3) + geom_line(size=1.5)
-plt = plt + facet_wrap(~premise, ncol = 2, scales = 'free')
-plt
+  # apply model to data
+  res = apply_thermal_model(cur_data15, cur_covar15, userName, 
+                            dump_path = dump_path_15, 
+                            plot_path = plot_path_15)
+  res = apply_thermal_model(cur_data60, cur_covar60, userName, 
+                            dump_path = dump_path_60, 
+                            plot_path = plot_path_60)  
+  return(NULL)
+})
 
