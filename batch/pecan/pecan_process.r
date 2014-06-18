@@ -32,7 +32,23 @@ source('./utils/weather/clean_weather_data.r')
 DATA_PATH = '~/energy-data/pecan_street/'
 IN_PATH   = paste(DATA_PATH, 'usage-orig', sep = '')
 OUT_PATH  = paste(DATA_PATH, 'usage-processed', sep = '')
+METADATA_PATH = '~/energy-data/pecan_street/metadata/'
 dir.create(file.path(OUT_PATH))    
+
+# ----------------------------------------------
+# Assign each user a unique human-readable name
+# ----------------------------------------------
+
+files_all = list.files(path=IN_PATH, full.names = T, recursive = T)
+users_all = unique(sapply(files_all, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '\\.')[[1]][1]))
+
+# load baby names
+# we're going to name each user for later easiness of use
+baby_names  = read.csv('~/Dropbox/OccupancyStates/data/baby-names.csv')
+user_names  = data.frame(ID = users_all, name = unique(baby_names$name)[1:length(users_all)])
+
+# save names to file
+write.csv(user_names, file = paste(METADATA_PATH, 'user_names_ids.csv', sep = '/'))
 
 # ------------------------------------------
 # Logic to process data 

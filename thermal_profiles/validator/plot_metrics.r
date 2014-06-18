@@ -25,6 +25,7 @@ plot_gaussian_distr = function(distr, type = NULL, state = NULL,
   
   p = ggplot(dat, aes(data, color = state)) + geom_density(aes(linetype = type), size=2)
   p = p + facet_wrap(~state, scales = 'free')
+  p = p + scale_linetype_manual(values=setdiff(1:(length(unique(dat$type))+1), 2)) 
   p = p + theme_bw() + #scale_y_continuous(limits = c(0, 100))
     theme(panel.grid.major  = element_blank(),
           panel.grid.minor = element_blank(),
@@ -89,7 +90,7 @@ plot_noisy_curve = function(curves,
   df = do.call('rbind', df)
   
   p = ggplot(df, aes(var, mu, color = curve))
-  p = p + geom_line(size = 1.5) + geom_point(size = 2)
+  p = p + geom_line(size = 1.5) + geom_point(aes(shape = curve), size = 3.5)
   p = p + geom_errorbar(aes(ymin=mu-sd, ymax=mu+sd), width=.1)  
   p = p + theme_bw() + #scale_y_continuous(limits = c(0, 100))
     theme(panel.grid.major  = element_blank(),
@@ -111,4 +112,91 @@ plot_noisy_curve = function(curves,
   return(p)
 }
 
-plot_image
+# plot overlapping densities
+plot_overlapping_densities = function(df, var = 'TemperatureF', by = 'Season', 
+                                      title = NULL, xlab = var, ylab = 'pdf') {
+  
+  p  = ggplot(df, aes_string(x = var, color = by, fill = by)) + geom_density(size = 2, alpha = 0.5)
+  p = p + theme_bw() + 
+    theme(panel.grid.major  = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_blank(),
+          strip.text.x     = element_text(size=18),
+          axis.title.x     = element_text(size = 18),
+          axis.text.y      = element_text(size=18), 
+          axis.text.x      = element_text(size=18),
+          axis.title.y     = element_text(size=18),
+          axis.title.x     = element_text(size=18),
+          plot.title       = element_text(size=20),            
+          legend.text      = element_text(size=18),        
+          legend.title     = element_text(size=18),    
+          axis.ticks       = element_blank() ) + 
+    theme(plot.title=element_text(family="Times", face="bold", size=20))
+  p = p + ggtitle(title) + xlab(xlab) + ylab(ylab)
+  
+
+}
+
+# plots noisy response curves with respect to a given variable
+plot_prob_profile = function(P, var = NULL,
+                            title = 'Error Probability',
+                            xlab = 'Temperature [deg F]', ylab = 'P(state)') {
+  
+  if (is.null(var)) var = 1:nrow(P)
+  colnames(P) = 1:ncol(P)
+  P = as.data.frame(cbind(var, P)) 
+  var_name = names(P)[1]
+  df = melt(P, id.vars = var_name)
+  
+  p = ggplot(df, aes_string(x = var_name, y = 'value', color = 'variable', group = 'variable'))
+  p = p + geom_line(size = 1.5) + geom_point(size = 3.5)
+  p = p + theme_bw() + #scale_y_continuous(limits = c(0, 100))
+    theme(panel.grid.major  = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_blank(),
+          strip.text.x     = element_text(size=18),
+          axis.title.x     = element_text(size = 18),
+          axis.text.y      = element_text(size=18), 
+          axis.text.x      = element_text(size=18),
+          axis.title.y     = element_text(size=18),
+          axis.title.x     = element_text(size=18),
+          plot.title       = element_text(size=20),            
+          legend.text      = element_text(size=18),        
+          legend.title     = element_text(size=18),    
+          axis.ticks       = element_blank() ) + 
+    theme(plot.title=element_text(family="Times", face="bold", size=20))
+  p = p + ggtitle(title)  + xlab(xlab) + ylab(ylab)
+  
+  return(p)
+}
+
+# plots trellis plot (dotplot)
+# TODO: still needs some work...
+ggplot_dotplot = function(df, facet = NULL, by = NULL){
+      
+  p = ggplot(df, aes_string(x='value', y=by)) + geom_point(size=4)
+  p = p + geom_line(aes(xmin = 0, xmax = value), size=1.5)
+  p = p + facet_wrap(as.formula(paste("~", facet)), scales = 'free')
+  p = p + theme_bw() + #scale_y_continuous(limits = c(0, 100))
+    theme(panel.grid.major  = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_blank(),
+          strip.text.x     = element_text(size=18),
+          axis.title.x     = element_text(size = 18),
+          axis.text.y      = element_text(size=18), 
+          axis.text.x      = element_text(size=18),
+          axis.title.y     = element_text(size=18),
+          axis.title.x     = element_text(size=18),
+          plot.title       = element_text(size=20),            
+          legend.text      = element_text(size=14),        
+          legend.title     = element_text(size=14),  
+          legend.position  = c(0.84, 0.8),
+          axis.ticks       = element_blank() ) + 
+    theme(plot.title=element_text(family="Times", face="bold", size=20))
+  p = p + ggtitle('Avg. thermal response distribution: models and true')
+  p = p + xlab('Response [kWh/deg F]') + ylab('pdf')
+
+  return(p)
+}
+  
+

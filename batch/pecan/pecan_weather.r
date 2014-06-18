@@ -32,7 +32,7 @@ dir.create(file.path(OUT_PATH))
 # ------------------------------------------
 
 station='KTXAUSTI90' # this is Austin, TX
-data  = getWUData(station, '2012-01-01', '2014-03-01')
+data  = getWUData(station, '2012-01-01', '2014-04-01')
 
 # time average to hourly data
 weather_15m = toXmin(data, dateCol = 'Time', min = 15)

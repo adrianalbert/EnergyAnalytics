@@ -7,7 +7,7 @@ select_data = function(df, dateCol = 'date',
   # add month and season
   df$month  = month(df[,dateCol], label = TRUE, abbr = FALSE)
   df$season = 'None'; 
-  summer.months = c('May', 'June', 'July', 'August', 'September')
+  summer.months = c('April', 'May', 'June', 'July', 'August', 'September', 'October')
   idx.summer= which(df$month %in% summer.months)
   idx.winter= which(!(df$month %in% summer.months))
   if (length(idx.summer)>0) df$season[idx.summer] = 'Summer'

@@ -47,6 +47,20 @@ compute_ground_truth_response = function(df, dep.var = 'AC', indep.var = 'Temper
   return(fit)
 }
 
+# mean and variance of difference of two gaussians
+diff_gaussians = function(m1, m2){  
+  if (class(m1) == 'numeric' && class(m2) == 'numeric') {
+    return(c(mu = m1['mu'] - m2['mu'], sd = sqrt(m1['sd']^2 + m2['sd']^2)))
+  }  
+  l = list()
+  for (i in 1:length(m1)) {
+    z = c(m1[[i]]['mu'] - m2[[i]]['mu'], sqrt(m1[[i]]['sd']^2 + m2[[i]]['sd']^2))
+    names(z) = c('mu', 'sd')
+    l[[length(l) + 1]] = z
+  }  
+  return(l)
+}
+
 # given two Gaussian models for (ground truth and estimated response), compare their relative closeness
 # note that we care about both the magnitude and the sign of the relative differences!
 compare_gaussian_models = function(ground, estimate, 
@@ -165,7 +179,8 @@ compute_probability_profile = function(var, tran){
           return(as.numeric(p))
         })
         prob = do.call('rbind', prob)
-        pv = t(abs(eigen(t(prob))$vectors))[,1]
+        v    = t(eigen(t(prob))$vectors)
+        pv   = abs(v)[,1]
         pv = pv / sum(pv)
         return(pv)
   })
@@ -173,16 +188,107 @@ compute_probability_profile = function(var, tran){
   return(P)
 }
 
+# function to compute probability distribution of states for given temperature ranges
+compute_probability_profile_empirical = function(df, 
+                                       bin.out = NULL,
+                                       bin.var = 'TemperatureF', 
+                                       nbins = 10){
+  # temperature bins
+  q = quantile(df[,bin.var], probs = seq(0,1,length.out = nbins))
+  
+  # compute model in each bin
+  df$state = as.factor(df$state)
+  prob  = lapply(1:(nbins-1), function(b) {
+    idx = which(df[,bin.var] >= q[b] & df[,bin.var] <= q[b+1])
+    st  = table(df[idx,'state'])
+    ps  = st / sum(st)
+    return(ps)
+  })
+  
+  # return just intervals and models if no curve is requested
+  if (is.null(bin.out)) return(list(intervals = q, models = prob))
+  
+  # compute curve for output response variable bin.out if requested  
+  idx.bin = findInterval(bin.out, q, rightmost.closed = FALSE, all.inside = TRUE)  
+  probvec = lapply(idx.bin, function(b) prob[[b]])
+  probvec = do.call('rbind', probvec)
+  return(list(var = bin.out, probvec = probvec, prob.state = prob))
+  
+}
+
+
 # function to compute response curve based on state probability profile
-model_response_curve = function(var, resp, tran) {
-  P       = compute_probability_profile(var, tran)
+model_response_curve = function(var, resp, P) {
   resp.df = do.call('rbind', resp)
   mu_eff = P %*% resp.df[,"mu"]
   sd_eff = sqrt(P %*% (resp.df[,"mu"]^2 + resp.df[,"sd"]^2) - mu_eff^2)
   return(list(var = var, mu = mu_eff, sd = sd_eff))
 }
 
-# compute estimates of thermal energy
-compute_response_contribution = function(df, ) {
+# ____________________________________________________________________________
+# Remove apparent bias by taking difference between summer and winter models
+# this is very hackish and experimental
+
+# compute "de-biased" response
+remove_response_bias = function(mod1, mod2) {
   
+  nStates1 = length(mod1$baseload)
+  nStates2 = length(mod2$baseload)
+  
+  # compute expected distance metric
+  E_b_s = matrix(0, nrow = nStates1, ncol = nStates2)
+  for (i in 1:nStates1) {
+    for (j in 1:nStates2) {
+      d_mu = (mod1$baseload[[i]]['mu'] + mod1$volatility[[i]]['mu']) - 
+        (mod2$baseload[[j]]['mu'] + mod2$volatility[[j]]['sd'])
+      d_sd = sqrt(mod1$baseload[[i]]['sd']^2 + mod2$baseload[[j]]['sd']^2 + 
+                  mod1$volatility[[i]]['sd']^2 + mod2$volatility[[j]]['sd']^2)
+        
+      E_b_s[i,j] = E_fnorm(d_mu, d_sd)
+    }
+  }  
+  # match states in the two models according to expected difference
+  idx.b = apply(E_b_s, 2, which.min)
+  
+  # compute and adjust for bias
+  bias_state    = mod2$response[idx.b]
+  resp1_unb_st  = diff_gaussians(mod1$response, bias_state)
+  
+  # compute intersection interval for temperature profiles of two models
+  r1 = range(mod1$data$TemperatureF); r2 = range(mod2$data$TemperatureF)
+  temp_range = trunc(c(max(min(r1), min(r2)), min(max(r1), max(r2))))
+  temp_grid  = temp_range[1]:temp_range[2]
+  
+  # match states in the two models according to relative ranking at different temperatures
+#  P1    = compute_probability_profile(temp_grid, mod1$tran)
+  P1    = compute_probability_profile_empirical(mod1$data, 
+                                              bin.out = temp_grid,
+                                              bin.var = 'TemperatureF', 
+                                              nbins = 5)
+  P1 = P1$probvec
+  rank1 = t(apply(P1, 1, order))
+#   P2    = compute_probability_profile(temp_grid, mod2$tran)
+  P2    = compute_probability_profile_empirical(mod2$data, 
+                                              bin.out = temp_grid,
+                                              bin.var = 'TemperatureF', 
+                                              nbins = 5)
+  P2 = P2$probvec
+  rank2 = t(apply(P2, 1, order))
+  resp1_temp = lapply(1:length(temp_grid), function(t) {
+    resp_st_T = diff_gaussians(mod1$response[rank1[t,]], mod2$response[rank2[t,]])
+    resp_st_T = resp_st_T[order(rank1[t,])]
+    resp_st_T = do.call('rbind', resp_st_T)
+    mu_eff = sum(P1[t,] * resp_st_T[,"mu"])
+    sd_eff = sqrt(sum(P1[t,] * (resp_st_T[,"mu"]^2 + resp_st_T[,"sd"]^2)) - mu_eff^2)
+    c(mu = mu_eff, sd = sd_eff)
+  })
+  
+  a = list(var = temp_grid,
+           mu  = sapply(resp1_temp, function(l) l['mu']),
+           sd  = sapply(resp1_temp, function(l) l['sd']))
+  
+  return(list(per_state = resp1_unb_st, per_temperature = a))
 }
+
+
+
