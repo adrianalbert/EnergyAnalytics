@@ -21,6 +21,7 @@ source('../../utils/select_data.r')
 DATA_PATH = '~/energy-data/pecan_street/usage-select/'
 DUMP_PATH = '~/energy-data/pecan_street/models/'
 PLOT_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street/'
+PRODUCE_PLOTS = F
 
 # load user names
 user_names = read.csv('~/energy-data/pecan_street/metadata/user_names_ids.csv')
@@ -142,6 +143,12 @@ run_analysis = function(data, decode_info_S, decode_info_W, PLOT_PATH = PLOT_PAT
   }
   metr.temp.S  = compute_comparisons_states(f_vec_list(a_hat.S), f_vec_list(a.S))
   metr.temp.SW = compute_comparisons_states(f_vec_list(a_hat.S), f_vec_list(a.SW))
+
+  # reference profile to compute own error metrics
+  ref.prof = lapply(1:length(a_hat.S[[1]]), function(i) c(mu = 1e-10, sd = 1e-10))
+  metr.temp.S.own  = compute_comparisons_states(f_vec_list(a.S), ref.prof)
+  metr.temp.SW.own = compute_comparisons_states(f_vec_list(a.SW), ref.prof)
+  metr.temp.Shat.own = compute_comparisons_states(f_vec_list(a_hat.S), ref.prof)
   
   # assemble return metrics: effective response by temperature
   mat= matrix(0, nrow = 10, ncol = 80); colnames(mat) = 21:100; 
@@ -183,13 +190,30 @@ run_analysis = function(data, decode_info_S, decode_info_W, PLOT_PATH = PLOT_PAT
   pmat[,as.character(temperature.grid)] = t(metr.temp.S$P.rel.abs)  
   p4 = as.data.frame(pmat); 
   p4 = cbind(UID = user_ids[i], resolution = user_res[r], metric = 'P_rel.abs_S', eta = metr.temp.S$support.rab, p4)
+  # self error magnitude - debiased
+  pmat = matrix(0, nrow = nrow(t(metr.temp.SW.own$P.magnitude)), ncol = 80); colnames(pmat) = 21:100; 
+  pmat[,as.character(temperature.grid)] = t(metr.temp.SW.own$P.magnitude)  
+  p5 = as.data.frame(pmat); 
+  p5 = cbind(UID = user_ids[i], resolution = user_res[r], metric = 'P_magnitude_SW_own', eta = metr.temp.SW.own$support.mag, p5)
+  # self error magnitude - summer
+  pmat = matrix(0, nrow = nrow(t(metr.temp.SW.own$P.magnitude)), ncol = 80); colnames(pmat) = 21:100; 
+  pmat[,as.character(temperature.grid)] = t(metr.temp.S.own$P.magnitude)  
+  p6 = as.data.frame(pmat); 
+  p6 = cbind(UID = user_ids[i], resolution = user_res[r], metric = 'P_magnitude_S_own', eta = metr.temp.S.own$support.mag, p6)
+  # self error magnitude - ground truth
+  pmat = matrix(0, nrow = nrow(t(metr.temp.Shat.own$P.magnitude)), ncol = 80); colnames(pmat) = 21:100; 
+  pmat[,as.character(temperature.grid)] = t(metr.temp.S.own$P.magnitude)  
+  p7 = as.data.frame(pmat); 
+  p7 = cbind(UID = user_ids[i], resolution = user_res[r], metric = 'P_magnitude_Shat_own', eta = metr.temp.Shat.own$support.mag, p7)
   
-  rprob = rbind(p1, p2, p3, p4)
+  rprob = rbind(p1, p2, p3, p4, p5, p6, p7)
   metrics = list(response_temp = mat, response_state = rstate, response_prob = rprob)
       
   # Produce plots of individual performance metrics
   # -------------------------------------------------
 
+  if (!PRODUCE_PLOTS) return(metrics)
+  
   # plot density of temperature/overlap
   pdf(file=paste(PLOT_PATH, 'weather_season.pdf',sep='/'),width=9.3,height=4)
     df = data.frame(TemperatureF = c(df.W$TemperatureF, df.S$TemperatureF), Season = c(rep('Winter', nrow(df.W)), rep('Summer', nrow(df.S))))

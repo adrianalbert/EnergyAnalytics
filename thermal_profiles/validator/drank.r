@@ -19,7 +19,7 @@ drank = function(y, X) {
   
   # sort columns of X according to y
   idx = order(y, decreasing = T)
-  X.o = X[idx,]
+  X.o = X[,idx]
   
   # compute difference in columns
   X.D = t(diff(t(X.o)))
@@ -29,14 +29,14 @@ drank = function(y, X) {
   lambda = 1e-5
   S   = t(X.D - muD) %*% (X.D - muD) / (n-1) + diag(m-1) * lambda
   S1  = solve(S)
-  Dmat= n * S1
-  dvec= -n * (t(S1) %*% muD + S1 %*% muD)
+  Dmat= n * S1 
   bvec= rep(0, m-1)
   Amat= diag(m-1)
-  fit = solve.QP(Dmat, dvec, Amat, bvec)
-  d   = as.numeric(n * t(muD) %*% S1 %*% muD + fit$value)
-  
-  return(list(theta = fit$solution, drank = d))  
+  fit = solve.QP(Dmat, muD, Amat, bvec)
+  theta = fit$solution
+  d = n * (theta - muD) %*% S1 %*% (theta - muD)
+  d = abs(sqrt(d))
+  return(list(theta = theta, drank = d))  
 }
 
 # estimate p-value of rank distance
@@ -51,4 +51,10 @@ drank.pval = function(d, X, B = 100) {
   }
   p = S / B
   return(p)
+}
+
+compute_drank = function(y, X, B = 100) {
+  d = drank(y,X)$drank
+  p = drank.pval(d, X, B)
+  return(c(d = d, p = p))
 }
