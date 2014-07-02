@@ -24,17 +24,17 @@
 # Last modified: February 2014.
 # #########################################################################
 
-source('../clustering/d_err.r')
+source('d_err.r', chdir = T)
 
 # ___________________________________
 # Compute center of cluster
 computeCenter <- function(X, S) {
   
   # compute cluster covariance matrix
-  S1 = lapply(S, function(s) ginv(s))
+  S1 = lapply(S, function(s) solve(s))
   SS = S1[[1]]
   if (length(S1)>1) for (i in 2:length(S1)) SS = SS + S1[[i]]
-  CS = ginv(SS)
+  CS = solve(SS)
   
   # compute cluster mean
   if (length(S1) == 1) X = t(as.matrix(X))
@@ -75,10 +75,9 @@ kError <- function(X, S, K, iter = 10, verbose = T) {
       CX[k,] = res$CX
       CS[[1+length(CS)]] = res$CS
     }
-    # E-step
-  
+    # E-step  
     D   = d_err_mat(X, S, CX)
-    ASS = apply(D, 1, which.min) 
+    ASS = apply(D, 1, which.min)
     obj = sum(D[,ASS])
     
     # check convergence
