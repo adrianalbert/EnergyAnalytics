@@ -59,11 +59,12 @@ kError <- function(X, S, K, iter = 10, verbose = T) {
   }
   
   # main interation loop
-  i = 0; done = 0; obj = NA;
+  i = 0; done = 0; obj = 0; obj_vec = c(); 
   while (i < iter & !done ){    
     i       = i + 1
     ASS_old = ASS
-    
+    obj_old = obj; 
+        
     # M-step
     CX = matrix(nrow=K, ncol=p)
     CS = list()
@@ -75,17 +76,21 @@ kError <- function(X, S, K, iter = 10, verbose = T) {
       CX[k,] = res$CX
       CS[[1+length(CS)]] = res$CS
     }
+    
     # E-step  
     D   = d_err_mat(X, S, CX)
     ASS = apply(D, 1, which.min)
-    obj = sum(D[,ASS])
+    obj = sum(sapply(1:N, function(i) D[i,ASS[i]])); 
+    obj_vec = c(obj_vec, obj); 
     
     # check convergence
-    done = sum((ASS - ASS_old)^2) == 0;
+    per_changed = (sum(ASS != ASS_old) / length(ASS));
+    per_obj_chg = abs(obj - obj_old) / obj_old
+    done = (per_changed <= 0.01) | (per_obj_chg < 0.005)
   
-    if (verbose) cat(paste("Iteration", i, ': Objective =', obj, '; no. changed =', sum(ASS != ASS_old), '\n'))    
+    if (verbose) print(paste("K =", k, "; Iteration", i, ': Objective =', obj, '; %. changed =', per_changed, '; %obj changed =', per_obj_chg))    
   }
   
-  return(list(objective = obj, assignment = ASS, centers = CX, errors = CS))
+  return(list(objective = obj_vec, assignment = ASS, centers = CX, errors = CS))
   
 }

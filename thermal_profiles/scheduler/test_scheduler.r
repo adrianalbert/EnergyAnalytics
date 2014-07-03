@@ -15,6 +15,7 @@ setwd('~/EnergyAnalytics/thermal_profiles/scheduler/')
 
 library('lubridate')
 library('parallel')
+source('../../clustering/kError.r', chdir = T)
 
 source('classes/DataImporter.r', chdir = T)
 source('classes/Scheduler.r', chdir = T)
@@ -65,155 +66,112 @@ names(inputs) = user_names
 uids_sel        = user_names[c(10, 20, 30)]
 selection       = inputs[uids_sel]
 
-save.image('~/energy-data/bakersfield_profiles.RData')
+# ____________________________________________________
+# Set up scheduling problem for a given budget
 
-# # ____________________________________________________
-# # Set up scheduling problem for a given budget
-# 
-# # initialize scheduler
-# setup_info = list(DT            = 5,
-#                   goal          = Goal,
-#                   tou_rates     = ratevec)
-# 
-# # initialize scheduler
-# scheduler = new(Class = "Scheduler", inputs, setup = setup_info)
-# 
-# # compute schedules in the most general case (tailored schedule for each user)
-# options = list(budget = 10, gamma = 0.01)
-# scheduler = solveSchedules(scheduler, options = options)
+# initialize scheduler
+setup_info = list(DT            = 5,
+                  goal          = Goal,
+                  tou_rates     = ratevec)
 
-# # plot example effort profiles
-# png(filename = paste(PLOTS_PATH, 'effort-profiles.png', sep=''), height = 1000, width = 2000, res = 180)
-# plot(scheduler, type = 'effort-profiles')
-# dev.off()
-#  
-# # plot matching between aggregate profile and goal
-# png(filename = paste(PLOTS_PATH, 'goal_match.png', sep=''), height = 600, width = 1000, res = 180)
-# plot(scheduler, type = 'goal-match')
-# dev.off()
+# initialize scheduler
+scheduler = new(Class = "Scheduler", inputs, setup = setup_info)
+
+# compute schedules in the most general case (tailored schedule for each user)
+options = list(budget = 10, gamma = 0.01)
+scheduler = solveSchedules(scheduler, options = options)
+
+# plot example effort profiles
+png(filename = paste(PLOTS_PATH, 'effort-profiles.png', sep=''), height = 1000, width = 2000, res = 180)
+plot(scheduler, type = 'effort-profiles')
+dev.off()
+ 
+# plot matching between aggregate profile and goal
+png(filename = paste(PLOTS_PATH, 'goal_match.png', sep=''), height = 600, width = 1000, res = 180)
+plot(scheduler, type = 'goal-match')
+dev.off()
+
+# ____________________________________________________
+# Function to compute cluster-based agreement 
+
+compute_clust_agg = function(Abar, W, U, ASS, g, q) {
+  
+  U1    = U[ASS,]; W1 = W[ASS]
+  Delta.bar = colSums(Abar * U1)
+  Delta.Var = matrix(0, nrow = ncol(Abar), ncol = ncol(Abar))
+  for (i in 1:length(W)) {
+    Delta.Var = Delta.Var + diag(U1[i,]) %*% W[[i]] %*% diag(U1[i,])
+  }
+  EC = sum((Delta.bar - g)^2 * q)
+  
+  return(list(mu = Delta.bar, var = Delta.Var, EC = EC))
+}
 
 # ____________________________________________________
 # Compute cluster-based solution segmentation 
 
-cur_inputs = inputs
-
 # options 
 setup_info = list(DT            = 5,
                   goal          = Goal,
-                  tou_rates     = ratevec0)
+                  tou_rates     = ratevec)
 
-# segment profiles
-Abar = do.call('rbind', lapply(cur_inputs, function(l) as.numeric(l$a$mu[,1]  * setup_info$DT)))
+# prepare data 
+cur_inputs = inputs
+Abar = do.call('rbind', lapply(cur_inputs, function(l) as.numeric(l$a$mu[,1])))
 rownames(Abar)= names(cur_inputs)
-W = lapply(cur_inputs, function(l) diag(diag(l$a$covmat)) * setup_info$DT^2)
-k = 12
-source('../../clustering/kError.r', chdir = T)
-fit = kError(Abar, W, k, iter = 100)
-inputs.clust = lapply(1:k, function(k) {
-  a = list(mu = as.matrix(fit$centers[k,]),
-           covmat = fit$errors[[k]])
-  return(list(a = a))
-})
-names(inputs.clust) = 1:k
+Abar[which(Abar < 0)] = 0
+W = lapply(cur_inputs, function(l) diag(diag(l$a$covmat)))
 
-# initialize scheduler
-scheduler.clust = new(Class = "Scheduler", inputs.clust, setup = setup_info)
+# group together all analysis logic
+perform_analysis_cluster = function(k) {
+  
+  # cluster profiles
+  print(k)
+  fit = kError(Abar, W, k, iter = 100)
+  
+  # scheduling inputs
+  inputs.clust = lapply(1:k, function(k) {
+    a = list(mu = as.matrix(fit$centers[k,]),
+             covmat = fit$errors[[k]])
+    return(list(a = a))
+  })
+  names(inputs.clust) = 1:k
+  
+  # initialize scheduler
+  scheduler.clust = new(Class = "Scheduler", inputs.clust, setup = setup_info)
+  
+  # compute schedules in the most general case (tailored schedule for each user)
+  Nr = table(fit$assignment)
+  options = list(budget = 10, gamma = 0.01, Nr = Nr, presaved = FALSE)
+  scheduler.clust = solveSchedules(scheduler.clust, options = options)
+  
+  # compute aggregate by applying to each profile its class-based schedule
+  r = compute_clust_agg(Abar, W, scheduler.clust@OUTPUT$U, fit$assignment, setup_info$goal, setup_info$tou_rates)
+  
+  PLOTS_PATH_CUR = paste(PLOTS_PATH, 'varying_K/K_', k, '/', sep = '')
+  dir.create(PLOTS_PATH_CUR, recursive = T)
+  
+  # plot schedules per classs
+  pdf(file = paste(PLOTS_PATH_CUR, 'cluster-effort-profiles.pdf', sep=''), height = 8, width = 16)
+  plot(scheduler.clust, type = 'effort-profiles')
+  dev.off()
+  
+  # plot match between goal and aggregate
+  pdf(file = paste(PLOTS_PATH_CUR, 'cluster-agg-goal.pdf', sep=''), height = 4, width = 6)
+  plot(scheduler.clust, type = 'goal-match', compare = r)
+  dev.off()
+  
+  # plot comparison of # users selected from each class
+  pdf(file = paste(PLOTS_PATH_CUR, 'cluster-selected.pdf', sep=''), height = 4, width = 8)
+  plot(scheduler.clust, type = 'number-selected')
+  dev.off()
+  
+  return(list(nr        = scheduler.clust@OUTPUT$nr,
+              Delta.bar = r$mu,
+              Delta.var = r$var,
+              EC        = r$EC)) 
+}
 
-# compute schedules in the most general case (tailored schedule for each user)
-source('classes/Scheduler.r', chdir = T)
-Nr = table(fit$assignment)
-options = list(budget = 10, gamma = 0.01, Nr = Nr, presaved = FALSE)
-scheduler.clust = solveSchedules(scheduler.clust, options = options)
-
-# ____________________________________________________
-# Simulate solution for different budget/gamma levels
-
-# simulation grid
-# bg = expand.grid(budget = c(1:8), gamma = c(0))
-# 
-# dir.create(file.path(paste(PLOTS_PATH, 'simulation/', sep='')))
-# 
-# source('classes/Scheduler.r')
-# res = lapply(1:nrow(bg),
-# #               mc.cores = 5,
-# #               mc.silent = F,
-# #               mc.preschedule = TRUE, 
-#               function(i) {
-#                 
-#                 budget    = bg[i, 'budget']
-#                 gamma     = bg[i, 'gamma']                
-#                 print(bg[i,])
-#                 
-#                 # solve scheduling problem
-#                 opts      = list(budget = budget, gamma = gamma)
-#                 cur_sched = solveSchedulesClusters(scheduler, options = opts)
-#                 
-#                 # plot current solution
-#                 png(filename = paste(PLOTS_PATH, 'simulation/effort-profiles_b_', budget, '_g_', gamma, '.png', sep=''), height = 1000, width = 2000, res = 180)
-#                 print(plot(cur_sched, type = 'effort-profiles'))
-#                 dev.off()                
-#                 png(filename = paste(PLOTS_PATH, 'simulation/goal_match_b-', budget, '_g-', gamma, '.png', sep=''), height = 600, width = 1000, res = 180)
-#                 print(plot(cur_sched, type = 'goal-match'))
-#                 dev.off()
-#                 
-#                 # store results
-#                 nr = cur_sched@OUTPUT$segments$nr
-#                 obj= cur_sched@OUTPUT$segments$EC
-#                 
-#                 return(list(budget = budget, gamma = gamma, nr = nr, obj = obj))
-#               })
-# 
-# 
-# # plots
-# obj = sapply(res, function(r) r$obj)
-# nrs = sapply(res, function(r) r$nr)
-# bdg = sapply(res, function(r) r$budget)
-# 
-# df  = as.data.frame(t(nrs))
-# dh = data.frame(Cost = obj, No.Selected = rowSums(t(nrs)), Budget = bdg)
-# names(df) = paste('Segment', 1:ncol(df))
-# df$Budget = bdg
-# df = melt(df, id.vars = 'Budget')
-# 
-# # no users selected per class
-# plt = ggplot(df, aes(x = Budget, y = value)) + 
-#   geom_point(size = 2.5) + geom_line(size=1.5) + facet_wrap(~variable, ncol = 3)
-# plt = plt + theme_bw() + 
-#   theme(panel.grid.major = element_blank(),
-#         panel.grid.minor = element_blank(),
-#         panel.background = element_blank(),
-#         strip.text.x     = element_text(size=18),
-#         axis.text.y      = element_text(size=18), 
-#         axis.text.x      = element_text(size=18),
-#         axis.title.y     = element_text(size=18),
-#         axis.title.x     = element_text(size=18),
-#         plot.title       = element_text(size=20),            
-#         legend.text      = element_text(size=18),
-#         legend.title     = element_text(size=18),
-#         legend.position  = 'none',
-#         axis.ticks = element_blank()) + 
-#   ggtitle('No. Users Enrolled') + xlab('Effort Budget beta [deg F x 5 / 24hrs]') + ylab('No. Users')
-# 
-# png(filename = paste(PLOTS_PATH, 'no_users_vs_budget_class.png', sep=''), height = 700, width = 1000, res = 170)
-# plt
-# dev.off()
-# 
-# # cost vs budget
-# library('pracma')
-# png(filename = paste(PLOTS_PATH, 'no_users_vs_budget.png', sep=''), height = 600, width = 1000, res = 150)
-# plotyy(dh$Budget, dh$Cost, dh$Budget, dh$No.Selected, gridp = TRUE, box.col = "grey",
-#        type = "b", lwd = 3, lty = 1, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.3, 
-#        xlab = "Effort Budget beta [deg F x 5 / 24hrs]", ylab = "Expected Cost", 
-#        main = 'DR Program Administration',
-#        col.y1 = "navy", col.y2 = "maroon")
-# legend(4,990, # places a legend at the appropriate place 
-#        c("Expected Deviation Penalty","No. Users Enrolled"), # puts text in the legend               
-#        lty=c(1,1), # gives the legend appropriate symbols (lines)       
-#        lwd=c(2.5,2.5),col=c("navy","maroon"), cex = 1)
-# dev.off()
-# 
-# 
-# 
 
 # ____________________________________________________
 # Produce example plots: data inputs
@@ -288,69 +246,3 @@ plt = plt + theme_bw() +
 png(filename = paste(PLOTS_PATH, 'inputs_profiles.png', sep=''), height = 450, width = 1500, res = 170)
 plt
 dev.off()
-
-# # ____________________________________________________
-# # Produce clustering plots
-# 
-# png(filename = paste(PLOTS_PATH, 'cluster_centers_2.png', sep=''), height = 1000, width = 2000, res = 180)
-# plot(scheduler, type = 'cluster-centers')
-# dev.off()
-# 
-# source('classes/Scheduler.r')
-# png(filename = paste(PLOTS_PATH, 'effort-profiles.png', sep=''), height = 1000, width = 2000, res = 180)
-# plot(scheduler, type = 'effort-profiles')
-# dev.off()
-# 
-# }
-# 
-
-  res = x@SEGMENTS[[selected]]
-  
-  # extract error diagonals
-  sd = as.data.frame(t(sapply(res$errors, function(x) sqrt(abs(diag(x))))))
-  names(sd) = 1:ncol(sd)
-  sd$Segment = 1:nrow(sd)
-  sd = melt(sd, id.vars = 'Segment')
-  names(sd)[3] = 'sd'
-  
-  # extract centers
-  df = as.data.frame(res$centers)                            
-  names(df) = 1:ncol(df)
-  df$Segment = 1:nrow(df)
-  df = melt(df, id.vars = 'Segment')
-  names(df)[3] = 'mu'
-  
-  # form plotting data
-  dfp = merge(df, sd, by = c('Segment', 'variable'))
-  dfp$variable = as.numeric(dfp$variable)
-  dfp$Segment = as.factor(dfp$Segment)
-  
-  # percentages of membership              
-  tab = table(res$assignment)
-  tab = round(tab / sum(tab), digits = 4)
-  tab = tab * 100
-  dfp$Segment = paste(as.numeric(dfp$Segment), ': ', tab[as.numeric(dfp$Segment)], '%', sep = '')
-  
-  plt = ggplot(dfp, aes(y = mu, x = variable)) + 
-    geom_point(size = 2.5) + geom_line(size=1.5)
-  plt = plt + geom_errorbar(aes(ymax = mu + sd, ymin = mu - sd))        
-  plt = plt + facet_wrap(~Segment, ncol = 3, scales = 'free')
-  plt = plt + theme_bw() + 
-    theme(panel.grid.major = element_blank(),
-          panel.grid.minor = element_blank(),
-          panel.background = element_blank(),
-          strip.text.x     = element_text(size=18),
-          axis.text.y      = element_text(size=18), 
-          axis.text.x      = element_text(size=18),
-          axis.title.y     = element_text(size=18),
-          axis.title.x     = element_text(size=18),
-          plot.title       = element_text(size=20),            
-          legend.text      = element_text(size=18),
-          legend.position  = "none",
-          axis.ticks = element_blank()) + 
-    ggtitle(paste("Segments")) + ylab('Response [kWh/F]') + xlab('Time of day')
-  
-  return(plt)
-}
-
-

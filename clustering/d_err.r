@@ -28,7 +28,8 @@ d_err <- function(x, sx, y, sy) {
 # Distance function (Mahalanobis) for non-diagonal covariance
 d_err_cov <- function(x, S, mu) {
   S1   = solve(S)
-  d    = sqrt(t(x - mu) %*% S1 %*% (x - mu))
+  # S1 = diag(nrow(S1))
+  d    = as.numeric(t(x - mu) %*% S1 %*% (x - mu))
   return(d)
 }
 

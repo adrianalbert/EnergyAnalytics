@@ -101,7 +101,8 @@ setMethod('solveSchedules',
             if (!is.null(options$presaved)) presaved = options$presaved else presaved = TRUE
               
             # do not consider negative rates
-            Abar[which(Abar < 0)] = 0
+            idx0 = which(Abar < 0)
+            if (length(idx0)>0) Abar[idx0] = 0
             
             # form optimization variables            
             cat('Creating QP objects...\n')
@@ -124,11 +125,10 @@ setMethod('solveSchedules',
                 if (i == 1) H = Matrix(row) else H = rBind(H, row)
               }
               H = (H + t(H)) / 2
-              H = H * 2
               writeMM(H, 'H_tmp.mtx')
             }
             Amean = Matrix(diag(Abar[1,])); for (i in 2:N) Amean = cBind(Amean, diag(Abar[i,]));            
-            dvec  = -2*as.numeric(t(g) %*% Q %*% Amean)
+            dvec  = -as.numeric(t(g) %*% Q %*% Amean) 
             cat('... done!\n')
             
             # form constraints
@@ -144,22 +144,22 @@ setMethod('solveSchedules',
             bvec = bvec * Nr
             
             # Choleski decomposition of H
-            R = chol(H); R1 = solve(R)
+            R = chol(2*H); R1 = solve(R)
 
             # solve QP and return results
             cat('Solving QP...')
             
-            # Construct and solve problem
-            prob <- mosek_qptoprob(H, dvec, Amat, bvec, NA, NA, lbnd, ubnd);
+            # Construct and solve problem 
+            prob <- mosek_qptoprob(R, 2*dvec, Amat, bvec, NA, NA, lbnd, ubnd);
             fit  <- mosek(prob);
             
             # retrieve variables
             status <- fit$sol$itr$solsta
             coefs  <- fit$sol$itr$xx
-            u      <- coefs[1:(npars)] #- coefs[(npars+1):(2*npars)]
+            u      <- coefs[1:(npars)]# - coefs[(npars+1):(2*npars)]
             u      <- matrix(u, nrow = N, byrow = TRUE)
             resid  <- coefs[(2*(npars) + 1):(2*(npars) + npars)]            
-            val = as.numeric(prob$c %*% fit$sol$itr$xx + t(g) %*% Q %*% g)
+            val = as.numeric(prob$c %*% coefs + t(g) %*% Q %*% g)
             
             cat('done!\n')
                         
@@ -182,6 +182,7 @@ setMethod('solveSchedules',
             .Object@OUTPUT$Delta.bar = Delta.bar
             .Object@OUTPUT$Delta.Var = Delta.Var
             .Object@OUTPUT$nr        = nr
+            .Object@OUTPUT$Nr        = Nr
             
             return(.Object)
           })
@@ -191,27 +192,28 @@ setMethod('solveSchedules',
 
 setMethod('plot',
           signature  = 'Scheduler',
-          definition = function(x, type = 'heatmap', selected = NULL){
+          definition = function(x, type = 'effort-profiles', selected = NULL, compare = NULL){
+            
+            if (is.null(selected)) selected = 1:x@SETUP$N
+            if (length(selected) == 1) selected = sample(x@SETUP$N, selected) 
+            
+            U = as.data.frame(x@OUTPUT$U[selected,])
+            U$name = rownames(U)
+            nr= x@OUTPUT$nr[selected]
+            Nr= x@OUTPUT$Nr[selected]
             
             # effort profiles
             if (type == 'effort-profiles') {   
               
-              if (is.null(selected)) selected = 1
-              seg = x@SEGMENTS[[selected]]
-              eff = x@OUTPUT$segments
+              U$name = sprintf("%02s", U$name)
               
-              U = as.data.frame(eff$U)
-              nr= eff$nr
-#               U = U / matrix(rep(nr, each = ncol(U)), nrow = nrow(U), byrow=T)                                           
-              names(U)  = 1:ncol(U)
-              U$Segment = paste(1:nrow(U), '(Selected: ', nr[1:nrow(U)], ')', sep = '')
-              df = melt(U, id.vars = 'Segment')              
+              df = melt(U, id.vars = 'name')              
               df$variable = as.numeric(df$variable)
               
               # construct plot
-              plt = ggplot(df, aes(y = value, x = variable, color = Segment)) + 
+              plt = ggplot(df, aes(y = value, x = variable)) + 
                 geom_point(size = 2.5) + geom_line(size=1.5)
-              plt = plt + facet_wrap(~Segment, ncol = 3)
+              plt = plt + facet_wrap(~name, ncol = 4)
               plt = plt + theme_bw() + 
                 theme(panel.grid.major = element_blank(),
                       panel.grid.minor = element_blank(),
@@ -225,7 +227,7 @@ setMethod('plot',
                       legend.text      = element_text(size=18),
                       legend.position  = 'none',
                       axis.ticks = element_blank()) + 
-                ggtitle(paste("Typical Schedules")) + ylab('Requested Effort [deg F]') + xlab('Hour of Day')
+                ggtitle(paste("Effort Schedules")) + ylab('Requested Effort [deg F]') + xlab('Hour of Day')
               
               return(plt)                                      
             }            
@@ -233,17 +235,19 @@ setMethod('plot',
             # goal match
             if (type == 'goal-match') {   
               
-              if (is.null(selected)) selected = 1
-              seg = x@SEGMENTS[[selected]]
-              eff = x@OUTPUT$segments
-              
-              df = data.frame(value = eff$Delta.bar, Variance = sqrt(abs(diag(eff$Delta.Var))))
-              dh = data.frame(value = x@SETUP$g, Variance = 0)
+              df = data.frame(value = x@OUTPUT$Delta.bar, Variance = sqrt(abs(diag(x@OUTPUT$Delta.Var))))
+              dh = data.frame(value = x@SETUP$g, Variance = 0)              
               df$Hour = 1:nrow(df)
               df$variable = 'Delta'
               dh$variable = 'Goal'
               dh$Hour = 1:nrow(dh)
               df = rbind(df, dh)
+              if (!is.null(compare)) {
+                dc = data.frame(value = compare$mu, Variance = sqrt(abs(diag(compare$var))))
+                dc$variable = 'Actual Delta'
+                dc$Hour = 1:nrow(dc)
+                df = rbind(df, dc)
+              }
               
               # construct plot
               plt = ggplot(df, aes(y = value, x = Hour, color = variable)) + 
@@ -261,9 +265,37 @@ setMethod('plot',
                       plot.title       = element_text(size=20),            
                       legend.text      = element_text(size=18),
                       legend.title      = element_text(size=18),
-                      legend.position  = c(0.15, 0.8),
+                      legend.position  = c(0.25, 0.7),
                       axis.ticks = element_blank()) + 
                 ggtitle(paste("Matching the reductions goal profile")) + ylab('kWh') + xlab('Hour of Day')
+              
+              return(plt)                                      
+            }
+            
+            # goal match
+            if (type == 'number-selected') {   
+              
+              df = data.frame(Available = Nr, Selected = nr, Consumer = sprintf('%02d', 1:length(Nr)))
+              df = melt(df, id.vars = 'Consumer')
+              
+              # construct plot
+              plt = ggplot(df, aes(y = value, x = Consumer, color = variable, fill = variable)) + 
+                geom_bar(stat = 'identity', position = 'dodge', width = 0.8)
+              plt = plt + theme_bw() + 
+                theme(panel.grid.major = element_blank(),
+                      panel.grid.minor = element_blank(),
+                      panel.background = element_blank(),
+                      strip.text.x     = element_text(size=18),
+                      axis.text.y      = element_text(size=18), 
+                      axis.text.x      = element_text(size=18, angle = -20),
+                      axis.title.y     = element_text(size=18),
+                      axis.title.x     = element_text(size=18),
+                      plot.title       = element_text(size=20),            
+                      legend.text      = element_text(size=18),
+                      legend.title      = element_text(size=18),
+                      legend.position  = c(0.65, 0.8),
+                      axis.ticks = element_blank()) + 
+                ggtitle(paste("Selected Consumers")) + ylab('No. Consumers') + xlab('Consumer')
               
               return(plt)                                      
             }
