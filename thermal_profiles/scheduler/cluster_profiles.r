@@ -53,7 +53,7 @@ res = mclapply(c(1:20)*2,
                })
 
 obj = sapply(1:length(res), function(k) rev(res[[k]]$objective)[1])
-cl = res[[10]]; K = 20
+cl = res[[6]]; K = 12
 
 #______________________________________________________________
 # Plots for clustering analysis: objective trace vs K
@@ -63,9 +63,9 @@ plotyy(c(1:20)*2, obj/1000, col.y1 = 'black', col.y2 = 'darkred',
        c(2:20)*2, abs(diff(obj)) / obj[-1],
        lwd = 4, cex.main = 2, cex.lab = 1.5, type = 'b', cex.axis = 1.5,
        main = 'Choosing the number of segments', 
-       ylab = 'Objective (x1000)', xlab = '# clusters K')
-abline(v = 20, lwd = 4, lty = 3, col = 'darkgrey')
-legend(17, 100, c('Obj(K)', '[Diff. Obj(K)]/Obj(K)'), fill = c('black', 'darkred'))
+       ylab = 'Objective (x1000)', xlab = '# clusters R')
+abline(v = 12, lwd = 4, lty = 3, col = 'darkgrey')
+legend(17, 100, c('Obj(R)', '[Diff. Obj(R)]/Obj(R)'), fill = c('black', 'darkred'))
 dev.off()
 
 # based on the above analysis, a good number of clusters is K = 12
@@ -100,7 +100,7 @@ dfp$Segment = paste(dfp$Segment, ': ', tab[as.numeric(dfp$Segment)], '%', sep = 
 plt = ggplot(dfp, aes(y = mu, x = variable)) + 
   geom_point(size = 2.5) + geom_line(size=1.5)
 plt = plt + geom_errorbar(aes(ymax = mu + sd, ymin = mu - sd))        
-plt = plt + facet_wrap(~Segment, nrow = 4, scales = 'free')
+plt = plt + facet_wrap(~Segment, nrow = 3, scales = 'free')
 plt = plt + theme_bw() + 
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
@@ -116,7 +116,7 @@ plt = plt + theme_bw() +
         axis.ticks = element_blank()) + 
   ggtitle(paste("Segments")) + ylab('Response [kWh/F]') + xlab('Time of day')
 
-pdf(file = paste(PLOTS_PATH, 'cluster_centers.pdf', sep=''), width = 14, height=6)
+pdf(file = paste(PLOTS_PATH, 'cluster_centers.pdf', sep=''), width = 12, height=5)
 print(plt)
 dev.off()
 

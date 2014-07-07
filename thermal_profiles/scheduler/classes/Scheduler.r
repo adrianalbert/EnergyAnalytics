@@ -98,17 +98,18 @@ setMethod('solveSchedules',
             gamma= options$gamma
             npars = N*tau
             if (is.null(options$Nr)) Nr = rep(1,N) else Nr = options$Nr
-            if (!is.null(options$presaved)) presaved = options$presaved else presaved = TRUE
+            if (!is.null(options$presaved)) presaved = options$presaved else presaved = FALSE
               
             # do not consider negative rates
             idx0 = which(Abar < 0)
             if (length(idx0)>0) Abar[idx0] = 0
             
             # form optimization variables            
-            cat('Creating QP objects...\n')
-            if (presaved & file.exists('H_tmp.mtx')) {
-              H    = readMM('H_tmp.mtx') 
+            if (presaved & file.exists('presaved.RData')) {
+              cat('Loading presaved objects...\n')
+              load('presaved.RData')
             } else {
+              cat('Creating QP objects...\n')
               for (i in 1:N){
                 cat(paste('i=', i, ','))
                 t0 = proc.time()
@@ -125,19 +126,14 @@ setMethod('solveSchedules',
                 if (i == 1) H = Matrix(row) else H = rBind(H, row)
               }
               H = (H + t(H)) / 2
-              writeMM(H, 'H_tmp.mtx')
+              Amean = Matrix(diag(Abar[1,])); for (i in 2:N) Amean = cBind(Amean, diag(Abar[i,]));            
+              dvec  = -as.numeric(t(g) %*% Q %*% Amean) 
+              Amat = kronecker(Matrix(diag(N)), Matrix(t(rep(1,tau))))           # (u_i)^T 1 < beta
+              save(file = 'presaved.RData', list = c('H', 'Amat', 'Amean', 'dvec'))
             }
-            Amean = Matrix(diag(Abar[1,])); for (i in 2:N) Amean = cBind(Amean, diag(Abar[i,]));            
-            dvec  = -as.numeric(t(g) %*% Q %*% Amean) 
             cat('... done!\n')
             
             # form constraints
-            if (presaved & file.exists('Amat.mtx')) {
-              Amat = readMM('Amat.mtx')               
-            } else {
-              Amat = kronecker(Matrix(diag(N)), Matrix(t(rep(1,tau))))           # (u_i)^T 1 < beta
-              writeMM(Amat, 'Amat.mtx')              
-            }
             lbnd = rep(0, npars)
             ubnd = rep(Nr, each = tau)
             if (length(beta)==1) bvec = rep(beta, N) else bvec = beta
@@ -184,6 +180,8 @@ setMethod('solveSchedules',
             .Object@OUTPUT$nr        = nr
             .Object@OUTPUT$Nr        = Nr
             
+            rm(list = c('H', 'R', 'R1', 'Amat')); gc()
+            
             return(.Object)
           })
 
@@ -197,8 +195,10 @@ setMethod('plot',
             if (is.null(selected)) selected = 1:x@SETUP$N
             if (length(selected) == 1) selected = sample(x@SETUP$N, selected) 
             
+            if (is.character(selected)) selected = which(rownames(x@SETUP$Abar) %in% selected)
+            
             U = as.data.frame(x@OUTPUT$U[selected,])
-            U$name = rownames(U)
+            U$name = rownames(x@SETUP$Abar[selected,])
             nr= x@OUTPUT$nr[selected]
             Nr= x@OUTPUT$Nr[selected]
             
@@ -214,15 +214,16 @@ setMethod('plot',
               plt = ggplot(df, aes(y = value, x = variable)) + 
                 geom_point(size = 2.5) + geom_line(size=1.5)
               plt = plt + facet_wrap(~name, ncol = 4)
+              plt = plt + scale_x_continuous(limits = c(1, 24))
               plt = plt + theme_bw() + 
                 theme(panel.grid.major = element_blank(),
                       panel.grid.minor = element_blank(),
                       panel.background = element_blank(),
-                      strip.text.x     = element_text(size=18),
-                      axis.text.y      = element_text(size=18), 
-                      axis.text.x      = element_text(size=18),
-                      axis.title.y     = element_text(size=18),
-                      axis.title.x     = element_text(size=18),
+                      strip.text.x     = element_text(size=22),
+                      axis.text.y      = element_text(size=20), 
+                      axis.text.x      = element_text(size=20),
+                      axis.title.y     = element_text(size=20),
+                      axis.title.x     = element_text(size=20),
                       plot.title       = element_text(size=20),            
                       legend.text      = element_text(size=18),
                       legend.position  = 'none',
@@ -296,6 +297,34 @@ setMethod('plot',
                       legend.position  = c(0.65, 0.8),
                       axis.ticks = element_blank()) + 
                 ggtitle(paste("Selected Consumers")) + ylab('No. Consumers') + xlab('Consumer')
+              
+              return(plt)                                      
+            }
+            
+            # effort distribution
+            if (type == 'effort-distribution') {   
+              
+              id = which(rowSums(U[,-ncol(U)])>0)
+              df = melt(U[id,-ncol(U)])
+              
+              # construct plot
+              plt = ggplot(df, aes(y = value, x = variable)) + 
+                geom_boxplot(size = 1.5)
+              plt = plt + theme_bw() + 
+                theme(panel.grid.major = element_blank(),
+                      panel.grid.minor = element_blank(),
+                      panel.background = element_blank(),
+                      strip.text.x     = element_text(size=18),
+                      axis.text.y      = element_text(size=18), 
+                      axis.text.x      = element_text(size=18, angle = -20),
+                      axis.title.y     = element_text(size=18),
+                      axis.title.x     = element_text(size=18),
+                      plot.title       = element_text(size=20),            
+                      legend.text      = element_text(size=18),
+                      legend.title      = element_text(size=18),
+                      legend.position  = c(0.65, 0.8),
+                      axis.ticks = element_blank()) + 
+                ggtitle(paste("Effort distribution")) + ylab('Effort') + xlab('Hour of day')
               
               return(plt)                                      
             }
