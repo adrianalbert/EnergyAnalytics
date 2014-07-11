@@ -50,6 +50,7 @@ optimize_submodular = function(f, Omega, U_list, eps = 0.001) {
     iter = iter + 1
     
     cat(paste('Iteration', iter,'...\n'))
+    t0 = proc.time()
     
     # step forward
     cat(paste("Stepping forward...|A|=", length(A), '\n'))
@@ -95,8 +96,11 @@ optimize_submodular = function(f, Omega, U_list, eps = 0.001) {
         U = U[-e]
         Y_cur = c(Y_cur, U_list[e_name]); names(Y_cur)[length(Y_cur)] = e_name
         Omega_cur = c(Omega_cur, Omega[e_name]); names(Omega_cur)[length(Omega_cur)] = e_name
-      } else terminate = TRUE 
+      } else terminate = TRUE       
     }
+    
+    dt = proc.time() - t0
+    print(dt)    
     
     # terminate condition
     if (terminate | length(Y_cur) == 0) break

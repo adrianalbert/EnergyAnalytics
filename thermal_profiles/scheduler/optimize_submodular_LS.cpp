@@ -12,10 +12,10 @@ using namespace arma;
 */
   
 double compute_objective(arma::mat& Abar,
-                           arma::mat& W,
-                           arma::mat& U,
-                           arma::colvec& g,
-                           arma::colvec& q) {
+                         arma::mat& W,
+                         arma::mat& U,
+                         arma::colvec& g,
+                         arma::colvec& q) {
 
   int N = Abar.n_rows; int tau = Abar.n_cols;
   arma::colvec D = zeros<arma::colvec>(tau);
@@ -51,3 +51,22 @@ Rcpp::NumericVector compute_objective_quad(Rcpp::NumericMatrix& Abar_,
   return(Rcpp::wrap(res));
 }    
 
+/*
+  Algorithm to optimize non-monotone submodular function. 
+  Note that the function is hard coded for now. 
+*/  
+
+// [[Rcpp::export]]
+Rcpp::List optimize_submodular_LS(Rcpp::List& Omega, Rcpp::List& U_list, Rcpp::List& params)  {
+  
+  // define objects
+  arma::colvec q = as<arma::colvec>(params['q']);
+  arma::colvec g = as<arma::colvec>(params['g']);
+  arma::mat Abar, U;
+  arma::mat W    = zeros<arma::mat>(Abar.n_rows, Abar.n_cols);
+  int N = Omega.size(); 
+  for (int i=0; i<N; i++) {
+    arma::mat Wt = W_[i];
+    
+  // 
+}

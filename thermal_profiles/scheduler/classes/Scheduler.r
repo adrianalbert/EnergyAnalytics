@@ -27,7 +27,7 @@ library('RcppArmadillo')
 # clean-up previous definitions of methods for class Person
 removeClass('Scheduler')
 source('../optimize_submodular.r', chdir = T)
-# sourceCpp('../objective.cpp')
+sourceCpp('../optimize_submodular_LS.cpp')
 
 # ________________________
 # Class definition
@@ -264,10 +264,10 @@ setMethod('solveSchedulesApprox',
             # objective as function of sets
             f_obj = function(A, U){
               if (length(A) == 0) return(sum(g^2 * q))
-              Ab = t(sapply(A, function(l) l$a))
+              Ab = matrix(Abar[names(A),], nrow=length(A))
               w  = lapply(A, function(l) l$w)
               u  = do.call('rbind', U)
-              D  = objective_function(Ab, w, u, g, q)              
+              D  = compute_objective_quad(Ab, w, u, g, q)              
               return(sum(g^2 * q) - D)
             }            
             
