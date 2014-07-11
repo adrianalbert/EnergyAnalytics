@@ -35,9 +35,9 @@ if (test_plot == 1) {
           axis.title.y     = element_text(size=18),
           axis.title.x     = element_text(size=18),
           plot.title       = element_text(size=20),            
-          legend.text      = element_text(size=18),
-          legend.title      = element_text(size=18),
-          legend.position  = c(0.25, 0.6),
+          legend.text      = element_text(size=14),
+          legend.title      = element_text(size=14),
+          legend.position  = c(0.25, 0.5),
           axis.ticks = element_blank()) + 
     ggtitle(paste("Effort schedules: examples")) + ylab('Effort') + xlab('Hour of day')
   print(plt)
