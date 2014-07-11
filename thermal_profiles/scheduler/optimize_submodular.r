@@ -13,7 +13,7 @@
 # f(A, U): function to optimize with parameters
 #             A: set of elements
 #             U: set of actions for each element in A
-optimize_submodular = function(f, Omega, U_list, eps = 0.01) {
+optimize_submodular = function(f, Omega, U_list, eps = 0.001) {
   
   # define marginal payoff function
   rho = function(A, U, e, u) {
@@ -54,51 +54,58 @@ optimize_submodular = function(f, Omega, U_list, eps = 0.01) {
     # step forward
     cat(paste("Stepping forward...|A|=", length(A), '\n'))
     
-    # find element for which f(c(A, ae), c(U, u)) > (1 + eps/n^2) * f(A, U)
-    sapply(names(Omega_cur), function(e) {
-      ae = 
-      f(c(A, ae), c(U, u)) > (1 + eps/n^2) * f(A, U)
-    })
-    
-    d = as.data.frame(t(sapply(names(Omega_cur), function(e) {
+    # find element in Omega' for which f(c(A, ae), c(U, u)) > (1 + eps/n^2) * f(A, U)
+    ide = sapply(names(Omega_cur), function(e) {
+      ae = Omega_cur[e]
       Ue = Y_cur[[e]]
-      r  = sapply(1:length(Ue), function(j) rho(A, U, Omega_cur[e], Ue[j]))
-      rs = which.max(r)
-      return(c(rho = r[rs], u.idx = rs))
-    })))        
-    e  = which.max(d[,'rho']); 
-    ae = Omega_cur[e]; 
-    Ue = Y_cur[[e]]
-    u  = Ue[d[e,'u.idx']]
+      id = sum(sapply(1:length(Ue), function(j) f(c(A, ae), c(U, Ue[j])) > (1 + eps/n^2) * f(A, U)))
+      return(id)
+    })
+    ide = names(Omega_cur)[which(ide > 0)]
     
-    if (f(c(A, ae), c(U, u)) > (1 + eps/n^2) * f(A, U)) {
+    if (length(ide) > 0) {
+      d = as.data.frame(t(sapply(names(Omega_cur[ide]), function(e) {
+        Ue = Y_cur[[e]]
+        r  = sapply(1:length(Ue), function(j) rho(A, U, Omega_cur[e], Ue[j]))
+        rs = which.max(r)
+        return(c(rho = r[rs], u.idx = rs))
+      })))       
+      es = which.max(d[,'rho'])
+      e  = ide[es]; 
+      ae = Omega_cur[e]; 
+      Ue = Y_cur[[e]]
+      u  = Ue[d[e,'u.idx']]
+      
       A = c(A, ae)
       U = c(U, u)
-      Y_cur = Y_cur[-e]      
+      Y_cur = Y_cur[-es]   
+      Omega_cur = Omega_cur[-es]
     } else {    
       
       # step backward 
       cat(paste("Stepping backward...|A|=", length(A), '\n'))
 
-      d = sapply(1:length(A), function(e) -rho(A[-e], U[-e], Omega_cur[e], U[e]))
-      e = which.max(d)
-      e_name = names(A)[e]
-      if (f(A[-e], U[-e]) > (1 + eps/n^2) * f(A, U)) {
+      # find element in A for which f(A[-e], U[-e]) > (1 + eps/n^2) * f(A, U))
+      idf = which(sapply(1:length(A), function(e) f(A[-e], U[-e]) > (1 + eps/n^2) * f(A, U)))
+      if (length(idf)>0) {
+        d = sapply(1:length(A), function(e) -rho(A[-e], U[-e], Omega_cur[e], U[e]))
+        e = which.max(d)
+        e_name = names(A)[e]
         A = A[-e]
         U = U[-e]
         Y_cur = c(Y_cur, U_list[e_name]); names(Y_cur)[length(Y_cur)] = e_name
         Omega_cur = c(Omega_cur, Omega[e_name]); names(Omega_cur)[length(Omega_cur)] = e_name
-      } else terminate = TRUE        
+      } else terminate = TRUE 
     }
     
     # terminate condition
     if (terminate | length(Y_cur) == 0) break
     
   }
-  return(list(A = A, U = U))  
+  return(list(A = A, U = U, val = f(A,U)))  
 }
 
-test = TRUE
+test = FALSE
 
 if (test) {
     
@@ -133,5 +140,8 @@ if (test) {
   }
   
   # optimize submodular function
+  Rprof()
   res = optimize_submodular(f, Omega, U_list)
+  Rprof(NULL)
+  tmp = summaryRprof()
 }

@@ -4,7 +4,7 @@ library('ggplot2')
 define_schedule = function(gamma, eta, beta, tau = 24) {
   
   u = rep(0, tau);
-  u[eta:(eta+gamma)] = beta / gamma
+  u[eta:min(eta+gamma, 24)] = beta / gamma
   return(u)
 } 
 
