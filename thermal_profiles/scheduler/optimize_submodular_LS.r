@@ -8,25 +8,25 @@ setwd('~/EnergyAnalytics/thermal_profiles/scheduler/')
 # compile functions
 sourceCpp('optimize_submodular_LS.cpp')
 
-# # ___________________________________________
-# # Test objective function 
-# 
-# # generate fake data
-# N = 100
-# A = matrix(runif(N*24), ncol = 24)
-# U = matrix(runif(N*24), ncol = 24)
-# W = lapply(1:N, function(i) matrix(runif(24*24), ncol = 24))
-# 
-# # test objective
-# res = compute_objective_quad(A, W, U, g, q)
-# 
-# # ___________________________
+# ___________________________________________
+# Test objective function 
+
+# generate fake data
+N = 100
+g = 20*runif(24)
+q = runif(24)
+A = matrix(runif(N*24), ncol = 24)
+U = matrix(runif(N*24), ncol = 24)
+W = lapply(1:N, function(i) matrix(runif(24*24), ncol = 24))
+
+# test objective
+res = compute_objective_quad(A, W, U, g, q)
+
+# ___________________________
 # Test optimization algorithm
 
 # generate fake data
-g = runif(24)
-q = runif(24)
-N = 100;   
+N = 1000;   
 zeta = sample(2:6, N, replace = T)
 usr_names = paste('Name', 1:N)
 Omega = lapply(usr_names, function(s) list(a = runif(24), w = matrix(runif(24*24), ncol=24)))

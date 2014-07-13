@@ -200,25 +200,6 @@ define_schedule = function(eta, gamma, beta, tau = 24) {
   return(u)
 } 
 
-objective_function = function(A, W, U, g, q) {
-  D = sapply(1:ncol(A), function(t) A[,t] * U[,t])
-  C = sum((D - g)^2 * q)
-  return(C)
-}
-
-# # objective function
-# objective_function = function(Abar, W, U, g, q) {
-#   N = nrow(Abar); tau = ncol(Abar)
-#   D = sapply(1:tau, function(t) {
-#     Wt = sapply(1:N, function(i) W[[i]][t,t])
-#     if (N > 1) Wt = diag(Wt)
-#     Dt = sum((Abar[,t] %o% Abar[,t] + Wt) * (U[,t] %o% U[,t])) - 2 * g[t] * sum(Abar[,t] * U[,t]) + g[t]^2
-#     return(Dt)
-#   })
-#   D = sum(q * D)
-#   return(D)
-# }
-
 setGeneric(
   name = "solveSchedulesApprox",
   def = function(.Object, options = NULL, verbose = T){standardGeneric("solveSchedulesApprox")}
@@ -260,25 +241,17 @@ setMethod('solveSchedulesApprox',
             names(U_list) = usr_names
             
             cat('done!\n')
-            
-            # objective as function of sets
-            f_obj = function(A, U){
-              if (length(A) == 0) return(sum(g^2 * q))
-              Ab = matrix(Abar[names(A),], nrow=length(A))
-              w  = lapply(A, function(l) l$w)
-              u  = do.call('rbind', U)
-              D  = compute_objective_quad(Ab, w, u, g, q)              
-              return(sum(g^2 * q) - D)
-            }            
+                        
+            # format inputs to optimization
+            Omega = lapply(1:N, function(i) list(a = Abar[i,], w = W[[i]]))
+            names(Omega) = usr_names            
+            UL = do.call('rbind', sapply(U_list, function(l) do.call('rbind', l)))
+            UA = rep(1:N, sapply(U_list, length))            
+            params = list(g = g, q = q, eps = 0.01)
             
             # optimize and return result
-            cat('Solving approximate set selection problem...')
-            
-            Omega = lapply(1:N, function(i) list(a = Abar[i,], w = W[[i]]))
-            names(Omega) = usr_names
-
-            res = optimize_submodular(f_obj, Omega, U_list, eps = 0.01)
-            
+            cat('Solving approximate set selection problem...')            
+            res = optimize_submodular_LS(Omega, list(UL = UL, UA = UA), params)            
             cat('done!\n')
 
             u = do.call('rbind', res$U)
