@@ -7,7 +7,7 @@
 # 
 # Adrian Albert
 #
-# Last modified: May 2014.
+# Last modified: June 2014.
 
 # -------------------------------
 # Initializations ... 
@@ -32,23 +32,7 @@ source('./utils/weather/clean_weather_data.r')
 DATA_PATH = '~/energy-data/pecan_street/'
 IN_PATH   = paste(DATA_PATH, 'usage-orig', sep = '')
 OUT_PATH  = paste(DATA_PATH, 'usage-processed', sep = '')
-METADATA_PATH = '~/energy-data/pecan_street/metadata/'
 dir.create(file.path(OUT_PATH))    
-
-# ----------------------------------------------
-# Assign each user a unique human-readable name
-# ----------------------------------------------
-
-files_all = list.files(path=IN_PATH, full.names = T, recursive = T)
-users_all = unique(sapply(files_all, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '\\.')[[1]][1]))
-
-# load baby names
-# we're going to name each user for later easiness of use
-baby_names  = read.csv('~/Dropbox/OccupancyStates/data/baby-names.csv')
-user_names  = data.frame(ID = users_all, name = unique(baby_names$name)[1:length(users_all)])
-
-# save names to file
-write.csv(user_names, file = paste(METADATA_PATH, 'user_names_ids.csv', sep = '/'))
 
 # ------------------------------------------
 # Logic to process data 
@@ -75,7 +59,7 @@ process_data = function(raw, dateCol = 'date', method = 'IRMI') {
 
   # remove columns with many NAs
   nr.na = sapply(df, function(x)length(which(is.na(x))))
-  nr.na = which(nr.na >= 0.9*nrow(df))
+  nr.na = which(nr.na >= nrow(df)/2)
   if (length(nr.na)>0) df = df[,-nr.na] 
   
   # have we removed all but one column?
@@ -103,46 +87,77 @@ process_data = function(raw, dateCol = 'date', method = 'IRMI') {
 }
 
 # ------------------------------------------
-# Aggregate data in given directory
+# Concatenate data across multiple years
+# ------------------------------------------
+
+concatenate_data = function(file_list) {
+  
+  # load data
+  data_list = lapply(file_list, function(f) {
+    # get current data  
+    data = read.csv(f)   
+    uid  = data$dataid[1]
+    data = data[,-1]  
+    return(data)
+  })
+  
+  if (length(data_list) == 1) return(data_list)
+  
+  # make sure all end-uses are aligned
+  all_cols = unique(unlist(lapply(data_list, names)))
+  data = data_list[[1]]
+  for (i in 2:length(data_list)) {
+    tmp = data_list[[i]]
+    cur_cols = setdiff(names(data), names(tmp))
+    new_cols = setdiff(names(data_list[[i]]), names(data))
+    if (length(cur_cols)>0)  {
+      tmp[,cur_cols] = NA
+    }
+    if(length(new_cols)>0) {
+      data[,new_cols]= NA;
+    }
+    data = rbind(data, tmp)
+  }
+  
+  return(data)
+}
+
+# ------------------------------------------
+# Get files to be processed
 # ------------------------------------------
 
 files.proc  = list.files(OUT_PATH, full.names = TRUE, recursive = T)
-uids.done   = sapply(files.proc, function(x) {
+uids.done   = unique(sapply(files.proc, function(x) {
   tmp = strsplit(x, '/')[[1]]
   uid = tmp[length(tmp)]
   uid = strsplit(uid, '_')[[1]][1]
-  yr  = tmp[length(tmp)-1]
-  return(paste(yr, uid, sep = '/'))
-})
+  return(uid)
+}))
 files.input = list.files(IN_PATH, full.names = TRUE, recursive = T)
-uids.input  = sapply(files.input, function(x) {
+uids.input  = unique(sapply(files.input, function(x) {
   tmp = strsplit(x, '/')[[1]]
   uid = tmp[length(tmp)]
   uid = strsplit(uid, '\\.')[[1]][1]
-  yr  = tmp[length(tmp)-1]
-  return(paste(yr, uid, sep = '/'))
-})
+  return(uid)
+}))
 
 idx = which(!(uids.input %in% uids.done))
 
 if (length(idx) == 0) stop("All files have already been processed!")
 
-res      = mclapply(1:length(files.input[idx]), 
-                    mc.cores = 5, 
+# ------------------------------------------
+# Aggregate data in given directory
+# ------------------------------------------
+
+res      = mclapply(1:length(uids.input[idx]), 
+                    mc.cores = 6, 
                     function(i) {       
-  file = files.input[idx[i]]  
-  cat(paste('Processing ', file, ' : ', idx[i], '/', length(files.input[idx]), '\n', sep = ''))
-  year = strsplit(file, '/')[[1]]
-  year = year[length(year)-1]
+  uid = uids.input[idx[i]]  
+  cat(paste('Processing uid ', uid, ' : ', i, '/', length(files.input[idx]), '\n', sep = ''))
+  files = files.input[grep(paste('/', uid, '.csv', sep=''), files.input)]
   
-  # get current data  
-  data = read.csv(file)   
-  uid  = data$dataid[1]
-  data = data[,-1]  
-  if (uid %in% uids.done) {
-    cat('Already processed!\n')
-    return(0)
-  }
+  # put together data from multiple years
+  data = concatenate_data(files)  
   
   # process minute-level data
   data_01_proc = process_data(data, method = 'NONE', dateCol = 'localminute')  
@@ -168,10 +183,9 @@ res      = mclapply(1:length(files.input[idx]),
   }
   
   # save to file
-  dir.create(file.path(OUT_PATH, year))      
-  write.csv(data_01_proc, file = paste(OUT_PATH, paste(year, '/', uid, '_minute.csv', sep = ''), sep = '/'), row.names = F)
-  write.csv(data_15_proc, file = paste(OUT_PATH, paste(year, '/', uid, '_15mins.csv', sep = ''), sep = '/'), row.names = F)
-  write.csv(data_60_proc, file = paste(OUT_PATH, paste(year, '/', uid, '_hourly.csv', sep = ''), sep = '/'), row.names = F)
+  write.csv(data_01_proc, file = paste(OUT_PATH, paste(uid, '_minute.csv', sep = ''), sep = '/'), row.names = F)
+  write.csv(data_15_proc, file = paste(OUT_PATH, paste(uid, '_15mins.csv', sep = ''), sep = '/'), row.names = F)
+  write.csv(data_60_proc, file = paste(OUT_PATH, paste(uid, '_hourly.csv', sep = ''), sep = '/'), row.names = F)
   
   return(0)
 })  

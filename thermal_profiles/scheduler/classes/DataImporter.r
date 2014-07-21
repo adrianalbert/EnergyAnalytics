@@ -16,7 +16,7 @@ require('lmtest')
 library('pls')
 library('reshape')
 library('fields')
-source('../../utils/viz/plot_utils.r')
+source('../../../utils/viz/plot_utils.r')
 
 # clean-up previous definitions of methods for class 
 removeClass('DataImporter')
@@ -231,7 +231,8 @@ setMethod('computeProfiles',
             volat  = subset(.Object@VOLATILITY, UID %in% UID_vec)
             
             # compute profile statistics
-            distr  = mclapply(1:length(UID_vec), mc.cores =5, mc.preschedule =F, mc.silent = F, 
+            distr  = mclapply(1:length(UID_vec), mc.cores =4, 
+                              mc.preschedule =F, mc.silent = F, 
                             FUN = function(i) {
               
               uid = UID_vec[i]

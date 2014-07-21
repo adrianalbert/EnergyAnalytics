@@ -49,8 +49,15 @@ wuWeatherDay <- function(station, dateStr, tz=NULL) {
   
   #print(final_url)
   u <- url(final_url)
-  urlData <- readLines(u)   # reading in as raw lines from the web server
-  close(u)                  # contains <br> tags on every other line
+  repeat {
+    urlData <- try(readLines(u))   # reading in as raw lines from the web server
+    if (class(urlData) == 'try-error') {
+      cat('Error encountered reading stream... retrying in 5 seconds...\n')
+      Sys.sleep(5)
+    } else break
+  } 
+  
+  close(u)                       # contains <br> tags on every other line
   # only keep records with more than 5 rows of data
   if(length(urlData) <= 5 ) {
     print('[wuWeatherDay]:No usable data found.')

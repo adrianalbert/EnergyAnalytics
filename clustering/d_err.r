@@ -27,8 +27,9 @@ d_err <- function(x, sx, y, sy) {
 # _____________________________________________________________
 # Distance function (Mahalanobis) for non-diagonal covariance
 d_err_cov <- function(x, S, mu) {
-  S1   = ginv(S)
-  d    = t(x - mu) %*% S1 %*% (x - mu)
+  S1   = solve(S)
+  # S1 = diag(nrow(S1))
+  d    = as.numeric(t(x - mu) %*% S1 %*% (x - mu))
   return(d)
 }
 
@@ -43,7 +44,7 @@ d_err_mat <- function(X, SX, M) {
     d = d_err_cov(x, S, mu)
     return(d)
   })
-  D = matrix(unlist(D), nrow = nrow(X), byrow=T)
+  D = matrix(unlist(D), nrow = nrow(X), byrow=F)
 }
 
 # ------------------------------------------

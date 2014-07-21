@@ -16,21 +16,20 @@ NumericVector P(nElem), yt;
 /* get r,s,a,b so that  r*z/w-s=(a+x)/(b+y) */
 /* z/w is distributed as s+[(a+x)/(b+y)]/r */
 
-/* muz=30.5;muw=32;sigz=5;sigw=4;rho=.8;*/
-
  s = rho_ * sdz / sdw;
  r = sdw / (sdz * sqrt(1 - rho_ * rho_));
  b = muw / sdw;
  a = (muz / sdz - rho_ * muw / sdw) / sqrt(1-rho_ * rho_);
  if (a<0) {a=-a; r=-r;}
  yt = y_ * r - s;
- for (int i = 0; i < nElem; i++) P[i] = F(a, b, yt[i]);
+ 
+ for (int i = 0; i < nElem; i++) P[i] = F_ratio(a, b, yt[i]);
 
- return wrap(P);'
+return wrap(P);'
 
 c_functions_src = paste(readLines('zoverw_select.cpp'), collapse = '\n')
 
-ratio_normals_CDF <- cxxfunction(signature(y ="numeric", 
+ratio_normals_CDF_C <- cxxfunction(signature(y ="numeric", 
                                            mu1 = "double", sd1 = "double", 
                                            mu2 = "double", sd2 = "double",
                                            rho = "double"),
@@ -38,9 +37,45 @@ ratio_normals_CDF <- cxxfunction(signature(y ="numeric",
                                  include=c_functions_src,
                                  plugin = 'RcppArmadillo')
 
+# Hackish simulation version
+ratio_normals_CDF = function(y, muz, sdz, muw, sdw, rho = 0) {
+  
+  ratio_ecdf = ecdf(rnorm(10000, muz, sdz) / rnorm(10000, muw, sdw))
+  return(ratio_ecdf(y))
+  
+}
+
+ratio_normals_abs_CDF = function(y, muz, sdz, muw, sdw, rho = 0) {
+  
+  ratio_ecdf = ecdf(abs(rnorm(10000, muz, sdz) / rnorm(10000, muw, sdw)))
+  return(ratio_ecdf(y))
+  
+}
+
 # # the single value case
-# ratio_normals_CDF(0.1, mu1 = 30.5, sd1 = 5, mu2 = 32, sd2 = 4, rho = .8)
+# ratio_normals_CDF(0.01, mu1 = 0.02, sd1 = 1e-4, mu2 = 0.04, sd2 = 3e-4, rho = 0)
 # 
 # # the vectorised case
-# y   = (1:100)/100
-# ratio_normals_CDF(y, mu1 = 2, sd1 = 1e-1, mu2 = 3, sd2 = 4e-1, rho = 0)
+# mu1 = 0.0400490748; sd1 = 0.0007254173 
+# mu2 = 0.02008236;   sd2 = 0.00121371 
+# mud = mu1 - mu2; sdd = sqrt(sd1^2 + sd2^2)
+# 
+# muz = mud; sdz = sdd;
+# muw = mu1; sdw = sd1;
+# rho_= 0
+# 
+# s = rho_ * sdz / sdw;
+# r = sdw / (sdz * sqrt(1 - rho_ * rho_));
+# b = muw / sdw;
+# a = (muz / sdz - rho_ * muw / sdw) / sqrt(1-rho_ * rho_);
+# 
+# y   = (1:50)/50
+# yt = y * r - s;
+# 
+# P = ratio_normals_CDF(y, mu1 = muz, sd1 = sdz, mu2 = muw, sd2 = sdw, rho = 0)
+# ratio_ecdf_o = ecdf(rnorm(10000, muz, sdz) / rnorm(10000, muw, sdw))
+# ratio_ecdf_t = ecdf(rnorm(10000, a, 1) / rnorm(10000, b, 1) / r + s)
+# ratio_ecdf_n = ecdf(rnorm(10000, a, 1) / rnorm(10000, b, 1))
+# plot(y,ratio_ecdf_o(y))
+# points(y,ratio_ecdf_t(y), col = 'red')
+# points(y,ratio_ecdf_n(yt), col = 'blue')

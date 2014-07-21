@@ -3,12 +3,14 @@
 # Applies HMM decoding on Pecan Street data. 
 #
 # Adrian Albert
-# Last modified: May 2014.
+# Last modified: June 2014.
 # ---------------------------------------------------------
 
 rm(list = ls())
 options(error = recover)
 library('segmented')
+
+SELECTED_SEASONS = c('Summer')
 
 # __________________________________________________
 # Initializations...
@@ -17,10 +19,11 @@ setwd('~/EnergyAnalytics/thermal_profiles/profiler/')
 source('stateProcessorWrapper.r')
 source('stateVisualizerWrapper.r')
 source('../../batch/pecan/define_categories_pecan.r')
+source('../../utils/select_data.r')
 
 DATA_PATH = '~/energy-data/pecan_street/usage-select/'
 DUMP_PATH = '~/energy-data/pecan_street/models/'
-PLOT_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street'
+PLOT_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street/'
 
 # load user names
 user_names = read.csv('~/energy-data/pecan_street/metadata/user_names_ids.csv')
@@ -28,18 +31,16 @@ user_names = read.csv('~/energy-data/pecan_street/metadata/user_names_ids.csv')
 # __________________________________________________
 # Load up user data
 
-# list all data files by year/uid
+# list all data files by uid
 files.input = list.files(path=DUMP_PATH, pattern = '*_decoded*', full.names = T, recursive = T)
 already_done  = lapply(files.input, function(x) {
   tmp = strsplit(x, '/')[[1]]
   ret = data.frame(res = as.character(tmp[length(tmp)-1]),                   
-                   yr  = as.character(tmp[length(tmp)-3]),
                    uid = as.character(tmp[length(tmp)-2]))
   rownames(ret) = NULL
   return(ret)
 })
 already_done = do.call('rbind', already_done)
-already_done$yr = as.character(already_done$yr)
 already_done$uid= as.character(already_done$uid)
 already_done$res= as.character(already_done$res)
 
@@ -49,9 +50,8 @@ files_01 = files[grep('01min',files)]
 files_15 = files[grep('15min',files)]
 files_60 = files[grep('60min', files)]
 
-# extract ID and year
-usersVec = data.frame(UID = as.character(sapply(files_60, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '\\.')[[1]][1])),
-                      year= as.character(sapply(files_60, function(s) tail(strsplit(s, '/')[[1]], 2)[1])))
+# extract ID
+usersVec = data.frame(UID = as.character(sapply(files_60, function(s) strsplit(tail(strsplit(s, '/')[[1]], 1), '\\.')[[1]][1])))
 rownames(usersVec) = NULL
 
 # __________________________________________________
@@ -92,15 +92,16 @@ apply_thermal_model = function(cur_data, cur_covar, userName,
   # generate visualization interval; make sure there's data in there
   # TODO: there was an error generated here (indices for subsetting were messed up)
   ok = FALSE
-  no.secs = controls$vis.interval * 3600
+  no.secs    = controls$vis.interval * 3600
   while (!ok) {
-    start_date = sample(cur_data$date[-((nrow(cur_data)-controls$vis.interval):nrow(cur_data))], 1)
+    idx_start  = 1
+    idx_end    = max(nrow(cur_data)-controls$vis.interval-1, 1)
+    start_date = sample(cur_data$date[idx_start:idx_end], 1)
     stop_date  = as.character(as.POSIXct(start_date) + no.secs)
     dat        = subset(cur_data, date >= start_date & date < stop_date)
     if (nrow(na.omit(dat)) > 0) 
       ok = TRUE
-  }      
-  
+  }        
   
   # learn model
   res = try(stateProcessorWrapper(cur_data, cur_covar, userName, 
@@ -110,46 +111,67 @@ apply_thermal_model = function(cur_data, cur_covar, userName,
                               dump_path = dump_path))
   if (class(res) == 'try-error') {
     cat('Error in learning model for current user!\n')
+    return(NULL)
   }
+  
   # produce visualizations
+  if (is.null(plot_path)) return(NULL)
   res = try(stateVisualizerWrapper(res$decoder, 
                                res$interpreter, 
                                plots_path = plot_path, 
                                interval = c(start_date, stop_date)))
   if (class(res) == 'try-error') {
     cat('Error in visualizing current user!\n')
+    return(NULL)
   }
   
   return(NULL)
 }
 
 res = mclapply(1:nrow(usersVec), 
-               mc.cores = 5,
+            mc.cores = 3,
                function(i) {
   # load data             
-  user     = usersVec[i,] 
-  userName = as.character(user_names[which(user_names$ID == user$UID),'name'])
-  cat(paste('Processing user', user$UID, '/', user$year, ':', i, '/', nrow(usersVec)))  
+  user     = as.character(usersVec[i,])
+  userName = as.character(user_names[which(user_names$ID == user),'name'])
+  cat(paste('Processing user', user, ':', i, '/', nrow(usersVec), '\n'))  
   
-  idx = which(user$UID == already_done$uid & as.character(user$year) == already_done$yr)
+  idx = which(user == already_done$uid)
   if (length(idx)>0) {
     cat('Already processed!\n')
     return(NULL)
   }
   
   homeData15 = read.csv(files_15[i])     
-  homeData60 = read.csv(files_60[i])     
+  homeData60 = read.csv(files_60[i])  
   
+  # only process those users that have AC
+  if (!('AC' %in% names(homeData60))) return(NULL)
+  
+  homeData15 = select_data(homeData15, dateCol = 'date', seasons = SELECTED_SEASONS)
+  homeData60 = select_data(homeData60, dateCol = 'date', seasons = SELECTED_SEASONS)
+  
+  # is there enough data?
+  if (is.null(homeData15) || is.null(homeData60))  {
+    cat('Too little data!\n')
+    return(NULL)
+  }  
+  if (nrow(homeData15) < 30*96 || nrow(homeData60) < 30*24) {
+    cat('Too little data!\n')
+    return(NULL)
+  }
+    
   # create directory to store models
-  dump_path_15 = file.path(DUMP_PATH, paste(user$year, user$UID, '15min/', sep='/')); 
+  xtra_path = paste(SELECTED_SEASONS, collapse = '-')
+  dump_path_15 = file.path(DUMP_PATH, paste(user, xtra_path, '15min/', sep='/')); 
   dir.create(dump_path_15, recursive = T)
-  dump_path_60 = file.path(DUMP_PATH, paste(user$year, user$UID, '60min/', sep='/')); 
+  dump_path_60 = file.path(DUMP_PATH, paste(user, xtra_path, '60min/', sep='/')); 
   dir.create(dump_path_60, recursive = T)
   
   # create directory to store plots
-  plot_path_15 = file.path(PLOT_PATH, paste(user$year, user$UID, '15min/', sep='/')); 
+  plot_path_15 = file.path(PLOT_PATH, paste(user, xtra_path, '15min/', sep='/')); 
   dir.create(plot_path_15, recursive = T)
-  plot_path_60 = file.path(PLOT_PATH, paste(user$year, user$UID, '60min/', sep='/')); 
+  plot_path_60 = file.path(PLOT_PATH, paste(user, xtra_path, '60min/', sep='/')); 
   dir.create(plot_path_60, recursive = T)
   
   # format datasets
