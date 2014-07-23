@@ -8,15 +8,15 @@
   
 rm(list = ls())
 options(error = recover)
-setwd('~/EnergyAnalytics/thermal_profiles/scheduler/')
 
 # ____________________________________________________
 # Initializations....
 
 library('lubridate')
 library('parallel')
-source('../../clustering/kError.r', chdir = T)
 
+setwd('~/EnergyAnalytics/thermal_profiles/scheduler/')
+source('../../clustering/kError.r', chdir = T)
 source('classes/DataImporter.r', chdir = T)
 source('classes/Scheduler.r', chdir = T)
 
@@ -66,6 +66,9 @@ names(inputs) = user_names
 uids_sel        = user_names[c(10, 20, 30)]
 selection       = inputs[uids_sel]
 
+save(file = '~/energy-data/bakersfield/bakersfield_profiles.RData',
+     list = c('inputs', 'ratevec', 'Goal'))
+
 # ____________________________________________________
 # Set up scheduling problem for a given budget
 
@@ -78,100 +81,29 @@ setup_info = list(DT            = 5,
 scheduler = new(Class = "Scheduler", inputs, setup = setup_info)
 
 # compute schedules in the most general case (tailored schedule for each user)
-options = list(budget = 10, gamma = 0.01)
+options = list(budget = 3, presaved = TRUE)
 scheduler = solveSchedules(scheduler, options = options)
 
+save.image('~/energy-data/bakersfield/scheduler_full.RData')
+
+# ____________________________________________________
+# Plot analysis
+
 # plot example effort profiles
-png(filename = paste(PLOTS_PATH, 'effort-profiles.png', sep=''), height = 1000, width = 2000, res = 180)
-plot(scheduler, type = 'effort-profiles')
+source('classes/Scheduler.r', chdir = T)
+pdf(file = paste(PLOTS_PATH, 'effort-profiles.pdf', sep=''), height = 3, width = 9)
+  plot(scheduler, type = 'effort-profiles', selected = c('Robert', 'Joe', 'Lewis'))
 dev.off()
  
 # plot matching between aggregate profile and goal
-png(filename = paste(PLOTS_PATH, 'goal_match.png', sep=''), height = 600, width = 1000, res = 180)
+pdf(file = paste(PLOTS_PATH, 'goal_match.pdf', sep=''), height = 4, width = 10)
 plot(scheduler, type = 'goal-match')
 dev.off()
 
-# ____________________________________________________
-# Function to compute cluster-based agreement 
-
-compute_clust_agg = function(Abar, W, U, ASS, g, q) {
-  
-  U1    = U[ASS,]; W1 = W[ASS]
-  Delta.bar = colSums(Abar * U1)
-  Delta.Var = matrix(0, nrow = ncol(Abar), ncol = ncol(Abar))
-  for (i in 1:length(W)) {
-    Delta.Var = Delta.Var + diag(U1[i,]) %*% W[[i]] %*% diag(U1[i,])
-  }
-  EC = sum((Delta.bar - g)^2 * q)
-  
-  return(list(mu = Delta.bar, var = Delta.Var, EC = EC))
-}
-
-# ____________________________________________________
-# Compute cluster-based solution segmentation 
-
-# options 
-setup_info = list(DT            = 5,
-                  goal          = Goal,
-                  tou_rates     = ratevec)
-
-# prepare data 
-cur_inputs = inputs
-Abar = do.call('rbind', lapply(cur_inputs, function(l) as.numeric(l$a$mu[,1])))
-rownames(Abar)= names(cur_inputs)
-Abar[which(Abar < 0)] = 0
-W = lapply(cur_inputs, function(l) diag(diag(l$a$covmat)))
-
-# group together all analysis logic
-perform_analysis_cluster = function(k) {
-  
-  # cluster profiles
-  print(k)
-  fit = kError(Abar, W, k, iter = 100)
-  
-  # scheduling inputs
-  inputs.clust = lapply(1:k, function(k) {
-    a = list(mu = as.matrix(fit$centers[k,]),
-             covmat = fit$errors[[k]])
-    return(list(a = a))
-  })
-  names(inputs.clust) = 1:k
-  
-  # initialize scheduler
-  scheduler.clust = new(Class = "Scheduler", inputs.clust, setup = setup_info)
-  
-  # compute schedules in the most general case (tailored schedule for each user)
-  Nr = table(fit$assignment)
-  options = list(budget = 10, gamma = 0.01, Nr = Nr, presaved = FALSE)
-  scheduler.clust = solveSchedules(scheduler.clust, options = options)
-  
-  # compute aggregate by applying to each profile its class-based schedule
-  r = compute_clust_agg(Abar, W, scheduler.clust@OUTPUT$U, fit$assignment, setup_info$goal, setup_info$tou_rates)
-  
-  PLOTS_PATH_CUR = paste(PLOTS_PATH, 'varying_K/K_', k, '/', sep = '')
-  dir.create(PLOTS_PATH_CUR, recursive = T)
-  
-  # plot schedules per classs
-  pdf(file = paste(PLOTS_PATH_CUR, 'cluster-effort-profiles.pdf', sep=''), height = 8, width = 16)
-  plot(scheduler.clust, type = 'effort-profiles')
-  dev.off()
-  
-  # plot match between goal and aggregate
-  pdf(file = paste(PLOTS_PATH_CUR, 'cluster-agg-goal.pdf', sep=''), height = 4, width = 6)
-  plot(scheduler.clust, type = 'goal-match', compare = r)
-  dev.off()
-  
-  # plot comparison of # users selected from each class
-  pdf(file = paste(PLOTS_PATH_CUR, 'cluster-selected.pdf', sep=''), height = 4, width = 8)
-  plot(scheduler.clust, type = 'number-selected')
-  dev.off()
-  
-  return(list(nr        = scheduler.clust@OUTPUT$nr,
-              Delta.bar = r$mu,
-              Delta.var = r$var,
-              EC        = r$EC)) 
-}
-
+# plot effort distribution
+pdf(file = paste(PLOTS_PATH, 'effort-distribution.pdf', sep=''), height = 4, width = 10)
+plot(scheduler, type = 'effort-distribution')
+dev.off()
 
 # ____________________________________________________
 # Produce example plots: data inputs
