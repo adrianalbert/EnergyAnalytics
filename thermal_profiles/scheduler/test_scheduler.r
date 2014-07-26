@@ -81,10 +81,12 @@ setup_info = list(DT            = 5,
 scheduler = new(Class = "Scheduler", inputs, setup = setup_info)
 
 # compute schedules in the most general case (tailored schedule for each user)
-options = list(budget = 3, presaved = TRUE)
-scheduler = solveSchedules(scheduler, options = options)
-
-save.image('~/energy-data/bakersfield/scheduler_full.RData')
+# options = list(budget = 3, presaved = TRUE)
+# scheduler = solveSchedules(scheduler, options = options)
+# save.image('~/energy-data/bakersfield/scheduler_full.RData')
+eta = 
+options = list(eta = eta, gamma = gamma)
+scheduler = solveSchedulesApprox(scheduler, options = options)
 
 # ____________________________________________________
 # Plot analysis

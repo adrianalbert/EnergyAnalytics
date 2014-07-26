@@ -20,9 +20,14 @@ library('bigmemory')
 library("bigalgebra")
 library('Matrix')
 library('Rmosek')
+library('Rcpp')
+library('RcppArmadillo')
+
 
 # clean-up previous definitions of methods for class Person
 removeClass('Scheduler')
+source('../optimize_submodular.r', chdir = T)
+# sourceCpp('../objective.cpp')
 
 # ________________________
 # Class definition
@@ -181,6 +186,124 @@ setMethod('solveSchedules',
             .Object@OUTPUT$Nr        = Nr
             
             rm(list = c('H', 'R', 'R1', 'Amat')); gc()
+            
+            return(.Object)
+          })
+
+# __________________________________________________________
+# Set up & solve approximate scheduling problem
+
+# create "square wave" schedules
+define_schedule = function(eta, gamma, beta, tau = 24) {  
+  u = rep(0, tau);
+  u[max(eta,1):min(eta+gamma, tau)] = max(beta / gamma,1)
+  return(u)
+} 
+
+objective_function = function(A, W, U, g, q) {
+  D = sapply(1:ncol(A), function(t) A[,t] * U[,t])
+  C = sum((D - g)^2 * q)
+  return(C)
+}
+
+# # objective function
+# objective_function = function(Abar, W, U, g, q) {
+#   N = nrow(Abar); tau = ncol(Abar)
+#   D = sapply(1:tau, function(t) {
+#     Wt = sapply(1:N, function(i) W[[i]][t,t])
+#     if (N > 1) Wt = diag(Wt)
+#     Dt = sum((Abar[,t] %o% Abar[,t] + Wt) * (U[,t] %o% U[,t])) - 2 * g[t] * sum(Abar[,t] * U[,t]) + g[t]^2
+#     return(Dt)
+#   })
+#   D = sum(q * D)
+#   return(D)
+# }
+
+setGeneric(
+  name = "solveSchedulesApprox",
+  def = function(.Object, options = NULL, verbose = T){standardGeneric("solveSchedulesApprox")}
+)
+setMethod('solveSchedulesApprox',
+          signature  = 'Scheduler',
+          definition = function(.Object, options = NULL, verbose = T) {
+            
+            # access model parameters and data
+            N = .Object@SETUP$N
+            Abar = .Object@SETUP$Abar
+            tau  = .Object@SETUP$tau
+            W    = .Object@SETUP$W
+            g    = .Object@SETUP$g
+            q    = .Object@SETUP$q
+            Q    = diag(q)
+            gamma= options$gamma
+            eta  = options$eta
+            beta = options$beta
+            npars = N*tau
+            usr_names = rownames(Abar)
+            
+            # do not consider negative rates
+            idx0 = which(Abar < 0)
+            if (length(idx0)>0) Abar[idx0] = 0
+            
+            # define acceptable schedule sets
+            cat('Defining fixed schedule sets...')
+
+            # schedule set for each consumer is the same
+            Ue = lapply(1:length(eta), function(j) {
+              u = define_schedule(eta[j], gamma[j], beta)
+              return(u)
+            })
+            names(Ue) = paste('Schedule', 1:length(Ue))
+            
+            # set of schedules sets
+            U_list = lapply(1:N, function(j) Ue)
+            names(U_list) = usr_names
+            
+            cat('done!\n')
+            
+            # objective as function of sets
+            f_obj = function(A, U){
+              if (length(A) == 0) return(sum(g^2 * q))
+              Ab = t(sapply(A, function(l) l$a))
+              w  = lapply(A, function(l) l$w)
+              u  = do.call('rbind', U)
+              D  = objective_function(Ab, w, u, g, q)              
+              return(sum(g^2 * q) - D)
+            }            
+            
+            # optimize and return result
+            cat('Solving approximate set selection problem...')
+            
+            Omega = lapply(1:N, function(i) list(a = Abar[i,], w = W[[i]]))
+            names(Omega) = usr_names
+
+            res = optimize_submodular(f_obj, Omega, U_list, eps = 0.01)
+            
+            cat('done!\n')
+
+            u = do.call('rbind', res$U)
+            A = t(sapply(res$A, function(l) l$a))
+            w = lapply(res$A, function(l) l$w)
+            usr_sel = rownames(res$A)
+
+            Asel = matrix(0, ncol = tau, nrow = N); rownames(Asel) = usr_names; 
+            Usel = matrix(0, ncol = tau, nrow = N); rownames(Usel) = usr_names; 
+            Asel[usr_sel,] = A; Usel[usr_sel,] = u
+
+            # compute aggregate profiles
+            Delta.bar = colSums(Asel * Usel)            
+            Delta.Var = matrix(0, nrow = tau, ncol = tau)
+            for (i in 1:length(w)) {
+              Delta.Var = Delta.Var + diag(Usel[i,]) %*% w[[i]] %*% diag(Usel[i,])
+            }
+                        
+            # pass solution further
+            .Object@OUTPUT$EC        = res$val
+            .Object@OUTPUT$U         = Usel
+            .Object@OUTPUT$Delta.bar = Delta.bar
+            .Object@OUTPUT$Delta.Var = Delta.Var
+            .Object@OUTPUT$nr        = 1*(rowSums(Usel)>0)
+            .Object@OUTPUT$Nr        = rownames(u)
             
             return(.Object)
           })
