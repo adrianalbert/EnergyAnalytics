@@ -68,7 +68,7 @@ Rcpp::List optimize_submodular_LS(Rcpp::List& Omega, Rcpp::List& U_list, Rcpp::L
   int N = Omega.size(); 
   arma::colvec q = as<arma::colvec>(params["q"]);
   arma::colvec g = as<arma::colvec>(params["g"]);
-  double eps     = 0.001;
+  double eps     = 0.01;
   int tau = g.size();
     
   // format arrays
@@ -85,7 +85,7 @@ Rcpp::List optimize_submodular_LS(Rcpp::List& Omega, Rcpp::List& U_list, Rcpp::L
   arma::mat UL  = U_list["UL"];  // list of all schedules
   arma::uvec UA = U_list["UA"];  // indicates which user each schedule belongs to
   UA -= 1; //UA - ones<arma::colvec>(UA.size());
-  int Nu = UL.n_rows, e;
+  int Nu = UL.n_rows;
 
   // initialize sets as 0/1 arrays
   cout<<"Initializing sets..."<<'\n';  
@@ -93,7 +93,7 @@ Rcpp::List optimize_submodular_LS(Rcpp::List& Omega, Rcpp::List& U_list, Rcpp::L
   arma::uvec   U = ones<arma::uvec>(N) * Nu;
   arma::colvec d = zeros<arma::colvec>(Nu);
   for (int v = 0; v<Nu; v++) {
-    e = UA[v];
+    int e = UA[v];
     arma::uvec e_vec, v_vec; e_vec<<e; v_vec<<v;
     arma::mat Acur = Abar.rows(e_vec), Wcur = W.rows(e_vec), Ucur = UL.rows(v_vec);
     d[v] = compute_objective(Acur, Wcur, Ucur, g, q);
@@ -123,28 +123,36 @@ Rcpp::List optimize_submodular_LS(Rcpp::List& Omega, Rcpp::List& U_list, Rcpp::L
     Rcout<<"Step forward: Iteration "<<iter<<"; |A| = "<<n<<'\n';
     // find appropriate element
     bool backstep = 1;
+    arma::uvec vvec = zeros<arma::uvec>(N); arma::vec ovec = -ones<arma::vec>(N);
     for (int v = 0; v < Nu; v++) 
       if (A[UA[v]] == 0) {      // if element v is not in A yet
-        e = UA[v]; 
+        int e = UA[v]; 
         A1 = A; A1[e] = 1;
         U1 = U; U1[e] = v;
         arma::uvec e_vec1= A1.elem(find(A1 > 0)), v_vec1 = U1.elem(find(U1 < Nu));
         arma::mat Acur1= Abar.rows(e_vec1), Wcur1 = W.rows(e_vec1), Ucur1 = UL.rows(v_vec1);        
         double obj1 = compute_objective(Acur1, Wcur1, Ucur1, g, q);
         if (obj1 > f*obj) {
-          A[e] = 1;
-          U[e] = v;
-          backstep = 0;
-          terminate = 0;
-          break;
+          vvec[e]=v; ovec[e] =obj1 - obj;
         }        
-      }    
+      }
+    arma::uvec evec = find(ovec>0);
+    if (evec.size()>0){ // take the maximum
+      Rcout<<"|evec|="<<evec.size()<<'\n';
+      arma::uvec m = find(ovec == max(ovec));
+      int e = as_scalar(m[0]);
+      int v = vvec[e];
+      A[e] = 1; U[e] = v;
+      backstep = 0;
+      terminate = 0;
+    }
     
     // take step backward
     if (!backstep) continue;
     terminate = 1;
     Rcout<<"Step backward: Iteration "<<iter<<'\n';
         
+    ovec = -ones<arma::vec>(N);
     for (int e = 0; e < N; e++) 
       if (A[e] == 1) {      // if element v is in A
         A1 = A; A1[e] = 0;
@@ -153,13 +161,19 @@ Rcpp::List optimize_submodular_LS(Rcpp::List& Omega, Rcpp::List& U_list, Rcpp::L
         arma::mat Acur1= Abar.rows(e_vec1), Wcur1 = W.rows(e_vec1), Ucur1 = UL.rows(v_vec1);
         double obj1 = compute_objective(Acur1, Wcur1, Ucur1, g, q);
         if (obj1 > f*obj) {
-          A[e] = 0;
-          U[e] = Nu;
-          terminate = 0;
-          break;
+          ovec[e] = obj - obj1;
         }        
       };                   
+    evec = find(ovec>0);
+    if (evec.size()>0){ // take the maximum
+      Rcout<<"|evec|="<<evec.size()<<'\n';
+      arma::uvec m = find(ovec == max(ovec));
+      int e = as_scalar(m[0]);
+      A[e] = 0; U[e] = Nu;
+      terminate = 0;
+    }        
   };
+  
   Rcout<<"Done"<<'\n';
   
   // return value
