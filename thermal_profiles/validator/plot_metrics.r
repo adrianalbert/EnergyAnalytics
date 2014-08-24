@@ -51,8 +51,9 @@ plot_error_state = function(P, support,
                             title = 'Error Probability',
                             xlab = 'Response [kWh/deg F]', ylab = 'P(error)') {
   
+  st_names = rownames(P); if (is.null(st_names)) st_names = as.factor(1:nrow(P))
   dat = as.data.frame(t(P)); names(dat) = 1:ncol(dat); dat$support = support
-  dat = melt(dat, id.vars = 'support'); dat$variable = as.factor(dat$variable)
+  dat = melt(dat, id.vars = 'support'); dat$variable = st_names[dat$variable]
   
   p = ggplot(dat, aes(support, value, color = variable)) 
   p = p + geom_line(size=2) + geom_point(aes(shape=variable), size=4)
@@ -72,6 +73,7 @@ plot_error_state = function(P, support,
           axis.ticks       = element_blank() ) + 
     theme(plot.title=element_text(family="Times", face="bold", size=20))
   p = p + ggtitle(title)  + xlab(xlab) + ylab(ylab)
+  p = p + guides(color=guide_legend(title="state"))
   
   return(p)
 }
@@ -143,7 +145,7 @@ plot_prob_profile = function(P, var = NULL,
                             xlab = 'Temperature [deg F]', ylab = 'P(state)') {
   
   if (is.null(var)) var = 1:nrow(P)
-  colnames(P) = 1:ncol(P)
+  #colnames(P) = 1:ncol(P)
   P = as.data.frame(cbind(var, P)) 
   var_name = names(P)[1]
   df = melt(P, id.vars = var_name)
@@ -165,6 +167,7 @@ plot_prob_profile = function(P, var = NULL,
           legend.title     = element_text(size=18),    
           axis.ticks       = element_blank() ) + 
     theme(plot.title=element_text(family="Times", face="bold", size=20))
+  p = p + guides(color=guide_legend(title="state"))
   p = p + ggtitle(title)  + xlab(xlab) + ylab(ylab)
   
   return(p)

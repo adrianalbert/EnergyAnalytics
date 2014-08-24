@@ -21,7 +21,7 @@ source('../../utils/select_data.r')
 DATA_PATH = '~/energy-data/pecan_street/usage-select/'
 DUMP_PATH = '~/energy-data/pecan_street/models/'
 PLOT_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street/'
-PRODUCE_PLOTS = F
+PRODUCE_PLOTS = T
 
 # load user names
 user_names = read.csv('~/energy-data/pecan_street/metadata/user_names_ids.csv')
@@ -78,7 +78,7 @@ prepare_data = function(decode_info, data) {
 # _____________________________________________________
 # Function to run analysis and produce metrics & plots
 
-run_analysis = function(data, decode_info_S, decode_info_W, PLOT_PATH = PLOT_PATH) {
+run_analysis = function(data, decode_info_S, interp_info_S, decode_info_W, PLOT_PATH = PLOT_PATH) {
   
   # assemble data
   data.S = select_data(data, seasons = 'Summer')
@@ -87,7 +87,7 @@ run_analysis = function(data, decode_info_S, decode_info_W, PLOT_PATH = PLOT_PAT
   res.W  = prepare_data(decode_info_W, data.W)
   df.S   = res.S$data
   df.W   = res.W$data
-
+  
   # Compute metrics
   # -------------------------------------------------
   
@@ -227,7 +227,7 @@ run_analysis = function(data, decode_info_S, decode_info_W, PLOT_PATH = PLOT_PAT
     ll = grt.S; ll[(length(grt.S)+1):(length(grt.S)+length(res.S$response))] = res.S$response  
     ll[(length(ll)+1):(length(ll)+length(mod_debiased$per_state))] = mod_debiased$per_state
     p = plot_gaussian_distr(ll, 
-                            state = as.factor(rep(1:length(grt.S), 3)), 
+                            state = rep(interp_info_S$regime.type, 3), 
                             type = rep(c('Ground', 'Model', 'De-biased'), each=length(grt.S)),
                             title = paste('Compare state responses for user', username))
     print(p)
@@ -242,12 +242,14 @@ run_analysis = function(data, decode_info_S, decode_info_W, PLOT_PATH = PLOT_PAT
   
   # compare state-based response
   pdf(file=paste(PLOT_PATH, 'state_response_err_rel.pdf',sep='/'),width=9.3,height=4)
+    rownames(metr.SW$P.relative) = interp_info_S$regime.type
     p = plot_error_state(metr.SW$P.relative, metr.SW$support.rel, xlab = 'Relative Error [%/100]',
                          title = bquote(P(epsilon<eta) ~ 'for user' ~ .(username)))
     print(p)
   dev.off()
   
   pdf(file=paste(PLOT_PATH, 'state_response_err_rel_abs.pdf',sep='/'),width=9.3,height=4)
+    rownames(metr.SW$P.relative) = interp_info_S$regime.type
     p = plot_error_state(metr.SW$P.rel.abs, metr.SW$support.rab, xlab = 'Absolute Relative Error [%/100]',
                          title = bquote(P(abs(epsilon)<eta) ~ 'for user' ~ .(username)))
     print(p)
@@ -255,6 +257,7 @@ run_analysis = function(data, decode_info_S, decode_info_W, PLOT_PATH = PLOT_PAT
   
   # plot state probability by temperature : empirical
   pdf(file=paste(PLOT_PATH, 'prob_profile_empiric_temp.pdf',sep='/'),width=9.3,height=4)
+    colnames(PeS$probvec) = interp_info_S$regime.type
     p = plot_prob_profile(PeS$probvec, var = data.frame(TemperatureF = temperature.grid), 
                           title = paste('Empirical thermal regimes distribution for user', username))
     print(p)
@@ -307,8 +310,10 @@ run_analysis = function(data, decode_info_S, decode_info_W, PLOT_PATH = PLOT_PAT
 # __________________________________________________
 # Perform analysis across user population 
 
-user_ids = setdiff(unique(user_info$uid), c('3392', '4313', '4373'))
-user_res = unique(user_info$res)
+# user_ids = setdiff(unique(user_info$uid), c('3392', '4313', '4373'))
+# user_res = unique(user_info$res)
+user_ids = c('1801', '9922')
+user_res = c('60min')
 metrics = list()
 for (i in 1:length(user_ids)) {       # user IDs
   for (r in 1:length(user_res)) {     # resolution levels
@@ -328,6 +333,7 @@ for (i in 1:length(user_ids)) {       # user IDs
     
     file.S = files.decode[f.S]; load(file.S); decode_info_S = data
     file.W = files.decode[f.W]; load(file.W); decode_info_W = data
+    file.interp.S = files.interp[f.S]; load(file.interp.S); interp_info_S = data
     file.r = file.path(DATA_PATH, user_res[r], paste(user_ids[i], '.csv', sep=''))
     data   = read.csv(file.r)
 
@@ -336,9 +342,9 @@ for (i in 1:length(user_ids)) {       # user IDs
     dir.create(cur_path)
     
     # run analysis for current user
-    metrics[[paste(user_ids[i], user_res[r], sep='-')]] = run_analysis(data, decode_info_S, decode_info_W, PLOT_PATH = cur_path)            
+    metrics[[paste(user_ids[i], user_res[r], sep='-')]] = run_analysis(data, decode_info_S, interp_info_S, decode_info_W, PLOT_PATH = cur_path)            
   }  
 }
 
 # save metrics to disc
-save(file = file.path(DUMP_PATH, 'metrics.RData'), list = c('metrics'))
+# save(file = file.path(DUMP_PATH, 'metrics.RData'), list = c('metrics'))

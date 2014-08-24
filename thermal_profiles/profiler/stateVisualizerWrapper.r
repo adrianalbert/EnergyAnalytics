@@ -25,7 +25,7 @@ stateVisualizerWrapper = function(decoder, interpreter,
   # Produce analysis plots
   
   if (!is.null(plots_path)) {
-        
+    
     # visualize decoded & interpreted data
 		visualizer     = new(Class = "Visualizer", decoder, interpreter,
 		                    interval = interval, 

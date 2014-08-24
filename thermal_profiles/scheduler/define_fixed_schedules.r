@@ -1,10 +1,12 @@
 
 library('ggplot2')
 
-define_schedule = function(gamma, eta, beta, tau = 24) {
-  
+# create "square wave" schedules
+define_schedule = function(eta, beta, tau = 24) {  
   u = rep(0, tau);
-  u[eta:min(eta+gamma, 24)] = beta / gamma
+  t1 = max(eta + beta - tau, 0)
+  u[max(eta,1):min(eta+beta, tau)] = 1
+  if (t1>0) u[1:t1] = 1
   return(u)
 } 
 
@@ -13,18 +15,17 @@ u = define_schedule
 test_plot = 1
 if (test_plot == 1) {
 
-  beta = 3
-  df = rbind(data.frame(hour = 1:24, eta = 15, gamma = 3, effort = u(3,15, beta)),
-             data.frame(hour = 1:24, eta = 18, gamma = 3, effort = u(3,18, beta)),
-             data.frame(hour = 1:24, eta = 15, gamma = 5, effort = u(5,15, beta)),
-             data.frame(hour = 1:24, eta = 18, gamma = 5, effort = u(5,18, beta)))             
-  df$gamma = as.factor(df$gamma)
-  df$eta = as.factor(df$eta)
+  df = rbind(data.frame(hour = 1:24, eta = 15, beta = 3, effort = u(15, 3)),
+             data.frame(hour = 1:24, eta = 19, beta = 3, effort = u(19, 3)),
+             data.frame(hour = 1:24, eta = 15, beta = 7, effort = u(15, 7)),
+             data.frame(hour = 1:24, eta = 19, beta = 7, effort = u(19, 7)))             
+  df$beta = as.factor(df$beta)
+  df$eta  = as.factor(df$eta)
   
   PLOTS_PATH = '~/Dropbox/OccupancyStates/plots/scheduling/'
   pdf(file = paste(PLOTS_PATH,'example-fixed-schedules.pdf', sep=''), width = 5, height=3)
-  plt = ggplot(df, aes(y = effort, x = hour, color = eta, linetype = gamma, shape = gamma)) + 
-    geom_line(size = 1.5) + geom_point(size = 4)
+  plt = ggplot(df, aes(y = effort, x = hour, color = eta, linetype = beta, shape = eta)) + 
+    geom_line(size = 1.3) + geom_point(size = 3)
   plt = plt + theme_bw() + 
     theme(panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),

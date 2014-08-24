@@ -43,15 +43,14 @@ setup_info = list(DT            = 5,
                   goal          = Goal,
                   tou_rates     = ratevec)
 
-# initialize scheduler
 scheduler = new(Class = "Scheduler", inputs, setup = setup_info)
 
 # initialize options
-eta   = rep(c(2,5,7,15,17,18,19), 3)
-gamma = rep(c(2,3,4), each=7)
-options = list(eta = eta, gamma = gamma, beta = 3)
+eta   = c(2,5,7,15,17,22,23)
+betav = 1:20
+beta  = 3
+options = list(eta = eta, beta = beta, verbose = TRUE, NOBJ = 100)
 
-Rprof()
+# compute schedules
 scheduler = solveSchedulesApprox(scheduler, options = options)
-Rprof(NULL)
-tmp = summaryRprof()
+

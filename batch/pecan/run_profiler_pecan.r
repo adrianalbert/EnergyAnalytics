@@ -9,8 +9,9 @@
 rm(list = ls())
 options(error = recover)
 library('segmented')
+library('lubridate')
 
-SELECTED_SEASONS = c('Summer')
+SELECTED_SEASONS = c('Summer', 'Winter')
 
 # __________________________________________________
 # Initializations...
@@ -22,8 +23,8 @@ source('../../batch/pecan/define_categories_pecan.r')
 source('../../utils/select_data.r')
 
 DATA_PATH = '~/energy-data/pecan_street/usage-select/'
-DUMP_PATH = '~/energy-data/pecan_street/models/'
-PLOT_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street/'
+DUMP_PATH = '~/energy-data/pecan_street/models_new/'
+PLOT_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street-new/'
 
 # load user names
 user_names = read.csv('~/energy-data/pecan_street/metadata/user_names_ids.csv')
@@ -69,6 +70,8 @@ format_data = function(homeData) {
   cur_data$date = as.character(cur_data$date)
   cur_covar = subset(homeData, select = c('date', 'TemperatureF', 'TemperatureD'))
   cur_covar$date = as.character(cur_covar$date)
+  cur_month     = month(cur_data$date)
+  cur_covar$TemperatureDSummer = cur_covar$TemperatureD * (cur_month %in% 3:10)
   
   return(list(cur_data, cur_covar))
 }
@@ -104,10 +107,12 @@ apply_thermal_model = function(cur_data, cur_covar, userName,
   }        
   
   # learn model
-  res = try(stateProcessorWrapper(cur_data, cur_covar, userName, 
+  
+  res = (stateProcessorWrapper(cur_data, cur_covar, userName, 
                               controls = controls,
                               train.frac = train.frac, 
                               verbose = F, 
+                              resp.vars = c('(Intercept)', 'TemperatureD', 'TemperatureDSummer'),
                               dump_path = dump_path))
   if (class(res) == 'try-error') {
     cat('Error in learning model for current user!\n')
@@ -116,7 +121,7 @@ apply_thermal_model = function(cur_data, cur_covar, userName,
   
   # produce visualizations
   if (is.null(plot_path)) return(NULL)
-  res = try(stateVisualizerWrapper(res$decoder, 
+  res = (stateVisualizerWrapper(res$decoder, 
                                res$interpreter, 
                                plots_path = plot_path, 
                                interval = c(start_date, stop_date)))
@@ -128,8 +133,8 @@ apply_thermal_model = function(cur_data, cur_covar, userName,
   return(NULL)
 }
 
-res = mclapply(1:nrow(usersVec), 
-            mc.cores = 3,
+res = lapply(1:1,#nrow(usersVec), 
+         #   mc.cores = 3,
                function(i) {
   # load data             
   user     = as.character(usersVec[i,])

@@ -203,8 +203,8 @@ defineConstraints = function(mod) {
 
 fit.model = function(mod, maxit = 100, tol = 1e-3){ 
   
-    constr = defineConstraints(mod)
-    mod.cs = constr$mod
+   # constr = defineConstraints(mod)
+    mod.cs = mod #constr$mod
 
 		# for donlp
     # contrl = donlp2Control()
@@ -484,7 +484,7 @@ estimateStandardErrors = function(states, data, resp.vars) {
   K = length(unique(states))
   resp.vars = setdiff(resp.vars, '(Intercept)')
   stderr = sapply(1:K, function(k) {
-    fmla = as.formula(paste('obs ~ ', resp.vars))
+    fmla = as.formula(paste('obs ~ ', paste(resp.vars, collapse = '+')))
     fit  = lm(fmla, data[which(states == k),])
     se   = summary(fit)$coefficients[,2]
     return(se)

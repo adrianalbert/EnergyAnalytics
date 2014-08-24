@@ -100,7 +100,6 @@ setMethod('solveSchedules',
             q    = .Object@SETUP$q
             Q    = diag(q)
             if (length(options$budget) == 1) beta = rep(options$budget, N) else beta = options$budget
-            gamma= options$gamma
             npars = N*tau
             if (is.null(options$Nr)) Nr = rep(1,N) else Nr = options$Nr
             if (!is.null(options$presaved)) presaved = options$presaved else presaved = FALSE
@@ -194,9 +193,11 @@ setMethod('solveSchedules',
 # Set up & solve approximate scheduling problem
 
 # create "square wave" schedules
-define_schedule = function(eta, gamma, beta, tau = 24) {  
+define_schedule = function(eta, beta, tau = 24) {  
   u = rep(0, tau);
-  u[max(eta,1):min(eta+gamma, tau)] = max(beta / gamma,1)
+  t1 = max(eta + beta - tau, 0)
+  u[max(eta,1):min(eta+beta-1, tau)] = 1
+  if (t1>0) u[1:t1] = 1
   return(u)
 } 
 
@@ -216,11 +217,12 @@ setMethod('solveSchedulesApprox',
             g    = .Object@SETUP$g
             q    = .Object@SETUP$q
             Q    = diag(q)
-            gamma= options$gamma
             eta  = options$eta
             beta = options$beta
             npars = N*tau
             usr_names = rownames(Abar)
+            if (is.null(options$verbose)) verbose = TRUE else verbose = options$verbose
+            if (is.null(options$NOBJ)) NOBJ = 100 else NOBJ = options$NOBJ
             
             # do not consider negative rates
             idx0 = which(Abar < 0)
@@ -231,7 +233,7 @@ setMethod('solveSchedulesApprox',
 
             # schedule set for each consumer is the same
             Ue = lapply(1:length(eta), function(j) {
-              u = define_schedule(eta[j], gamma[j], beta)
+              u = define_schedule(eta[j], beta)
               return(u)
             })
             names(Ue) = paste('Schedule', 1:length(Ue))
@@ -241,23 +243,24 @@ setMethod('solveSchedulesApprox',
             names(U_list) = usr_names
             
             cat('done!\n')
-                        
+                                
             # format inputs to optimization
             Omega = lapply(1:N, function(i) list(a = Abar[i,], w = W[[i]]))
             names(Omega) = usr_names            
-            UL = do.call('rbind', sapply(U_list, function(l) do.call('rbind', l)))
+            UL = do.call('rbind', lapply(U_list, function(l) do.call('rbind', l)))
             UA = rep(1:N, sapply(U_list, length))            
-            params = list(g = g, q = q, eps = 0.01)
+            params = list(g = g, q = q, eps = 0.01, verbose = verbose, NOBJ = NOBJ)
             
             # optimize and return result
-            cat('Solving approximate set selection problem...')            
+            cat('Solving approximate set selection problem...\n') 
+            
             res = optimize_submodular_LS(Omega, list(UL = UL, UA = UA), params)            
             cat('done!\n')
 
-            u = do.call('rbind', res$U)
-            A = t(sapply(res$A, function(l) l$a))
-            w = lapply(res$A, function(l) l$w)
-            usr_sel = rownames(res$A)
+            u = UL[res$U[which(res$U<nrow(UL))],]
+            A = Abar[which(res$A>0),]
+            w = W[which(res$A>0)]
+            usr_sel = usr_names[which(res$A>0)]
 
             Asel = matrix(0, ncol = tau, nrow = N); rownames(Asel) = usr_names; 
             Usel = matrix(0, ncol = tau, nrow = N); rownames(Usel) = usr_names; 
@@ -271,11 +274,13 @@ setMethod('solveSchedulesApprox',
             }
                         
             # pass solution further
-            .Object@OUTPUT$EC        = res$val
+            .Object@OUTPUT$EC        = res$obj
             .Object@OUTPUT$U         = Usel
             .Object@OUTPUT$Delta.bar = Delta.bar
             .Object@OUTPUT$Delta.Var = Delta.Var
-            .Object@OUTPUT$nr        = 1*(rowSums(Usel)>0)
+            .Object@OUTPUT$order     = res$S
+            .Object@OUTPUT$OBJVEC    = res$objvec
+            .Object@OUTPUT$nr        = res$A
             .Object@OUTPUT$Nr        = rownames(u)
             
             return(.Object)
@@ -369,7 +374,63 @@ setMethod('plot',
               return(plt)                                      
             }
             
-            # goal match
+            # goal match for approx solution
+            if (type == 'goal-match-approx') {   
+              
+              df = data.frame(value = x@OUTPUT$Delta.bar, Variance = sqrt(abs(diag(x@OUTPUT$Delta.Var))))
+              dh = data.frame(value = x@SETUP$g, Variance = 0)              
+              df$Hour = 1:nrow(df)
+              df$variable = 'Delta (all)'
+              dh$variable = 'Goal'
+              dh$Hour = 1:nrow(dh)
+              df = rbind(df, dh)
+              tau= length(x@SETUP$g)
+              
+              if (!is.null(compare)) {
+                no_sel = round(compare / 100 * length(x@OUTPUT$order))
+                D = lapply(1:length(no_sel), function(j) {
+                  i   = no_sel[j]
+                  idx = x@OUTPUT$order[1:i]
+                  Asel = x@SETUP$Abar[idx,]; Usel = x@OUTPUT$U[idx,]; w = x@SETUP$W[idx]
+                  Delta.bar = colSums(Asel * Usel)            
+                  Delta.Var = matrix(0, nrow = tau, ncol = tau)
+                  for (i in 1:length(w)) {
+                    Delta.Var = Delta.Var + diag(Usel[i,]) %*% w[[i]] %*% diag(Usel[i,])
+                  }                  
+                  Dcur = data.frame(value = Delta.bar, 
+                                    Variance = sqrt(abs(diag(Delta.Var))), 
+                                    Hour = 1:ncol(Asel), 
+                                    variable = paste('Delta, top ', compare[j], '%', sep=''))
+                  return(Dcur)
+                })
+                D = do.call('rbind', D)
+                df = rbind(df, D)
+              }
+              
+              # construct plot
+              plt = ggplot(df, aes(y = value, x = Hour, color = variable)) + 
+                geom_point(size = 2.5) + geom_line(size=1.5)
+              plt = plt + geom_errorbar(aes(ymax = value + Variance, ymin = value - Variance))        
+              plt = plt + theme_bw() + 
+                theme(panel.grid.major = element_blank(),
+                      panel.grid.minor = element_blank(),
+                      panel.background = element_blank(),
+                      strip.text.x     = element_text(size=18),
+                      axis.text.y      = element_text(size=18), 
+                      axis.text.x      = element_text(size=18),
+                      axis.title.y     = element_text(size=18),
+                      axis.title.x     = element_text(size=18),
+                      plot.title       = element_text(size=20),            
+                      legend.text      = element_text(size=18),
+                      legend.title      = element_text(size=18),
+                      legend.position  = c(0.25, 0.65),
+                      axis.ticks = element_blank()) + 
+                ggtitle(paste("Matching the reductions goal profile")) + ylab('kWh') + xlab('Hour of Day')
+              
+              return(plt)                                      
+            }            
+            
+            # no usr selected
             if (type == 'number-selected') {   
               
               df = data.frame(Available = Nr, Selected = nr, Consumer = sprintf('%02d', 1:length(Nr)))
