@@ -64,6 +64,10 @@ format_data = function(homeData) {
   # temperature above reference
   homeData$TemperatureD = homeData$TemperatureF - 65
   
+  # remove observations with NAs in response
+  idx.na = is.na(homeData$use)
+  if (length(idx.na)>0) homeData = homeData[-idx.na,]
+  
   # format data as expected by the HMM package
   cur_data = subset(homeData, select = c('date', 'use'))
   names(cur_data)[2] = 'obs'
@@ -72,7 +76,7 @@ format_data = function(homeData) {
   cur_covar$date = as.character(cur_covar$date)
   cur_month     = month(cur_data$date)
   cur_covar$TemperatureDSummer = cur_covar$TemperatureD * (cur_month %in% 3:10)
-  
+    
   return(list(cur_data, cur_covar))
 }
 
@@ -149,6 +153,8 @@ res = lapply(1:1,#nrow(usersVec),
   
   homeData15 = read.csv(files_15[i])     
   homeData60 = read.csv(files_60[i])  
+  
+  # remove rows with NAs in response
   
   # only process those users that have AC
   if (!('AC' %in% names(homeData60))) return(NULL)
