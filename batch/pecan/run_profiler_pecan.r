@@ -3,7 +3,7 @@
 # Applies HMM decoding on Pecan Street data. 
 #
 # Adrian Albert
-# Last modified: June 2014.
+# Last modified: September 2014.
 # ---------------------------------------------------------
 
 rm(list = ls())
@@ -75,7 +75,7 @@ format_data = function(homeData) {
   cur_covar = subset(homeData, select = c('date', 'TemperatureF', 'TemperatureD'))
   cur_covar$date = as.character(cur_covar$date)
   cur_month     = month(cur_data$date)
-  cur_covar$TemperatureDSummer = cur_covar$TemperatureD * (cur_month %in% 3:10)
+  cur_covar$TemperatureDWinter = cur_covar$TemperatureD * (cur_month %in% c(0,1,2,3,10,11,12))
     
   return(list(cur_data, cur_covar))
 }
@@ -112,11 +112,11 @@ apply_thermal_model = function(cur_data, cur_covar, userName,
   
   # learn model
   
-  res = (stateProcessorWrapper(cur_data, cur_covar, userName, 
+  res = try(stateProcessorWrapper(cur_data, cur_covar, userName, 
                               controls = controls,
                               train.frac = train.frac, 
                               verbose = F, 
-                              resp.vars = c('(Intercept)', 'TemperatureD', 'TemperatureDSummer'),
+                              resp.vars = c('(Intercept)', 'TemperatureD', 'TemperatureDWinter'),
                               dump_path = dump_path))
   if (class(res) == 'try-error') {
     cat('Error in learning model for current user!\n')
@@ -125,7 +125,7 @@ apply_thermal_model = function(cur_data, cur_covar, userName,
   
   # produce visualizations
   if (is.null(plot_path)) return(NULL)
-  res = (stateVisualizerWrapper(res$decoder, 
+  res = try(stateVisualizerWrapper(res$decoder, 
                                res$interpreter, 
                                plots_path = plot_path, 
                                interval = c(start_date, stop_date)))
@@ -137,8 +137,8 @@ apply_thermal_model = function(cur_data, cur_covar, userName,
   return(NULL)
 }
 
-res = lapply(1:1,#nrow(usersVec), 
-         #   mc.cores = 3,
+res = mclapply(1:nrow(usersVec), 
+               mc.cores = 5,
                function(i) {
   # load data             
   user     = as.character(usersVec[i,])

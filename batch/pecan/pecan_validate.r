@@ -19,8 +19,8 @@ source('../../thermal_profiles/validator/plot_metrics.r')
 source('../../utils/select_data.r')
 
 DATA_PATH = '~/energy-data/pecan_street/usage-select/'
-DUMP_PATH = '~/energy-data/pecan_street/models/'
-PLOT_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street/'
+DUMP_PATH = '~/energy-data/pecan_street/models_new/'
+PLOT_PATH = '~/Dropbox/OccupancyStates/plots/pecan-street-new/'
 PRODUCE_PLOTS = T
 
 # load user names
@@ -60,7 +60,7 @@ prepare_data = function(decode_info, data) {
   # check for consistency
   if (class(resp$stderr) == 'list') {
     idx.nan = which(sapply(resp$stderr, length) == 1)    
-    z = c(0,0); names(z) = c('(Intercept)', 'TemperatureD')
+    z = c(0,0); names(z) = c('(Intercept)', 'TemperatureD', )
     for (i in 1:length(idx.nan)) resp$stderr[[idx.nan[i]]] = z
     resp$stderr = as.data.frame(do.call('cbind', resp$stderr))
     names(resp$stderr) = 1:ncol(resp$stderr)
@@ -70,29 +70,26 @@ prepare_data = function(decode_info, data) {
   volatility = lapply(1:nStates, function(s) { z = c(mu = 0, sd = resp$stdev[s]); names(z) = c('mu', 'sd'); z})
   baseload   = lapply(1:nStates, function(s) { z = c(mu = resp$means['(Intercept)', s], sd = resp$stderr['(Intercept)', s]); names(z) = c('mu', 'sd'); z})
   response   = lapply(1:nStates, function(s) c(mu = resp$means['TemperatureD', s], sd = as.numeric(resp$stderr['TemperatureD', s])))
+  bias.win   = lapply(1:nStates, function(s) c(mu = resp$means['TemperatureDWinter', s], sd = as.numeric(resp$stderr['TemperatureDWinter', s])))
   
-  return(list(volatility = volatility, baseload = baseload, response = response, 
+  return(list(volatility = volatility, baseload = baseload, response = response, bias.win = bias.win,
               tran = tran, data = df))
 }
 
 # _____________________________________________________
 # Function to run analysis and produce metrics & plots
 
-run_analysis = function(data, decode_info_S, interp_info_S, decode_info_W, PLOT_PATH = PLOT_PATH) {
+run_analysis = function(data, decode_info, interp_info, PLOT_PATH = PLOT_PATH) {
   
   # assemble data
-  data.S = select_data(data, seasons = 'Summer')
-  data.W = select_data(data, seasons = 'Winter')
-  res.S  = prepare_data(decode_info_S, data.S)
-  res.W  = prepare_data(decode_info_W, data.W)
-  df.S   = res.S$data
-  df.W   = res.W$data
+  res  = prepare_data(decode_info, data)
+  df   = res$data
   
   # Compute metrics
   # -------------------------------------------------
   
   # remove bias by taking difference summer - winter
-  mod_debiased = remove_response_bias(res.S, res.W)
+  mod_debiased = remove_response_bias(res)
 
   # compute state-specific ground truth linear response
   grt.S  = compute_ground_truth_response(df.S, dep.var = 'AC', indep.var = 'TemperatureD')
@@ -323,7 +320,7 @@ for (i in 1:length(user_ids)) {       # user IDs
     cat(paste('Processing user', username, ' uid:', i, '/', length(user_ids), '; res:', user_res[r], '\n'))
     
     # assemble data
-    f.S    = which(user_info$res == user_res[r] & user_info$uid == user_ids[i] & user_info$ses == 'Summer')
+    f   = which(user_info$res == user_res[r] & user_info$uid == user_ids[i] & user_info$ses == 'Summer')
     f.W    = which(user_info$res == user_res[r] & user_info$uid == user_ids[i] & user_info$ses == 'Winter')
     
     if (length(f.S)==0 | length(f.W) ==0) {
