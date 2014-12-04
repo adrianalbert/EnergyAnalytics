@@ -32,14 +32,20 @@ E_fnorm <- function(mu=0, sigma=1) sigma * sqrt(2 / pi) * exp(-mu^2/(2*sigma^2))
 
 # given a data frame containing indications of "states" and (ground truth) dependent and independent variables, 
 # compute state-based linear response
-compute_ground_truth_response = function(df, dep.var = 'AC', indep.var = 'TemperatureD'){
+compute_ground_truth_response = function(df, state_names = NULL, dep.var = 'AC', indep.var = 'TemperatureD'){
   # compute ground-truth distributions
-  nStates = length(unique(df$state))
+  if (is.null(state_names)) nStates = length(unique(df$state)) else nStates = length(state_names)
   fmla = as.formula(paste(dep.var, indep.var, sep='~'))
   fit  = lapply(1:nStates, function(s) {
-    fit = lm(fmla, data = subset(df, state == s))
-    sm  = summary(fit)  
-    dat = sm$coefficients[indep.var,c('Estimate', 'Std. Error')]; 
+    df_cur = subset(df, state == s)
+    if (nrow(na.omit(df_cur[,c(dep.var, indep.var)]))>15) { # hard coded!!!
+      fit = lm(fmla, data = df_cur)
+      sm  = summary(fit)  
+      dat = sm$coefficients[indep.var,c('Estimate', 'Std. Error')];       
+    } else {
+      dat = matrix(c(0,0), nrow=1)
+      #rownames(dat) = indep.var
+    } 
     names(dat) = c("mu", "sd")
     return(dat)
   })
@@ -191,6 +197,7 @@ compute_probability_profile = function(var, tran){
 # function to compute probability distribution of states for given temperature ranges
 compute_probability_profile_empirical = function(df, 
                                        bin.out = NULL,
+                                       state_names = NULL,
                                        bin.var = 'TemperatureF', 
                                        nbins = 10){
   # temperature bins
@@ -198,10 +205,17 @@ compute_probability_profile_empirical = function(df,
   
   # compute model in each bin
   df$state = as.factor(df$state)
+  print(state_names)
+  
+  #if (length(table(df$state))<4) print(bla)
+  
   prob  = lapply(1:(nbins-1), function(b) {
     idx = which(df[,bin.var] >= q[b] & df[,bin.var] <= q[b+1])
     st  = table(df[idx,'state'])
     ps  = st / sum(st)
+    if (length(setdiff(state_names, names(st)))>0) {
+      ps[setdiff(state_names, names(st))] = 0
+    }
     return(ps)
   })
   
