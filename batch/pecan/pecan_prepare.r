@@ -62,10 +62,6 @@ files_60 = files.input[grep('hourly', files.input)]
 # ______________________________________________________
 # Combine end uses by functionality and add in weather
 
-#!!! TODO !!!
-# Get implement "rules" to determine how to assign appliances to different end-uses
-# e.g., if it's summer the HV probably is not on etc.
-
 # function to add 
 to_categories = function(homeData, dateCol = 'date') {
   names(homeData) = tolower(names(homeData))
