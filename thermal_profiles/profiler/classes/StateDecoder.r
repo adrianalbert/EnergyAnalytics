@@ -198,39 +198,6 @@ defineConstraints = function(mod) {
   return(list(conMat = conMat, lower = bl, upper = bu, mod = mod.cs, fixed = fixed))  
 }
 
-# ______________________________________
-# Wrapper to fit model
-
-fit.model = function(mod, maxit = 100, tol = 1e-3){ 
-  
-   # constr = defineConstraints(mod)
-    mod.cs = mod #constr$mod
-
-		# for donlp
-    # contrl = donlp2Control()
-    # contrl$epsx = 1e-4
-    # contrl$epsfcn = 1e-8
-    # contrl$silent = F
-    # contrl$te1 <- contrl$te2 <- contrl$te3 <- T  
-    # contrl$nreset.multiplier = 2
-
-    # print(constr)
-    
-    print(tol)
-  
-    mod.fit = fit(mod.cs, verbose = T, emcontrol = em.control(maxit = maxit, tol = tol))
-    
-#    mod.fit = fit(mod.cs, verbose = T, 
-#                  conrows = constr$conMat, 
-#                  conrows.lower = constr$lower, 
-#                  conrows.upper = constr$upper, 
-#                  fixed  = constr$fixed,
-#                  method = 'rsolnp',
-#                  solnpcntrl=list(rho = 1, outer.iter = 100, inner.iter = 200, delta = 1e-5, tol = 1e-6, trace=1))
-#                  donlpcntrl=contrl)
-
-  return(mod.fit)
-}
 
 # ______________________________________
 # Wrapper that treats for fitting errors
@@ -243,22 +210,15 @@ fitHMM = function(mod, nRestarts = 1, verbose = T, maxit = 100, tol = 1e-3){
   ok = FALSE
   it = 0
   cur_tol = tol
-  
   while (!ok & it <= nRestarts) {
-    
-#     out <- capture.output(fm  <- try(fit.model(mod, maxit = maxit, cur_tol = cur_tol)))                
-#     nlines = length(out)
-    fm  <- try(fit.model(mod, maxit = maxit, tol = cur_tol))
-    nlines = 3
-    
-    if (class(fm) != 'try-error') {
-      ok = nlines > 2                                   
-    } else ok = FALSE
+    fm  <- try(fit(mod, verbose=T, emcontrol=em.control(maxit=maxit, tol=tol)))
+    ok = class(fm) != 'try-error'
     if (!ok){
       if (verbose) cat('Bad HMM fit; re-estimating...\n')
-      cur_tol = cur_tol / 10
+      print(fm)
+      cur_tol = cur_tol * 10
     } else {
-      if (verbose) cat(paste('Convergence in', nlines*5, 'iterations.\n'))
+      if (verbose) cat('Convergence reached.\n')
     }
     it = it + 1
   }
@@ -324,7 +284,8 @@ learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(),
                                               nRestarts = nRestarts, verbose = verbose, maxit = maxit, tol = tol)
         R2.cv   = result[[as.character(k)]]$metrics['R2.cv']
         MAPE.cv = result[[as.character(k)]]$metrics['MAPE.cv']
-        if (R2.cv > thresh.R2 | MAPE.cv < thresh.MAPE) done = T else k = k + 1
+        if is.null(R2.cv) | is.null(MAPE.cv) k = k + 1 else 
+          if (R2.cv > thresh.R2 | MAPE.cv < thresh.MAPE) done = T else k = k + 1
       }
       metric = t(sapply(result, function(l) l$metrics))
       rownames(metric) = names(result)
@@ -546,7 +507,7 @@ setMethod('learnStateDecoder',
             controls = .Object@controls
             model = learnModelSize(.Object@data.train, 
                                    resp.vars = .Object@resp.vars, tran.vars = .Object@tran.vars, 
-                                   verbose = T, 
+                                   verbose = verbose, 
                                    Kmin = controls$Kmin, Kmax = controls$Kmax, 
                                    nRestarts = controls$nRestarts, maxit = controls$maxit, tol = controls$tol, 
                                    thresh.R2 = controls$thresh.R2, thresh.MAPE = controls$thresh.MAPE)
