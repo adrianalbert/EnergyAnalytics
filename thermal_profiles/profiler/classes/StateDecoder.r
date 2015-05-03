@@ -214,15 +214,15 @@ fitHMM = function(mod, nRestarts = 1, verbose = T, maxit = 100, tol = 1e-3){
     fm  <- try(fit(mod, verbose=T, emcontrol=em.control(maxit=maxit, tol=tol)))
     ok = class(fm) != 'try-error'
     if (!ok){
-      if (verbose) cat('Bad HMM fit; re-estimating...\n')
-      print(fm)
+      cat('Bad HMM fit; re-estimating...\n')
+      if (verbose) print(fm)
       cur_tol = cur_tol * 10
     } else {
       if (verbose) cat('Convergence reached.\n')
     }
     it = it + 1
   }
-  return(fm)  
+  if (!ok) return(NULL) else return(fm)  
 }            
 
 # __________________________________________
@@ -232,8 +232,7 @@ fitHMM.cv = function(data, K = 3,
                      response.vars = NULL, transitn.vars = NULL, 
                      respstart = NULL, trstart = NULL, 
                      nRestarts = 1, verbose = T, maxit = 100, tol = 1e-3){ 
-  if (verbose)
-    cat(paste('---> HMM Cross-Validation K =', K,'\n'))
+  cat(paste('***** HMM Cross-Validation K =', K,'******\n'))
   
   # fit HMM on 1/2 of data
   data_1  = data[seq(1, nrow(data)-1, by=2),]
@@ -245,7 +244,7 @@ fitHMM.cv = function(data, K = 3,
 
   fm_half = fitHMM(mod, nRestarts = nRestarts, verbose = verbose, maxit = maxit, tol = tol)
   
-  if (class(fm_half) == 'try-error') 
+  if (is.null(fm_half)) #(class(fm_half) == 'try-error') 
     return(list(model.half = NA, metrics = c(MAPE.cv = NA, R2.cv = NA, BIC = NA, AIC = NA)))
   
   # decode the other half
@@ -254,10 +253,13 @@ fitHMM.cv = function(data, K = 3,
   probs   = viterbi_states(fm_half, data.dum, data.dum$obs)
   
   # compute Cross-Validation error metrics
-  MAPE    = mean(abs((probs$fit - data_2$obs) / probs$fit))
-  R2      = 1 - sum((probs$fit - data_2$obs)^2) / sum((data_2$obs - mean(data_2$obs))^2)
-  
-  return(list(model.half = fm_half, metrics = c(MAPE.cv = MAPE, R2.cv = R2, BIC = BIC(fm_half), AIC = AIC(fm_half))))
+  MAPE    = mean(abs((probs$fit - data_2$obs) / probs$fit), na.rm=TRUE)
+  R2      = 1 - sum((probs$fit - data_2$obs)^2, na.rm=TRUE) / 
+    sum((data_2$obs - mean(data_2$obs, na.rm=TRUE))^2, na.rm=TRUE)
+ 
+  return(list(model.half = fm_half, 
+              metrics = c(MAPE.cv = MAPE, R2.cv = R2, 
+                          BIC = BIC(fm_half), AIC = AIC(fm_half))))
 }            
 
 # _________________________________
@@ -272,7 +274,7 @@ learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(),
     # _______________________________________________
     # choose model size K (number of states)
 
-    if (Kmax > Kmin) {
+    if (Kmax >= Kmin) {
       result = list()
       k      = Kmin
       done   = F
@@ -281,10 +283,13 @@ learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(),
                                               response.vars = resp.vars,
                                               transitn.vars = tran.vars, 
                                               respstart = NULL, trstart = NULL, 
-                                              nRestarts = nRestarts, verbose = verbose, maxit = maxit, tol = tol)
+                                              nRestarts = nRestarts, 
+                                              verbose = verbose, 
+                                              maxit = maxit, tol = tol)
         R2.cv   = result[[as.character(k)]]$metrics['R2.cv']
         MAPE.cv = result[[as.character(k)]]$metrics['MAPE.cv']
-        if is.null(R2.cv) | is.null(MAPE.cv) k = k + 1 else 
+        print(paste("MAPE=",MAPE.cv, "; R2=", R2.cv, sep=''))
+        if (is.na(R2.cv) | is.na(MAPE.cv)) k = k + 1 else 
           if (R2.cv > thresh.R2 | MAPE.cv < thresh.MAPE) done = T else k = k + 1
       }
       metric = t(sapply(result, function(l) l$metrics))
@@ -300,31 +305,26 @@ learnModelSize = function(data.train, resp.vars = c(), tran.vars = c(),
         idx_opt= which.max(metric[,'R2.cv'])             
         K_opt  = Kvec[idx_opt]
       }
-    } else { 
-      K_opt = Kmin   
-      metric = NULL
-      result = NULL
-    }
-                          
-    # _______________________________________________
-    # Fit model to full data
-    
-    trstart = NULL
+      #res = result[[as.character(K_opt)]]
+      #fm = res$model.half
 
-    # fit model to full data 
-    mod    = defineHMM.depmix(data.train, K = K_opt, 
-                       response.vars = resp.vars, 
-                       transitn.vars = tran.vars, 
-                       respstart = NULL, 
-                       trstart = trstart)
-    fm     = fitHMM(mod, nRestarts = nRestarts, verbose = verbose, maxit = maxit, tol = tol)
-    
-    # ______________________
-    # Save computation
-    
-    rm(list = c('result'))
-    gc()
-    return(list(model = fm, size = K_opt, metrics = metric))
+      # fit model to full data 
+      mod    = defineHMM.depmix(data.train, K = K_opt, 
+                         response.vars = resp.vars, 
+                         transitn.vars = tran.vars, 
+                         respstart = NULL, 
+                         trstart = NULL)
+      fm     = fitHMM(mod, nRestarts = nRestarts*2, verbose = verbose, 
+        maxit = maxit, tol = tol)
+
+      rm(list = c('result'))
+      gc()
+      cat(paste("Model size=", K_opt, "\n"))
+      return(list(model = fm, size = K_opt, metrics = metric))
+    } else {
+      print("Error: Kmax < Kmin!")
+      return(NULL)
+    }
 }           
          
 # _______________________________________________
@@ -352,8 +352,9 @@ computePredictionAccuracy = function(model, data.test, test.periods = 5) {
       probs      = viterbi_states(model, test_data, test_data$obs)              
       
       # compute decoding performance statistics
-      MAPE       = mean(abs((probs$fit - test_data$obs) / probs$fit))
-      R2         = 1 - sum((probs$fit - test_data$obs)^2) / sum((test_data$obs - mean(test_data$obs))^2)
+      MAPE       = mean(abs((probs$fit - test_data$obs) / probs$fit), na.rm=TRUE)
+      R2         = 1 - sum((probs$fit - test_data$obs)^2, na.rm=TRUE) / 
+          sum((test_data$obs - mean(test_data$obs, na.rm=TRUE))^2, na.rm=TRUE)
                     
       # store stats
       stats[[as.character(T_test)]] = c(MAPE, R2)
@@ -376,13 +377,14 @@ computePredictionAccuracy = function(model, data.test, test.periods = 5) {
 
 # function to compute R2
 R2 = function(y, yfit) {
-  r2 = 1 - sum((y - yfit)^2) / sum((y-mean(y))^2)
+  r2 = 1 - sum((y - yfit)^2, na.rm=TRUE) / 
+    sum((y-mean(y, na.rm=TRUE))^2, na.rm=TRUE)
 }
 
 # ________________________________________________
 # Extract useful parameters out of depmixS4 model
 
-extractParameters.depmixS4 = function(fm_opt){
+extractParameters.depmixS4 = function(fm_opt, data){
               
   HMM   = list()
   K_opt = length(fm_opt@response)
@@ -390,7 +392,7 @@ extractParameters.depmixS4 = function(fm_opt){
   
   # ________________________________
   # Response parameters
-  
+
   resp_vars  = colnames(fm_opt@response[[1]][[1]]@x)
   HMM[['response']] = list()
   stddev     = sapply(1:K_opt, function(j) fm_opt@response[[j]][[1]]@parameters$sd)
@@ -400,8 +402,8 @@ extractParameters.depmixS4 = function(fm_opt){
   if (class(params) == 'numeric') params = data.frame(params) else params = data.frame(t(params))
   rownames(params) = 1:K_opt
   colnames(params) = resp_vars
-  HMM[['response']][['means']]  = as.data.frame(t(params))
-  
+  HMM[['response']][['means']]  = as.data.frame(t(params))  
+
   # ______________________________
   # Transition parameters
 
@@ -419,21 +421,14 @@ extractParameters.depmixS4 = function(fm_opt){
   HMM[['transition']] = params
   
   # Viterbi states
-  HMM[['states']] = posterior(fm_opt)
-  
-  # ________________________________________
-  # Perform preliminary analysis of errors
-  
-  # Predicted state means
-  fit = sapply(1:K_opt, function(k) predict(fm_opt@response[[k]][[1]])) 
-  HMM[['fit']] = sapply(1:nrow(fit), function(j) fit[j,HMM[['states']][j,1]])
-  HMM[['fit.avg']]     = sapply(1:nrow(fit), function(j) sum(fit[j,] * HMM[['states']][j,-1]))
-    
-  # model fit (penalized likelihood)
+  data.dum= dummy.data.frame(data[,-which(names(data)=='timestamps')])
+  res = viterbi_states(fm_opt, data.dum, data.dum$obs)
+ 
+  HMM[['states']] = res
+  HMM[['fit']]    = res$fit.max
+  HMM[['fit.avg']]= res$fit.avg
   HMM[['BIC']]    = BIC(fm_opt)  
-              
-  rm(list = c('fm_opt'))
-  gc()
+  
   return(HMM)
 }
 
@@ -481,8 +476,8 @@ setMethod('computeDecodingStats',
             .Object@HMM$sw_test = is_normal
             
             # in-sample fit performance metrics
-            .Object@HMM[['MAPE']]    = mean(abs(residuals / .Object@HMM$fit))
-            .Object@HMM[['R2']]      = R2(.Object@data.train$obs, .Object@HMM$fit)
+            .Object@HMM[['MAPE']]  = mean(abs(residuals / .Object@HMM$fit), na.rm=TRUE)
+            .Object@HMM[['R2']]    = R2(.Object@data.train$obs, .Object@HMM$fit)
             
             return(.Object)
           })
@@ -506,12 +501,14 @@ setMethod('learnStateDecoder',
             # learn model 
             controls = .Object@controls
             model = learnModelSize(.Object@data.train, 
-                                   resp.vars = .Object@resp.vars, tran.vars = .Object@tran.vars, 
+                                   resp.vars = .Object@resp.vars, 
+                                   tran.vars = .Object@tran.vars, 
                                    verbose = verbose, 
                                    Kmin = controls$Kmin, Kmax = controls$Kmax, 
-                                   nRestarts = controls$nRestarts, maxit = controls$maxit, tol = controls$tol, 
-                                   thresh.R2 = controls$thresh.R2, thresh.MAPE = controls$thresh.MAPE)
-            
+                                   nRestarts = controls$nRestarts, 
+                                   maxit = controls$maxit, tol = controls$tol, 
+                                   thresh.R2 = controls$thresh.R2, 
+                                   thresh.MAPE = controls$thresh.MAPE)
             # compute prediction accuracy out-of-sample
             performance          = list()            
             performance$accuracy = NULL #computePredictionAccuracy(model$model, .Object@data.test, test.periods = 5)
@@ -519,13 +516,16 @@ setMethod('learnStateDecoder',
             .Object@performance  = performance
                             
             # compute decoding performance stats
-            .Object@HMM = extractParameters.depmixS4(model$model)
-                                        
+            .Object@HMM = extractParameters.depmixS4(model$model, 
+                .Object@data.train)
+
             # estimate state-specific coefficient standard errors
             # note that this over-estimates errors because all variance is attributed just to errors in state-based
             # coefficients, not also to the coefficients of the transition matrix
-            .Object@HMM$response$stderr = estimateStandardErrors(.Object@HMM$states[,1], .Object@data.train, .Object@resp.vars)
-                        
+            .Object@HMM$response$stderr =
+              estimateStandardErrors(.Object@HMM$states[,1], 
+                                    .Object@data.train, .Object@resp.vars)
+                       
             # compute some stats
             .Object = computeDecodingStats(.Object)
             
@@ -553,13 +553,14 @@ setMethod('dumpDecodedData',
             
             data          = .Object@HMM
             data$UID      = .Object@UID
-            data$states   = data$states[,1]
+            data$states   = data$states
             data$fit      = NULL
             data$residual = NULL
             data$fit.avg  = NULL
+            data$df       = .Object@data.train
             
             if (is.null(path)) return(data) else {
-              save(list = c('data'), file = paste(path, .Object@UID, '_decoded.RData', sep=''))
+              save(list = c('data'), file = paste(path, '/', .Object@UID, '_decoded.RData', sep=''))
               return(NULL)
             }
           })

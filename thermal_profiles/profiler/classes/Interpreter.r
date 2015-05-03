@@ -289,7 +289,7 @@ setMethod('dumpInterpretedData',
             data$activ.level   = .Object@activ.level
             
             if (is.null(path)) return(data) else {
-              save(list = c('data'), file = paste(path, .Object@UID, '_interpreted.RData', sep=''))
+              save(list = c('data'), file = paste(path, '/', .Object@UID, '_interpreted.RData', sep=''))
               return(NULL)
             }
             

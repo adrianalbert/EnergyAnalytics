@@ -45,8 +45,8 @@ stateProcessorWrapper = function(cur_data, cur_covar, UID,
                   resp.vars = resp.vars,
                   controls = controls)  
   # HMM analysis
-  decoder   = learnStateDecoder(decoder, verbose = T)
-  show(decoder)
+  decoder   = learnStateDecoder(decoder, verbose = verbose)
+  if (verbose) show(decoder)
   
   # perform interpretation and feature extraction
   interpreter  = new(Class = "Interpreter", decoder)
