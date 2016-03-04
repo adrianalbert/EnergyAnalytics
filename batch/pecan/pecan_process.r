@@ -29,10 +29,10 @@ source('./utils/aggregate_data.r')
 source('./utils/weather/clean_weather_data.r')
 
 # directory to save files
-DATA_PATH = '~/energy-data/pecan_street/'
+DATA_PATH = '~/S3L_server/energy-data/pecan_street/'
 IN_PATH   = paste(DATA_PATH, 'usage-orig', sep = '')
 OUT_PATH  = paste(DATA_PATH, 'usage-processed', sep = '')
-METADATA_PATH = '~/energy-data/pecan_street/metadata/'
+METADATA_PATH = '~/S3L_server/energy-data/pecan_street/metadata/'
 dir.create(file.path(OUT_PATH))    
 
 # ----------------------------------------------
@@ -44,7 +44,7 @@ users_all = unique(sapply(files_all, function(s) strsplit(tail(strsplit(s, '/')[
 
 # load baby names
 # we're going to name each user for later easiness of use
-baby_names  = read.csv('~/Dropbox/OccupancyStates/data/baby-names.csv')
+baby_names  = read.csv('~/S3L_server/energy-data/pecan_street/baby-names.csv')
 user_names  = data.frame(ID = users_all, name = unique(baby_names$name)[1:length(users_all)])
 
 # save names to file
@@ -128,7 +128,7 @@ idx = which(!(uids.input %in% uids.done))
 if (length(idx) == 0) stop("All files have already been processed!")
 
 res      = mclapply(1:length(files.input[idx]), 
-                    mc.cores = 5, 
+                    mc.cores = 4, 
                     function(i) {       
   file = files.input[idx[i]]  
   cat(paste('Processing ', file, ' : ', idx[i], '/', length(files.input[idx]), '\n', sep = ''))

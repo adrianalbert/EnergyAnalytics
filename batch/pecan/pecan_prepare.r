@@ -19,17 +19,18 @@ source('../utils/aggregate_data.r')
 source('./pecan/define_categories_pecan.r')
 
 # select one year of data to use
-DATA_PATH     = '~/energy-data/pecan_street/usage-processed/'
-DATA_OUT_PATH = '~/energy-data/pecan_street/usage-select'
+DATA_PATH     = '~/S3L_server/energy-data/pecan_street/usage-processed/'
+DATA_OUT_PATH = '~/S3L_server/energy-data/pecan_street/usage-select'
+dir.create(DATA_OUT_PATH)
 
 # load weather data
-weather.hourly = read.csv('~/energy-data/pecan_street/weather/weather_hourly.csv')
-weather.15mins = read.csv('~/energy-data/pecan_street/weather/weather_15mins.csv')
+weather.hourly = read.csv('~/S3L_server/energy-data/pecan_street/weather/weather_hourly.csv')
+weather.15mins = read.csv('~/S3L_server/energy-data/pecan_street/weather/weather_15mins.csv')
 weather.hourly$date = as.POSIXct(as.character(weather.hourly$date))
 weather.15mins$date = as.POSIXct(as.character(weather.15mins$date))
 
 # load user names
-user_names = read.csv('~/energy-data/pecan_street/metadata/user_names_ids.csv')
+user_names = read.csv('~/S3L_server/energy-data/pecan_street/metadata/user_names_ids.csv')
 
 # __________________________________________________
 # Access usage data
@@ -90,8 +91,9 @@ to_categories = function(homeData, dateCol = 'date') {
   
   # create new dataset
   data_new = subset(homeData, select = c(dateCol, select.total))
-  if (length(ac.cols)>0) data_new = cbind(data_new, AC = AC_kwh)
-  if (length(hv.cols)>0) data_new = cbind(data_new, HV = HV_kwh)
+  names(data_new)[names(data_new)==select.total[1]] <- "total"
+  if (length(ac.cols)>0) data_new = cbind(data_new, C = AC_kwh)
+  if (length(hv.cols)>0) data_new = cbind(data_new, H = HV_kwh)
   if (length(user.cols)>0) data_new = cbind(data_new, user = user_kwh)
   if (length(light.cols)>0) data_new = cbind(data_new, lights = light_kwh)
   if (length(alwOn.cols)>0) data_new = cbind(data_new, always_on = alwOn_kwh)
@@ -144,31 +146,32 @@ res = mclapply(1:length(uids.input[idx.ok]),
             mc.cores = 6,
             function(i) {
 
+# for (i in 1:length(uids.input[idx.ok])) {
   # current user info
   uid = uids.input[idx.ok[i]]  
   user_name = as.character(user_names$name[which(user_names$ID == uid)])
   cat(paste('Processing uid ', uid, ' : ', i, '/', length(idx.ok), '\n', sep = ''))
               
   # some gymnastics to get appropriate data files for this user  
-  files_01_i = files_01[grep(paste('/', uid, '_minute.csv', sep=''), files_01)]
-  files_15_i = files_15[grep(paste('/', uid, '_15mins.csv', sep=''), files_15)]
+  #files_01_i = files_01[grep(paste('/', uid, '_minute.csv', sep=''), files_01)]
+  #files_15_i = files_15[grep(paste('/', uid, '_15mins.csv', sep=''), files_15)]
   files_60_i = files_60[grep(paste('/', uid, '_hourly.csv', sep=''), files_60)]
 
   # read in data at different resolutions across years...
   # aggregate individual appliances into categories of interest
   # also flag users who don't have HVAC data for removal
-  data_list_01 = lapply(files_01_i, function(f) {
-    # get current data  
-    data = read.csv(f)   
-    data = to_categories(data)
-    return(data)
-  })
-  data_list_15 = lapply(files_15_i, function(f) {
-    # get current data  
-    data = read.csv(f)   
-    data = to_categories(data)
-    return(data)
-  })
+#   data_list_01 = lapply(files_01_i, function(f) {
+#     # get current data  
+#     data = read.csv(f)   
+#     data = to_categories(data)
+#     return(data)
+#   })
+#   data_list_15 = lapply(files_15_i, function(f) {
+#     # get current data  
+#     data = read.csv(f)   
+#     data = to_categories(data)
+#     return(data)
+#   })
   data_list_60 = lapply(files_60_i, function(f) {
     # get current data  
     data = read.csv(f)   
@@ -177,12 +180,13 @@ res = mclapply(1:length(uids.input[idx.ok]),
   })
     
   # concatenate data across years
-  data_01_sel = concatenate_data(data_list_01)
-  data_15_sel = concatenate_data(data_list_15)
+#   data_01_sel = concatenate_data(data_list_01)
+#   data_15_sel = concatenate_data(data_list_15)
   data_60_sel = concatenate_data(data_list_60)  
   
   # if the user has no HVAC data, skip
-  if (is.null(data_01_sel) || is.null(data_15_sel) || is.null(data_60_sel)) {
+  # if (is.null(data_01_sel) || is.null(data_15_sel) || is.null(data_60_sel)) {
+  if (is.null(data_60_sel)) {
     cat('No HVAC data for this user!\n')
     return(NULL)   
   }  
@@ -194,8 +198,9 @@ res = mclapply(1:length(uids.input[idx.ok]),
   }  
   
   # add in weather (temperature) data at the resolutions available
-  data_15_sel = merge(data_15_sel, subset(weather.15mins, select = c('date', 'TemperatureF')), by = 'date')
+  # data_15_sel = merge(data_15_sel, subset(weather.15mins, select = c('date', 'TemperatureF')), by = 'date')
   data_60_sel = merge(data_60_sel, subset(weather.hourly, select = c('date', 'TemperatureF')), by = 'date')  
+  names(data_60_sel)[names(data_60_sel)=="TemperatureF"] <- "Temperature"
   
   # skip users that don't have enough data, at least a month of hourly data
   if (nrow(data_60_sel) < 30 * 24) {
@@ -204,9 +209,10 @@ res = mclapply(1:length(uids.input[idx.ok]),
   }  
   
   # save to disc  
-  write.csv(data_01_sel, file = paste(DATA_OUT_PATH, paste('01min/', uid, '.csv', sep = ''), sep = '/'), row.names = F)
-  write.csv(data_15_sel, file = paste(DATA_OUT_PATH, paste('15min/', uid, '.csv', sep = ''), sep = '/'), row.names = F)
+#   write.csv(data_01_sel, file = paste(DATA_OUT_PATH, paste('01min/', uid, '.csv', sep = ''), sep = '/'), row.names = F)
+#   write.csv(data_15_sel, file = paste(DATA_OUT_PATH, paste('15min/', uid, '.csv', sep = ''), sep = '/'), row.names = F)
   write.csv(data_60_sel, file = paste(DATA_OUT_PATH, paste('60min/', uid, '.csv', sep = ''), sep = '/'), row.names = F)    
   
   return(1)
 })
+#}

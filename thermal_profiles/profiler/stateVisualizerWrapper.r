@@ -29,11 +29,11 @@ stateVisualizerWrapper = function(decoder, interpreter,
     # visualize decoded & interpreted data
 		visualizer     = new(Class = "Visualizer", decoder, interpreter,
 		                    interval = interval, 
-                         t.covar = 'TemperatureF',
+                         t.covar = 'Temperature',
                          r.covar = 'TemperatureD')
 		visualizer.all = new(Class = "Visualizer", decoder, interpreter,
 		                    interval = NULL, 
-		                     t.covar = 'TemperatureF',
+		                     t.covar = 'Temperature',
 		                     r.covar = 'TemperatureD')
 
     # place plots in a directory
@@ -82,7 +82,7 @@ stateVisualizerWrapper = function(decoder, interpreter,
 		dev.off()      
 
 		# temperature dependence
-    png(paste(plots_path, visualizer.all@UID, '_HMM-dep-covar.png', sep = ''), width = 1000, height = 600, res = 150)
+    png(paste(plots_path, visualizer.all@UID, '_HMM-dep-covar.png', sep = ''), width = 900, height = 500, res = 150)
 		print(plot(visualizer.all, type = 'HMM-dep-covar'))
 		dev.off()      
 

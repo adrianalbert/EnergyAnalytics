@@ -651,7 +651,7 @@ plot_dep_covar = function(x, y, state, title = 'HMM-dep-covar',
           legend.title     = element_text(size=22),
           plot.title       = element_text(size=24),
           legend.text      = element_text(size=24),
-          legend.position  = c(0.2,0.7),
+          legend.position  = "none", #c(0.2,0.7),
           axis.ticks       = element_blank() ) + 
     ylab(y.lab) + xlab(x.lab) + ggtitle( title )
   nx = sqrt(length(unique(df$state)))
@@ -711,7 +711,7 @@ plot_tran_covar = function(x_var, dep,
           plot.title       = element_text(size=24),
           legend.text      = element_text(size=24),
           legend.title     = element_text(size=22),
-          legend.position  = c(0.15, 0.6),
+          legend.position  = "none", #c(0.15, 0.6),
           axis.ticks       = element_blank() ) + 
     ylab(y.lab) + xlab(x.lab) + 
     theme(plot.title=element_text(family="Times", face="bold", size=20)) + 

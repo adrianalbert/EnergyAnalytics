@@ -557,7 +557,7 @@ plot_dep_covar = function(x, y, state, title = 'HMM-dep-covar',
           axis.title.y     = element_text(size=18),
           axis.title.x     = element_text(size=18),
           plot.title       = element_text(size=20),
-          legend.position  = 'null',
+          legend.position  = "none",
           axis.ticks       = element_blank() ) + 
     ylab(y.lab) + xlab(x.lab) + 
     theme(plot.title=element_text(family="Times", face="bold", size=20)) + 
@@ -574,7 +574,7 @@ plot_tran_covar = function(x_var, dep, title = 'HMM-dep-covar',
                           y.lab = '', x.lab = '', markers = c()) {
   
   df       = as.data.frame(do.call('rbind', dep))
-  names(df)= paste('State', 1:ncol(df), sep='.')
+  names(df)= paste('Regime', 1:ncol(df), sep='.')
   df$From  = rep(1:length(dep), each = nrow(dep[[1]]))  
   covar    = names(x_var)
   df       = cbind(rep(x_var[,covar], length(dep)), df)
@@ -606,6 +606,7 @@ plot_tran_covar = function(x_var, dep, title = 'HMM-dep-covar',
           plot.title       = element_text(size=20),
           legend.text      = element_text(size=18),
           legend.title     = element_text(size=18),
+          legend.position  = "none",
           axis.ticks       = element_blank() ) + 
     ylab(y.lab) + xlab(x.lab) + 
     theme(plot.title=element_text(family="Times", face="bold", size=20)) + 

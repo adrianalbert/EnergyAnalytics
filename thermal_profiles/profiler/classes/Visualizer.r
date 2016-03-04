@@ -171,7 +171,7 @@ setMethod('plot',
             
             if (type == 'HMM-dep-covar') {
               t.covar = colnames(x@t.covar)
-              title = paste(paste(t.covar, " dependence (", x@UID,')',sep=''))
+              title = paste(paste(t.covar, " dependence",sep=''))
               states = x@HMM$states
 #               states = paste(states, ': slope=', 
 #                              round(x@HMM$response$means[covar,states]*100, digits=3),'(/100)',sep='')
@@ -194,7 +194,7 @@ setMethod('plot',
             
             if (type == 'HMM-trans-prob') {
               t.covar = colnames(x@t.covar)
-              title = paste("Transition probabilities (", x@UID,')',sep='')  
+              title = paste("Transition probabilities" ,sep='')  
               x_var = as.data.frame(1:nrow(x@HMM$probProfile[[1]]))
               names(x_var) = t.covar
               p     = plot_tran_covar(x_var, x@HMM$probProfile, 
@@ -204,7 +204,7 @@ setMethod('plot',
             
             if (type == 'HMM-stationary-prob') {
               t.covar = colnames(x@t.covar)
-              title = paste("Stationary distribution (", x@UID,')',sep='')
+              title = paste("Stationary distribution",sep='')
               x_var = as.data.frame(1:nrow(x@HMM$probProfile[[1]]))
               names(x_var) = t.covar
               dep   = x@HMM$steadyDistr
